@@ -206,7 +206,7 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
 
     chrome.notifications.create('pomo-complete', {
       type: 'basic',
-      iconUrl: chrome.runtime.getURL('icon/128.png'),
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
       title: 'Pomodoro complete! 🍅',
       message: `${Math.round((state.plannedDurationSeconds ?? 25 * 60) / 60)} min of focus. Time for a ${isLongBreak ? 'long ' : ''}break.`,
       priority: 2,
@@ -228,6 +228,7 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
       ticketExternalId: state.ticketExternalId,
       pendingSegment: state.pendingSegment,
       pomosCompletedToday: state.pomosCompletedToday,
+      pomosDate: state.pomosDate,
       pomosGoal: state.pomosGoal,
       breakPromptEndsAt: autoStartsAt,
     };
@@ -247,7 +248,7 @@ async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
 
     chrome.notifications.create('break-complete', {
       type: 'basic',
-      iconUrl: chrome.runtime.getURL('icon/128.png'),
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
       title: 'Break\'s over! 🏃',
       message: 'Next pomodoro starts in 30 seconds.',
       priority: 1,
@@ -395,6 +396,7 @@ async function startTimer(payload: TimerStartPayload): Promise<TimerState> {
     taskSegmentStartedAt: payload.taskId ? now : null,
     pausedPomodoro,
     pomosCompletedToday: current.pomosCompletedToday,
+    pomosDate: current.pomosDate,
     pomosGoal: settings.dailyGoal,
   };
 
@@ -590,6 +592,7 @@ async function startBreak(): Promise<TimerState> {
     breakDurationSeconds: breakDuration,
     pendingSegment: state.pendingSegment,
     pomosCompletedToday: state.pomosCompletedToday,
+    pomosDate: state.pomosDate,
     pomosGoal: state.pomosGoal,
   };
 
@@ -664,6 +667,7 @@ async function stopTimer(): Promise<TimerState> {
         pomodoroStartedAt,
         plannedDurationSeconds,
         pomosCompletedToday: current.pomosCompletedToday,
+        pomosDate: current.pomosDate,
         pomosGoal: current.pomosGoal,
       };
       await setTimerState(resumed);
@@ -676,6 +680,7 @@ async function stopTimer(): Promise<TimerState> {
   const reset: TimerState = {
     ...IDLE_TIMER_STATE,
     pomosCompletedToday: current.pomosCompletedToday,
+    pomosDate: current.pomosDate,
     pomosGoal: current.pomosGoal,
   };
 

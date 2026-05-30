@@ -27,6 +27,7 @@ const DEFAULT_WORKSPACE: WorkspaceRow = { id: 'default', name: 'Personal', color
 const INITIAL_RULES: DetectionRuleRow[] = [
   { id: 'r-linear', name: 'Linear', urlPattern: 'linear\\.app\\/[^/]+\\/issue\\/', active: true, kind: 'preset', presetId: 'linear', updatedAt: now() },
   { id: 'r-github', name: 'GitHub', urlPattern: 'github\\.com\\/[^/]+\\/[^/]+\\/(pull|issues)\\/', active: true, kind: 'preset', presetId: 'github', updatedAt: now() },
+  { id: 'r-arxiv', name: 'arXiv', urlPattern: 'arxiv\\.org\\/abs\\/', active: true, kind: 'preset', presetId: 'arxiv', updatedAt: now() },
 ];
 
 export function App() {
@@ -421,6 +422,10 @@ export function App() {
     await db.detectionRules.update(id, { deletedAt: now(), updatedAt: now() });
   }, []);
 
+  const updateRule = useCallback(async (id: string, name: string, urlPattern: string) => {
+    await db.detectionRules.update(id, { name, urlPattern, updatedAt: now() });
+  }, []);
+
   // ── Settings mutations ─────────────────────────────────────────────────────
   const updateTimerSettings = useCallback(async (updates: Partial<TimerSettings>) => {
     const current = (await db.settings.get('timer_settings'))?.value as TimerSettings ?? { ...DEFAULT_TIMER_SETTINGS };
@@ -579,6 +584,7 @@ export function App() {
           onAddRule={(rule) => void addRule(rule as DetectionRuleRow)}
           onToggleRule={(id) => void toggleRule(id)}
           onDeleteRule={(id) => void deleteRule(id)}
+          onUpdateRule={(id, name, urlPattern) => void updateRule(id, name, urlPattern)}
           onUpdateTimerSettings={(updates) => void updateTimerSettings(updates)}
           onAddWorkspace={(name, color) => { void addWorkspace(name, color); }}
           onUpdateWorkspace={(id, name, color) => void updateWorkspace(id, name, color)}

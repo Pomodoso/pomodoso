@@ -104,7 +104,7 @@ export interface Project {
 
 // ─── Ticket ───────────────────────────────────────────────────────────────────
 
-export type TicketProviderKind = 'linear' | 'github' | 'sentry' | 'manual' | 'custom';
+export type TicketProviderKind = 'linear' | 'github' | 'sentry' | 'arxiv' | 'manual' | 'custom';
 
 export interface DetectionRule {
   id: string;

@@ -278,6 +278,11 @@ export function HomeState({
 
   const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
   const [dismissedTicketId, setDismissedTicketId] = useState<string | null>(null);
+  useEffect(() => {
+    chrome.storage.session.get('dismissed_ticket_id').then(r => {
+      if (r.dismissed_ticket_id) setDismissedTicketId(r.dismissed_ticket_id as string);
+    });
+  }, []);
   const [selectionDismissed, setSelectionDismissed] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
@@ -627,7 +632,7 @@ export function HomeState({
                   onClick={() => void onCompletePomo()}
                   style={{ padding: '5px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-success)', background: 'var(--color-success)', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
                 >
-                  ✓ Finish pomo
+                  ✓ Complete pomo
                 </button>
                 <button
                   onClick={() => setCancelConfirm(true)}
@@ -679,7 +684,7 @@ export function HomeState({
                   onClick={() => void onCompletePomo()}
                   style={{ padding: '5px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-success)', background: 'var(--color-success)', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
                 >
-                  ✓ Finish pomo
+                  ✓ Complete pomo
                 </button>
                 <button
                   onClick={() => setCancelConfirm(true)}
@@ -807,7 +812,7 @@ export function HomeState({
 
       {/* ── Detection banner ── */}
       {(() => {
-        if (!detectedTicket || isActive || isBreak || detectedTicket.external_id === dismissedTicketId) return null;
+        if (!detectedTicket || isBreak || detectedTicket.external_id === dismissedTicketId || !!detectedExistingTask) return null;
         const bannerMode = detectedExistingTask ? 'view' : 'add';
         return (
           <DetectionBanner
@@ -820,7 +825,10 @@ export function HomeState({
             }}
             onLink={() => onLinkToTask(detectedTicket)}
             onFollowup={bannerMode === 'view' && detectedExistingTask ? () => onCreateFollowup(detectedExistingTask.id) : undefined}
-            onDismiss={() => setDismissedTicketId(detectedTicket.external_id)}
+            onDismiss={() => {
+              setDismissedTicketId(detectedTicket.external_id);
+              void chrome.storage.session.set({ dismissed_ticket_id: detectedTicket.external_id });
+            }}
           />
         );
       })()}
@@ -2660,6 +2668,7 @@ const PROVIDER_ICONS: Record<string, string> = {
   linear: '◆',
   github: '⊙',
   sentry: '⚠',
+  arxiv: '∂',
   manual: '·',
   custom: '◎',
 };

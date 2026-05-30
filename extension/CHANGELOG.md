@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.2 (2026-xx-xx)
+
+### Extension
+
+- **Pomodoro count not persisting across sessions** — Fixed a bug where the daily pomodoro counter reset to 0 after each completed session. The `pomosDate` field was not being carried over when transitioning between timer states, causing the date check to always reset the counter.
+
+- **arXiv detection** — Papers on arxiv.org are now automatically detected. Opening the popup on any `arxiv.org/abs/*` page surfaces the paper title and ID with a one-click option to add it to the backlog or link it to an existing task.
+
+- **Detection banner no longer repeats for known tickets** — Once a ticket or paper is added to the backlog or linked to a task, the detection banner no longer appears on subsequent visits to that page. The banner is now a discovery tool for new items only.
+
+- **Persistent dismiss** — Dismissing a detection banner now survives popup close/reopen within the same browser session. Previously, the banner would reappear every time the popup was opened on the same page.
+
+- **Detection banner visible during active pomodoro** — The detection banner is now shown even when a pomodoro is running, so tickets can be added to the backlog or linked to tasks without interrupting the session.
+
+- **"Complete pomo" button label** — Renamed from "Finish pomo" to "Complete pomo" for clarity.
+
+---
+
 ## v0.0.1 (2026-05-30)
 
 ### Extension

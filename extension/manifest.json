@@ -50,6 +50,10 @@
     {
       "matches": ["https://*.sentry.io/*"],
       "js": ["content-scripts/sentry.js"]
+    },
+    {
+      "matches": ["https://arxiv.org/abs/*"],
+      "js": ["content-scripts/arxiv.js"]
     }
   ]
 }

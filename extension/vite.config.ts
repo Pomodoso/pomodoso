@@ -47,6 +47,7 @@ export default defineConfig({
         'content-scripts/sentry': resolve(root, 'content-scripts/sentry.ts'),
         'content-scripts/selection': resolve(root, 'content-scripts/selection.ts'),
         'content-scripts/break-overlay': resolve(root, 'content-scripts/break-overlay.ts'),
+        'content-scripts/arxiv': resolve(root, 'content-scripts/arxiv.ts'),
       },
       output: {
         entryFileNames: (chunk) => {

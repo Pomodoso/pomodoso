@@ -23,6 +23,7 @@ const PRESET_CATALOG = [
   { id: 'jira',    name: 'Jira',    icon: '◈', urlPattern: '\\.atlassian\\.net\\/browse\\/',                  description: 'Issues in Jira' },
   { id: 'figma',   name: 'Figma',   icon: '⬡', urlPattern: 'figma\\.com\\/(file|design)\\/',                  description: 'Files in Figma' },
   { id: 'clickup', name: 'ClickUp', icon: '⬆', urlPattern: 'app\\.clickup\\.com\\/',                          description: 'Tasks in ClickUp' },
+  { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
 ];
 
 type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar';
@@ -46,6 +47,7 @@ interface SettingsStateProps {
   onAddRule: (rule: DetectionRule) => void;
   onToggleRule: (id: string) => void;
   onDeleteRule: (id: string) => void;
+  onUpdateRule: (id: string, name: string, urlPattern: string) => void;
   onUpdateTimerSettings: (updates: Partial<TimerSettings>) => void;
   onAddWorkspace: (name: string, color: string) => void;
   onUpdateWorkspace: (id: string, name: string, color: string) => void;
@@ -55,7 +57,7 @@ interface SettingsStateProps {
   onUpdateMaxPriorities: (n: number) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, activeWsId, initialPage, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, activeWsId, initialPage, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
 
   if (page === 'calendar') {
@@ -70,6 +72,7 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
         onAddRule={onAddRule}
         onToggleRule={onToggleRule}
         onDeleteRule={onDeleteRule}
+        onUpdateRule={onUpdateRule}
       />
     );
   }
@@ -375,12 +378,13 @@ function WorkspacesPage({ workspaces, onAdd, onUpdate, onDelete, onBack }: {
 
 // ── Task detection sub-page ───────────────────────────────────────────────────
 
-function TaskDetectionPage({ rules, onBack, onAddRule, onToggleRule, onDeleteRule }: {
+function TaskDetectionPage({ rules, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule }: {
   rules: DetectionRule[];
   onBack: () => void;
   onAddRule: (rule: DetectionRule) => void;
   onToggleRule: (id: string) => void;
   onDeleteRule: (id: string) => void;
+  onUpdateRule: (id: string, name: string, urlPattern: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [showCatalog, setShowCatalog] = useState(false);
@@ -388,6 +392,10 @@ function TaskDetectionPage({ rules, onBack, onAddRule, onToggleRule, onDeleteRul
   const [customName, setCustomName] = useState('');
   const [customPattern, setCustomPattern] = useState('');
   const [patternError, setPatternError] = useState('');
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPattern, setEditPattern] = useState('');
+  const [editError, setEditError] = useState('');
 
   const installedPresetIds = new Set(rules.filter(r => r.kind === 'preset').map(r => r.presetId));
   const filteredCatalog = PRESET_CATALOG.filter(p =>
@@ -408,6 +416,23 @@ function TaskDetectionPage({ rules, onBack, onAddRule, onToggleRule, onDeleteRul
     setCustomName(''); setCustomPattern(''); setPatternError(''); setShowCustomForm(false);
   };
 
+  const startEditing = (rule: DetectionRule) => {
+    setEditingRuleId(rule.id);
+    setEditName(rule.name);
+    setEditPattern(rule.urlPattern);
+    setEditError('');
+    setShowCatalog(false);
+    setShowCustomForm(false);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editName.trim()) { setEditError('Name is required'); return; }
+    if (!editPattern.trim()) { setEditError('URL pattern is required'); return; }
+    try { new RegExp(editPattern.trim()); } catch { setEditError('Invalid regex pattern'); return; }
+    onUpdateRule(editingRuleId!, editName.trim(), editPattern.trim());
+    setEditingRuleId(null);
+  };
+
   const iconForRule = (rule: DetectionRule) =>
     rule.kind === 'preset' ? (PRESET_CATALOG.find(p => p.id === rule.presetId)?.icon ?? '◎') : '◎';
 
@@ -426,30 +451,50 @@ function TaskDetectionPage({ rules, onBack, onAddRule, onToggleRule, onDeleteRul
             </div>
           )}
           {rules.map(rule => (
-            <div key={rule.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 12px',
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)', marginBottom: 6,
-            }}>
-              <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0, color: 'var(--color-text-muted)' }}>
-                {iconForRule(rule)}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: rule.active ? 'var(--color-text)' : 'var(--color-text-faint)' }}>
-                  {rule.name}
-                </div>
-                <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {rule.urlPattern}
+            editingRuleId === rule.id ? (
+              <div key={rule.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8 }}>Edit rule</div>
+                <input value={editName} onChange={e => { setEditName(e.target.value); setEditError(''); }} placeholder="Name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', marginBottom: 6, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none' }} />
+                <input value={editPattern} onChange={e => { setEditPattern(e.target.value); setEditError(''); }} placeholder="URL pattern (regex)" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', marginBottom: editError ? 4 : 8, background: 'var(--color-bg)', border: `1px solid ${editError ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--color-text)', fontFamily: 'var(--font-mono)', outline: 'none' }} />
+                {editError && <div style={{ fontSize: 11, color: 'var(--color-accent)', marginBottom: 8 }}>{editError}</div>}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={handleSaveEdit} style={{ flex: 1, padding: '6px 0', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save</button>
+                  <button onClick={() => setEditingRuleId(null)} style={{ padding: '6px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer' }}>Cancel</button>
                 </div>
               </div>
-              <Toggle active={rule.active} onChange={() => onToggleRule(rule.id)} />
-              <button onClick={() => onDeleteRule(rule.id)} title="Remove" style={{
-                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
-                color: 'var(--color-text-faint)', borderRadius: 4, flexShrink: 0,
-              }}>×</button>
-            </div>
+            ) : (
+              <div key={rule.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 12px',
+                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)', marginBottom: 6,
+              }}>
+                <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0, color: 'var(--color-text-muted)' }}>
+                  {iconForRule(rule)}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: rule.active ? 'var(--color-text)' : 'var(--color-text-faint)' }}>
+                    {rule.name}
+                  </div>
+                  <div title={rule.urlPattern} style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rule.urlPattern}
+                  </div>
+                </div>
+                <Toggle active={rule.active} onChange={() => onToggleRule(rule.id)} />
+                {rule.kind === 'custom' && (
+                  <button onClick={() => startEditing(rule)} title="Edit" style={{
+                    width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+                    color: 'var(--color-text-faint)', borderRadius: 4, flexShrink: 0,
+                  }}>✎</button>
+                )}
+                <button onClick={() => onDeleteRule(rule.id)} title="Remove" style={{
+                  width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
+                  color: 'var(--color-text-faint)', borderRadius: 4, flexShrink: 0,
+                }}>×</button>
+              </div>
+            )
           ))}
         </div>
 
