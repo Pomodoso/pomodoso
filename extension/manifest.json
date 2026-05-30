@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Pomodoso",
+  "description": "Unified work tracking for developers — pomodoro, tickets, habits.",
+  "version": "0.0.1",
+  "permissions": ["storage", "alarms", "notifications", "identity", "tabs", "activeTab", "scripting", "windows"],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Pomodoso",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/selection.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/break-overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://linear.app/*/issue/*"],
+      "js": ["content-scripts/linear.js"]
+    },
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content-scripts/github.js"]
+    },
+    {
+      "matches": ["https://*.sentry.io/*"],
+      "js": ["content-scripts/sentry.js"]
+    }
+  ]
+}
