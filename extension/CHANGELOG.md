@@ -16,6 +16,8 @@
 
 - **"Complete pomo" button label** — Renamed from "Finish pomo" to "Complete pomo" for clarity.
 
+- **Calendar not showing today's meetings** — Fixed three compounding bugs: (1) `timeMin`/`timeMax` were constructed without a timezone offset, so the API query covered the wrong UTC day for non-zero-offset timezones; (2) meetings soft-deleted by a previous bad sync were not being un-deleted when they reappeared in the API response; (3) Google OAuth credentials (`CLIENT_ID`/`CLIENT_SECRET`) were not being injected into the build because Vite was looking for `.env` files in `src/` instead of the project root — fixed by adding `envDir` to `vite.config.ts`.
+
 ---
 
 ## v0.0.1 (2026-05-30)

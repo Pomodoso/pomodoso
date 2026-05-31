@@ -325,3 +325,8 @@ export async function getSoundSettingsFromDb(): Promise<SoundSettings> {
   const row = await db.settings.get('sound_settings');
   return (row?.value as SoundSettings | undefined) ?? { ...DEFAULT_SOUND_SETTINGS };
 }
+
+export async function getTimezoneFromDb(): Promise<string> {
+  const row = await db.settings.get('timezone');
+  return (row?.value as string | undefined) ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+}

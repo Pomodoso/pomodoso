@@ -8,7 +8,7 @@ import type {
   TicketRef,
 } from '@pomodoso/types';
 import { IDLE_TIMER_STATE, DEFAULT_TIMER_SETTINGS } from '@pomodoso/types';
-import { getTimerSettingsFromDb } from './db';
+import { getTimerSettingsFromDb, getTimezoneFromDb } from './db';
 import { connectCalendar, syncTodayMeetings } from './calendarSync';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
@@ -36,8 +36,8 @@ async function getTimerState(): Promise<TimerState> {
   if (!stored || !('pomodoroStartedAt' in stored)) {
     return { ...IDLE_TIMER_STATE };
   }
-  // Reset daily counter if the date has changed
-  if (stored.pomosDate !== todayLocalDate()) {
+  // Reset daily counter if the date has changed (null means unknown date, not a past date)
+  if (stored.pomosDate !== null && stored.pomosDate !== todayLocalDate()) {
     return { ...stored, pomosCompletedToday: 0, pomosDate: null };
   }
   return stored;
@@ -345,8 +345,8 @@ async function handleMessageAsync(message: ExtensionMessage): Promise<unknown> {
         await chrome.storage.local.remove('calendar_connect_error');
         // Signal popup to open calendar settings so the user can select calendars
         await chrome.storage.local.set({ calendar_just_connected: message.wsId });
-        // Kick off an immediate sync with local timezone
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        // Kick off an immediate sync using the configured timezone (falls back to system)
+        const tz = await getTimezoneFromDb();
         void syncTodayMeetings(message.wsId, tz);
         return result;
       } catch (e) {

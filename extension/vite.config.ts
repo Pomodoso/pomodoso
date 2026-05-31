@@ -8,6 +8,7 @@ const root = resolve(__dirname, 'src');
 
 export default defineConfig({
   root,
+  envDir: __dirname,
   publicDir: resolve(__dirname, 'public'),
   plugins: [
     react(),
