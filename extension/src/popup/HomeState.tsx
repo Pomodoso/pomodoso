@@ -184,6 +184,9 @@ export function HomeState({
 
   // Workspace-filtered habits and meetings (meetings: only today's occurrences)
   const visibleHabits = habits.filter(h => activeWsId === 'all' || h.workspaceId === activeWsId || h.workspaceId == null);
+  // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
+  const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
+  const todayHabits = visibleHabits.filter(h => h.days.length === 0 || h.days.includes(todayDow));
   const visibleMeetings = meetings.filter(m => {
     if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
     return m.time.slice(0, 10) === today;
@@ -1023,7 +1026,7 @@ export function HomeState({
             )}
             {showHabitsInToday && (
               <TodayHabits
-                habits={visibleHabits}
+                habits={todayHabits}
                 habitCounters={habitCounters}
                 habitDone={habitDone}
                 onCounterChange={handleHabitCounterChange}
