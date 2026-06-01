@@ -1735,7 +1735,7 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
       {(() => {
         const isWip = task.status === 'in_progress' && !isActiveTask;
         const isDelayed = task.status === 'delayed';
-        const btnColor = isDone ? 'var(--color-success)' : isWip ? 'var(--color-warning)' : isDelayed ? '#7B5DB4' : 'var(--color-accent)';
+        const btnColor = isDone ? 'var(--color-success)' : isWip ? '#E6B800' : isDelayed ? '#7B5DB4' : 'var(--color-accent)';
         return index !== undefined ? (
           <button
             onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
@@ -1746,7 +1746,7 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
         ) : (
           <button
             onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
-            style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${btnColor}`, background: isDone ? 'var(--color-success)' : 'transparent', color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+            style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${isDone || isWip || isDelayed ? btnColor : 'var(--color-border-strong)'}`, background: isDone ? btnColor : 'transparent', color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
           >
             {isDone ? '✓' : ''}
           </button>
