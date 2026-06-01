@@ -92,6 +92,14 @@ pomodoso/
 - **Don't** put business logic in components. Components consume hooks; hooks consume `@pomodoso/shared`.
 - **Don't** call third-party APIs from the client (extension or web app). All external API calls go through the backend.
 
+## Extension: IndexedDB schema changes
+
+The extension uses Dexie.js (`extension/src/db.ts`). When adding or removing a table:
+
+1. **Add a new Dexie version** with the schema migration.
+2. **Update `extension/src/backup.ts`** — add the new table to `EXPECTED_TABLES`, the `exportDb()` reads, and the `importDb()` clears/bulkPuts. Omitting a table silently breaks import/export for that data.
+3. If the table contains sensitive data (e.g. OAuth tokens), add its key to `EXCLUDED_SETTINGS` instead of including it in the backup.
+
 ## Working on features
 
 When implementing a feature from the spec:
