@@ -17,7 +17,7 @@ import {
 import { syncAllConnectedWorkspaces } from '../calendarSync';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
-export type { TaskStatus, TaskLink, TimeLogEntry, TaskRow as SelectedTask, ProjectRow as Project, WorkspaceRow as Workspace } from '../db';
+export type { TaskStatus, TaskLink, TimeLogEntry, NoteEntry, TaskRow as SelectedTask, ProjectRow as Project, WorkspaceRow as Workspace } from '../db';
 export type TodayTask = TaskRow;
 export type { TimerSettings, SoundSettings };
 

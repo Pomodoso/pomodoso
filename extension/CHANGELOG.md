@@ -1,8 +1,16 @@
 # Changelog
 
-## v0.0.4 (2026-xx-xx)
+## v0.0.4 (2026-06-01)
 
+### Extension
 
+- **Habits filter by configured days** — Habits in the Today tab now only appear on the days they're configured for. Previously all habits were shown every day regardless of their schedule.
+
+- **Week start and work days settings** — New options in Settings → General: choose whether the week starts on Monday or Sunday, and configure which days are work days (default Mon–Fri). The week start is used to compute "this week" in task and habit history — previously hardcoded to the last 7 days. Work days are stored for future use in history filtering.
+
+- **Multi-note system** — Task notes are now a list of individual entries instead of a single text field. Each note is timestamped automatically (`Jun 1 · 2:30 PM`), editable inline, and deletable. Notes start collapsed showing a preview of the first line; clicking expands them. New notes open expanded and focused. Existing tasks with a legacy `notes` field are migrated automatically on first open.
+
+---
 
 ## v0.0.3 (2026-06-01)
 

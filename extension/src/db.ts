@@ -37,6 +37,12 @@ export interface TimeLogEntry {
   mode: TimerMode;
 }
 
+export interface NoteEntry {
+  id: string;
+  createdAt: string;  // ISO
+  content: string;
+}
+
 export interface TaskRow extends SyncMeta {
   id: string;
   title: string;
@@ -47,7 +53,8 @@ export interface TaskRow extends SyncMeta {
   preferredMode?: TimerMode;
   links?: TaskLink[];
   description?: string;
-  notes?: string;
+  notes?: string;        // legacy — superseded by noteEntries
+  noteEntries?: NoteEntry[];
   timeLogs?: TimeLogEntry[];
   parentId?: string | null;
 }

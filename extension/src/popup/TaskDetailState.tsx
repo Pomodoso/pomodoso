@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { marked } from 'marked';
 import type { TimerStartPayload } from '@pomodoso/types';
-import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, Workspace } from './App';
+import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEntry, Workspace } from './App';
 import { db, localDate } from '../db';
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
@@ -51,6 +51,16 @@ const PALETTE = [
 ];
 
 marked.use({ breaks: true });
+
+function formatNoteDate(isoDate: string, timezone: string): string {
+  const d = new Date(isoDate);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: timezone });
+  const day = d.toLocaleDateString('en-US', { day: 'numeric', timeZone: timezone });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: timezone });
+  return sameYear ? `${month} ${day} · ${time}` : `${month} ${day}, ${d.getFullYear()} · ${time}`;
+}
 
 function applyFormat(
   ta: HTMLTextAreaElement,
@@ -125,8 +135,12 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [ticketId, setTicketId] = useState(task.ticketId ?? '');
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [projectId, setProjectId] = useState<string | null>(task.projectId);
-  const [notes, setNotes] = useState(task.notes ?? '');
-  const [notesTab, setNotesTab] = useState<'write' | 'preview'>('write');
+  const [noteEntries, setNoteEntries] = useState<NoteEntry[]>(() => {
+    if (task.noteEntries && task.noteEntries.length > 0) return task.noteEntries;
+    // Migrate legacy notes string into a single entry
+    if (task.notes) return [{ id: crypto.randomUUID(), createdAt: task.updatedAt, content: task.notes }];
+    return [];
+  });
   const [showAddTime, setShowAddTime] = useState(false);
   const [addH, setAddH] = useState('');
   const [addM, setAddM] = useState('');
@@ -143,7 +157,6 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [showTicketId, setShowTicketId] = useState((task.ticketId ?? '').length > 0);
   const [showDescription, setShowDescription] = useState((task.description ?? '').length > 0);
   const [descTab, setDescTab] = useState<'write' | 'preview'>('write');
-  const [showNotes, setShowNotes] = useState(false);
   const [showProject, setShowProject] = useState(task.projectId !== null);
   const [showTimeLogged, setShowTimeLogged] = useState(false);
   const effectiveDefaultWsId = task.workspaceId
@@ -160,7 +173,8 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const noteRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const handleStart = () => {
@@ -173,15 +187,26 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
     });
   };
 
-  const handleFormat = (prefix: string, suffix = prefix, lineMode = false) => {
-    const ta = notesRef.current;
-    if (!ta) return;
-    const result = applyFormat(ta, prefix, suffix, lineMode);
-    setNotes(result.value);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(result.start, result.end);
-    });
+  const handleAddNote = () => {
+    const newNote: NoteEntry = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), content: '' };
+    const updated = [...noteEntries, newNote];
+    setNoteEntries(updated);
+    setExpandedNotes(prev => new Set([...prev, newNote.id]));
+    onUpdateTask?.({ noteEntries: updated, notes: '' });
+    requestAnimationFrame(() => noteRefs.current[newNote.id]?.focus());
+  };
+
+  const handleDeleteNote = (id: string) => {
+    const updated = noteEntries.filter(n => n.id !== id);
+    setNoteEntries(updated);
+    setExpandedNotes(prev => { const s = new Set(prev); s.delete(id); return s; });
+    onUpdateTask?.({ noteEntries: updated });
+  };
+
+  const handleUpdateNote = (id: string, content: string) => {
+    const updated = noteEntries.map(n => n.id === id ? { ...n, content } : n);
+    setNoteEntries(updated);
+    onUpdateTask?.({ noteEntries: updated });
   };
 
   const handleDescFormat = (prefix: string, suffix = prefix, lineMode = false) => {
@@ -213,7 +238,6 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
     setShowAddTime(false);
   };
 
-  const previewHtml = marked.parse(notes || '_No notes yet._') as string;
   const descPreviewHtml = marked.parse(description || '_No description yet._') as string;
 
   return (
@@ -703,57 +727,76 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
 
       {/* Notes */}
       <div style={{ padding: '12px 14px 0' }}>
-        {!showNotes && !notes ? (
-          <AddFieldButton label="Add note" onClick={() => setShowNotes(true)} />
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-              <FieldLabel style={{ marginBottom: 0, flex: 1 }}>Notes</FieldLabel>
-              <TabToggle active={notesTab} onChange={setNotesTab} options={['write', 'preview'] as const} />
-            </div>
-            {notesTab === 'write' && (
-              <>
-                <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
-                  <FormatBtn label="B" bold title="Bold" onClick={() => handleFormat('**')} />
-                  <FormatBtn label="I" italic title="Italic" onClick={() => handleFormat('_')} />
-                  <FormatBtn label="•" title="Bullet list" onClick={() => handleFormat('- ', '', true)} />
-                  <FormatBtn label="`" mono title="Inline code" onClick={() => handleFormat('`')} />
-                </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: noteEntries.length > 0 ? 8 : 0 }}>
+          <FieldLabel style={{ marginBottom: 0, flex: 1 }}>Notes</FieldLabel>
+          <button
+            onClick={handleAddNote}
+            style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: 'inherit' }}
+          >
+            + Add note
+          </button>
+        </div>
+        {noteEntries.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-faint)', fontStyle: 'italic' }}>No notes yet.</div>
+        )}
+        {noteEntries.map((note, i) => {
+          const expanded = expandedNotes.has(note.id);
+          const preview = note.content.split('\n')[0]?.slice(0, 60) || '';
+          return (
+            <div
+              key={note.id}
+              style={{
+                marginBottom: i < noteEntries.length - 1 ? 6 : 0,
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                onClick={() => setExpandedNotes(prev => {
+                  const s = new Set(prev);
+                  expanded ? s.delete(note.id) : s.add(note.id);
+                  return s;
+                })}
+                style={{ display: 'flex', alignItems: 'center', padding: '5px 8px 5px 10px', background: 'var(--color-bg)', cursor: 'pointer', gap: 6 }}
+              >
+                <span style={{ fontSize: 10, color: 'var(--color-text-faint)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                  {formatNoteDate(note.createdAt, timezone)}
+                </span>
+                {!expanded && preview && (
+                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {preview}
+                  </span>
+                )}
+                <span style={{ fontSize: 10, color: 'var(--color-text-faint)', flexShrink: 0, marginLeft: 'auto' }}>{expanded ? '▲' : '▼'}</span>
+                <button
+                  onClick={e => { e.stopPropagation(); handleDeleteNote(note.id); }}
+                  title="Delete note"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--color-text-faint)', padding: '0 0 0 4px', lineHeight: 1, flexShrink: 0 }}
+                >×</button>
+              </div>
+              {expanded && (
                 <textarea
-                  ref={notesRef}
-                  value={notes}
-                  onChange={e => { setNotes(e.target.value); onUpdateTask?.({ notes: e.target.value }); }}
-                  placeholder="Add notes, links, or context…"
-                  rows={5}
+                  ref={el => { noteRefs.current[note.id] = el; }}
+                  value={note.content}
+                  onChange={e => handleUpdateNote(note.id, e.target.value)}
+                  placeholder="Write a note…"
+                  rows={3}
                   style={{
                     width: '100%', boxSizing: 'border-box',
                     padding: '8px 10px',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
+                    background: 'transparent',
+                    border: 'none', borderTop: '1px solid var(--color-border)',
                     fontSize: 12, fontFamily: 'var(--font-mono)',
                     color: 'var(--color-text)', lineHeight: 1.6,
-                    resize: 'vertical', outline: 'none',
+                    resize: 'vertical', outline: 'none', display: 'block',
                   }}
                 />
-              </>
-            )}
-            {notesTab === 'preview' && (
-              <div
-                className="notes-preview"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-                style={{
-                  padding: '8px 10px', minHeight: 96,
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 12, lineHeight: 1.7,
-                  color: 'var(--color-text)',
-                }}
-              />
-            )}
-          </>
-        )}
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ flex: 1, minHeight: 16 }} />
