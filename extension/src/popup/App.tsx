@@ -81,11 +81,41 @@ export function App() {
   // ── Local (device-only) state ──────────────────────────────────────────────
   const [activeWsId, setActiveWsId]             = useLocalStorage<string>('pom_active_ws', 'default');
   const [lastSeenDate, setLastSeenDate, lastSeenDateLoading] = useLocalStorage<string>('pom_last_seen_date', '');
+  const [onboarded, setOnboarded, onboardedLoading] = useLocalStorage<boolean>('pom_onboarded', false);
 
   // ── Loading state ──────────────────────────────────────────────────────────
   const dbLoading = !migrated || allTasksArr === undefined || taskOrdersArr === undefined ||
     projectsArr === undefined || workspacesArr === undefined || rulesArr === undefined;
-  const loading = timerLoading || dbLoading || lastSeenDateLoading;
+  const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading;
+
+  // ── First-launch: seed sample data ────────────────────────────────────────
+  useEffect(() => {
+    if (onboarded || dbLoading || onboardedLoading) return;
+    const seed = async () => {
+      const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
+      const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
+      const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
+      const ts = now();
+      await db.transaction('rw', [db.tasks, db.taskOrders, db.habits], async () => {
+        await db.tasks.bulkPut([
+          { id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+          { id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+          { id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+          { id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+          { id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+        ]);
+        await db.taskOrders.put({ wsId: 'default', priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
+        await db.habits.bulkPut([
+          { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+          { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+          { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+        ]);
+      });
+      setOnboarded(true);
+    };
+    void seed();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboarded, dbLoading, onboardedLoading]);
 
   // ── Calendar sync on popup open ───────────────────────────────────────────
   useEffect(() => {
@@ -605,6 +635,14 @@ export function App() {
     );
   }
 
+  if (!onboarded) {
+    return (
+      <PopupShell center>
+        <WelcomeScreen onDismiss={() => setOnboarded(true)} />
+      </PopupShell>
+    );
+  }
+
   if (addingNoteText) {
     return (
       <PopupShell>
@@ -745,6 +783,57 @@ export function App() {
         onReorderToday={(p, t) => void reorderToday(p, t)}
       />
     </PopupShell>
+  );
+}
+
+function WelcomeScreen({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, maxWidth: 320 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>🍅</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text)', marginBottom: 6 }}>Welcome to Pomodoso!</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+          We've added a few things to help you get started.
+        </div>
+      </div>
+
+      <div style={{ width: '100%', display: 'flex', gap: 10 }}>
+        {/* Habits */}
+        <div style={{ flex: 1, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8 }}>Habits</div>
+          {[['💧', 'Drink Water'], ['📖', 'Read'], ['🏃', 'Exercise']].map(([icon, name]) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--color-text)', marginBottom: 5 }}>
+              <span>{icon}</span><span>{name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Tasks */}
+        <div style={{ flex: 1, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8 }}>Today</div>
+          {[['★', 'Set up workspace'], ['★', 'First pomodoro'], ['·', 'Add Calendar'], ['·', 'Edit habits'], ['·', 'Explore backlog']].map(([bullet, name], i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: bullet === '★' ? 'var(--color-accent)' : 'var(--color-text-muted)', marginBottom: 5 }}>
+              <span style={{ fontSize: 10, flexShrink: 0 }}>{bullet}</span><span style={{ color: 'var(--color-text)' }}>{name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
+        Edit, add, or delete anything — these are just examples.
+      </div>
+
+      <button
+        onClick={onDismiss}
+        style={{
+          width: '100%', padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          background: 'var(--color-accent)', color: '#fff', border: 'none',
+          borderRadius: 'var(--radius-md)',
+        }}
+      >
+        Get started →
+      </button>
+    </div>
   );
 }
 

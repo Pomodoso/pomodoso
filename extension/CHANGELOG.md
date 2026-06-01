@@ -1,8 +1,19 @@
 # Changelog
 
 
-## v0.0.5 (2026-xx-xx)
+## v0.0.5 (2026-06-01)
 
+### Extension
+
+- **Welcome screen & sample data** — New users now see a welcome screen on first install that previews the pre-seeded sample habits (Drink Water, Read, Exercise) and tasks (Set up workspace, First pomodoro, Connect Calendar, Customize habits, Explore backlog). Dismissing the screen marks the user as onboarded and the sample data is already in place — no extra step needed.
+
+- **WeekStrip now uses real habit data** — The 7-day completion grid in the Habits tab previously showed hardcoded placeholder data. It now queries actual `habitHistory` records from the local DB and computes per-day completions for the current week based on each habit's goal. Future days are faded out. Respects the "Week starts on" setting configured in Settings → General.
+
+- **Calendar connect UI improved** — The "not connected" state in Settings → Calendar now shows a structured layout with a short description, a bulleted benefit list ("Meetings appear in the Schedule tab", "Choose which calendars to sync", "Log time per meeting with one click"), and a prominent connect button. Previously it was a plain text paragraph.
+
+- **Fix: `weekStart is not defined` crash** — `HabitsContent` and `TodayHabits` were referencing `weekStart` and `timezone` without having them in scope, crashing the Habits tab on every open. Fixed by propagating the settings as props through both components.
+
+---
 
 ## v0.0.4 (2026-06-01)
 

@@ -88,15 +88,6 @@ interface HomeStateProps {
 }
 
 const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
-const WEEK_COMPLETIONS: { count: number; kind: WeekCellKind; isToday?: boolean }[] = [
-  { count: 4, kind: 'full' },
-  { count: 4, kind: 'full' },
-  { count: 3, kind: 'partial' },
-  { count: 4, kind: 'full' },
-  { count: 3, kind: 'partial' },
-  { count: 2, kind: 'partial' },
-  { count: 2, kind: 'partial', isToday: true },
-];
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   todo: 'Todo',
@@ -1032,6 +1023,8 @@ export function HomeState({
                 habits={todayHabits}
                 habitCounters={habitCounters}
                 habitDone={habitDone}
+                weekStart={weekStart}
+                timezone={timezone}
                 onCounterChange={handleHabitCounterChange}
                 onToggle={handleHabitToggle}
               />
@@ -1083,6 +1076,8 @@ export function HomeState({
                   habitCounters={habitCounters}
                   habitDone={habitDone}
                   showInToday={showHabitsInToday}
+                  weekStart={weekStart}
+                  timezone={timezone}
                   onCounterChange={handleHabitCounterChange}
                   onToggle={handleHabitToggle}
                   onToggleShowInToday={() => setShowHabitsInToday(v => !v)}
@@ -1347,11 +1342,13 @@ function TodayMeetingRow({ meeting, timezone, onStart, onSelect }: {
 }
 
 function TodayHabits({
-  habits, habitCounters, habitDone, onCounterChange, onToggle,
+  habits, habitCounters, habitDone, weekStart, timezone, onCounterChange, onToggle,
 }: {
   habits: HabitDef[];
   habitCounters: Record<string, number>;
   habitDone: Record<string, boolean>;
+  weekStart: number;
+  timezone: string;
   onCounterChange: (id: string, delta: number) => void;
   onToggle: (id: string) => void;
 }) {
@@ -3453,6 +3450,8 @@ interface HabitsContentProps {
   habitCounters: Record<string, number>;
   habitDone: Record<string, boolean>;
   showInToday: boolean;
+  weekStart: number;
+  timezone: string;
   onCounterChange: (id: string, delta: number) => void;
   onToggle: (id: string) => void;
   onToggleShowInToday: () => void;
@@ -3461,7 +3460,7 @@ interface HabitsContentProps {
   onDeleteHabit: (id: string) => void;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit }: HabitsContentProps) {
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -3538,7 +3537,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, onCounte
         })}
       </div>
 
-      <WeekStrip habits={habits} />
+      <WeekStrip habits={habits} weekStart={weekStart} timezone={timezone} />
     </div>
   );
 }
@@ -3750,9 +3749,52 @@ function HabitIcon({ kind, size = 32 }: { kind: HabitIconKind; size?: number }) 
   );
 }
 
-function WeekStrip({ habits }: { habits: HabitDef[] }) {
-  const totalCompletions = WEEK_COMPLETIONS.reduce((sum, d) => sum + d.count, 0);
-  const maxCompletions = WEEK_DAYS.length * habits.length;
+function WeekStrip({ habits, weekStart, timezone }: { habits: HabitDef[]; weekStart: number; timezone: string }) {
+  const today = localDate(timezone);
+  const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7; // 0=Mon…6=Sun
+  const daysSinceStart = (todayDow - weekStart + 7) % 7;
+
+  // Build the 7 dates of this week starting from weekStart, only up to today
+  const weekDates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    weekDates.push(localDate(timezone, i - daysSinceStart));
+  }
+
+  const cutoff = weekDates[0]!;
+  const habitIds = new Set(habits.map(h => h.id));
+
+  const records = useLiveQuery(
+    () => db.habitHistory.where('date').between(cutoff, today, true, true).toArray(),
+    [cutoff, today],
+  ) ?? [];
+
+  const recordsByDate = new Map<string, typeof records>();
+  for (const r of records) {
+    if (!habitIds.has(r.habitId)) continue;
+    if (!recordsByDate.has(r.date)) recordsByDate.set(r.date, []);
+    recordsByDate.get(r.date)!.push(r);
+  }
+
+  const habitMap = new Map(habits.map(h => [h.id, h]));
+
+  const cells = weekDates.map(date => {
+    const isFuture = date > today;
+    const dayRecords = recordsByDate.get(date) ?? [];
+    let completed = 0;
+    for (const r of dayRecords) {
+      const h = habitMap.get(r.habitId);
+      if (!h) continue;
+      if (h.kind === 'boolean' && r.done) completed++;
+      else if (h.kind === 'counter' && (r.count ?? 0) >= (h.goal ?? 1)) completed++;
+    }
+    const total = habits.length;
+    const kind: WeekCellKind = isFuture ? 'empty' : total === 0 ? 'empty' : completed >= total ? 'full' : completed > 0 ? 'partial' : 'empty';
+    return { date, label: WEEK_DAYS[(weekDates.indexOf(date) + weekStart) % 7]!, completed, total, kind, isToday: date === today, isFuture };
+  });
+
+  const totalCompletions = cells.reduce((s, c) => s + c.completed, 0);
+  const maxCompletions = cells.filter(c => !c.isFuture).length * habits.length;
+
   return (
     <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -3760,14 +3802,13 @@ function WeekStrip({ habits }: { habits: HabitDef[] }) {
         <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>{totalCompletions} / {maxCompletions} completions</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-        {WEEK_DAYS.map((day, i) => {
-          const cell = WEEK_COMPLETIONS[i]!;
-          const isFull = cell.kind === 'full';
-          const isPartial = cell.kind === 'partial';
+        {cells.map(({ date, label, completed, kind, isToday, isFuture }) => {
+          const isFull = kind === 'full';
+          const isPartial = kind === 'partial';
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div key={date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
               <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.3px', textTransform: 'uppercase', color: 'var(--color-text-faint)' }}>
-                {day}
+                {label}
               </span>
               <div style={{
                 width: '100%', aspectRatio: '1', borderRadius: 4,
@@ -3776,9 +3817,10 @@ function WeekStrip({ habits }: { habits: HabitDef[] }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: 600,
                 color: isFull ? '#fff' : isPartial ? 'var(--color-success)' : 'var(--color-text-muted)',
-                boxShadow: cell.isToday ? '0 0 0 1.5px var(--color-accent)' : 'none',
+                boxShadow: isToday ? '0 0 0 1.5px var(--color-accent)' : 'none',
+                opacity: isFuture ? 0.35 : 1,
               }}>
-                {cell.count}
+                {!isFuture && completed > 0 ? completed : ''}
               </div>
             </div>
           );

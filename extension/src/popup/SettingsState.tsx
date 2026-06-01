@@ -1100,20 +1100,37 @@ function WorkspaceCalendarSection({ wsId, wsName, wsColor, timezone, defaultExpa
         <div style={{ borderTop: '1px solid var(--color-border)', padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {!connection ? (
             <>
-              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                Connect Google Calendar to see today's meetings for <strong>{wsName}</strong>. New meetings import with tracking off — enable each one you want to log time for.
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>
+                  See today's meetings in Pomodoso
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                  Connect Google Calendar for <strong>{wsName}</strong> to bring your schedule into the popup and track time spent in meetings.
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[
+                  'Meetings appear in the Schedule tab',
+                  'Choose which calendars to sync',
+                  'Log time per meeting with one click',
+                ].map(benefit => (
+                  <div key={benefit} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--color-text-muted)' }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-accent)', flexShrink: 0 }} />
+                    {benefit}
+                  </div>
+                ))}
               </div>
               <button
                 onClick={handleConnect}
                 disabled={connecting}
                 style={{
-                  alignSelf: 'flex-start', padding: '7px 14px', fontSize: 12, fontWeight: 600,
+                  padding: '8px 0', fontSize: 12, fontWeight: 600, width: '100%',
                   background: 'var(--color-accent)', color: '#fff',
                   border: 'none', borderRadius: 'var(--radius-md)', cursor: connecting ? 'not-allowed' : 'pointer',
                   opacity: connecting ? 0.7 : 1,
                 }}
               >
-                {connecting ? 'Connecting…' : 'Connect Google Calendar'}
+                {connecting ? 'Connecting…' : '◫  Connect Google Calendar'}
               </button>
               {error && <div style={{ fontSize: 11, color: 'var(--color-accent)' }}>{error}</div>}
             </>
