@@ -1,7 +1,12 @@
 # Changelog
 
-## v0.0.3 (2026-xx-xx)
+## v0.0.3 (2026-06-01)
 
+### Extension
+
+- **Import / Export de datos** — Nueva sección "Data" en Settings. Export descarga un JSON (`pomodoso-YYYY-MM-DD.json`) con todas las tablas: tasks, projects, workspaces, habits, habit history, meetings, task orders, detection rules y settings. Import restaura ese archivo reemplazando toda la DB — muestra un warning de confirmación antes de proceder y recarga la extensión al terminar. Útil para mover datos entre instancias (prod ↔ dev) o como backup. Las conexiones OAuth de Google Calendar no se transfieren entre perfiles de Chrome, pero los registros de meetings sí.
+
+---
 
 ## v0.0.2 (2026-06-01)
 

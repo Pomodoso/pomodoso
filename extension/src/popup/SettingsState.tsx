@@ -13,6 +13,7 @@ import {
 } from '../calendarSync';
 import type { ExtensionResponse } from '@pomodoso/types';
 import { db } from '../db';
+import { exportDb, importDb } from '../backup';
 
 
 const PRESET_CATALOG = [
@@ -26,7 +27,7 @@ const PRESET_CATALOG = [
   { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
 ];
 
-type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar';
+type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data';
 
 interface Workspace {
   id: string;
@@ -93,6 +94,10 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
     return <GeneralPage timezone={timezone} maxPriorities={maxPriorities} onUpdateTimezone={onUpdateTimezone} onUpdateMaxPriorities={onUpdateMaxPriorities} onBack={() => setPage('main')} />;
   }
 
+  if (page === 'data') {
+    return <DataPage onBack={() => setPage('main')} />;
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <SubPageHeader title="Settings" onBack={onBack} />
@@ -134,6 +139,12 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
               title="General"
               description={`${timezone} · max ${maxPriorities} priorities`}
               onClick={() => setPage('general')}
+            />
+            <NavRow
+              icon="⇅"
+              title="Data"
+              description="Export or import all your data"
+              onClick={() => setPage('data')}
             />
           </NavGroup>
         </div>
@@ -1116,6 +1127,139 @@ function WorkspaceCalendarSection({ wsId, wsName, wsColor, timezone, defaultExpa
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Data sub-page ─────────────────────────────────────────────────────────────
+
+function DataPage({ onBack }: { onBack: () => void }) {
+  const [exporting, setExporting] = useState(false);
+  const [importState, setImportState] = useState<'idle' | 'confirm' | 'loading' | 'error'>('idle');
+  const [importError, setImportError] = useState('');
+  const [pendingJson, setPendingJson] = useState<string | null>(null);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const json = await exportDb();
+      const date = new Date().toISOString().slice(0, 10);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pomodoso-${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setPendingJson(text);
+      setImportState('confirm');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingJson) return;
+    setImportState('loading');
+    try {
+      await importDb(pendingJson);
+      window.location.reload();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Unknown error');
+      setImportState('error');
+    }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '12px 14px',
+    marginBottom: 10,
+  };
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <SubPageHeader title="Data" onBack={onBack} />
+      <div className="scroll-area">
+        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+          {/* Export */}
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 4 }}>Export</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+              Download all your tasks, habits, workspaces, and settings as a JSON file.
+            </div>
+            <button
+              onClick={() => void handleExport()}
+              disabled={exporting}
+              style={{ width: '100%', padding: '7px 0', fontSize: 12, fontWeight: 600, cursor: exporting ? 'default' : 'pointer', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', opacity: exporting ? 0.6 : 1 }}
+            >
+              {exporting ? 'Exporting…' : '↓ Export data'}
+            </button>
+          </div>
+
+          {/* Import */}
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 4 }}>Import</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+              Restore data from a previously exported file. This replaces all current data.
+            </div>
+
+            {importState === 'idle' && (
+              <>
+                <input id="import-file" type="file" accept=".json" onChange={handleFileChange} style={{ display: 'none' }} />
+                <label htmlFor="import-file" style={{ display: 'block', width: '100%', padding: '7px 0', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+                  ↑ Choose file…
+                </label>
+              </>
+            )}
+
+            {importState === 'confirm' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--color-accent)', background: 'rgba(200,85,61,0.07)', border: '1px solid rgba(200,85,61,0.2)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', lineHeight: 1.5 }}>
+                  This will replace ALL your current data. This cannot be undone.
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => { setImportState('idle'); setPendingJson(null); }} style={{ flex: 1, padding: '6px 0', fontSize: 11, cursor: 'pointer', background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                    Cancel
+                  </button>
+                  <button onClick={() => void handleConfirmImport()} style={{ flex: 2, padding: '6px 0', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)' }}>
+                    Replace all data
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importState === 'loading' && (
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textAlign: 'center', padding: '6px 0' }}>Importing…</div>
+            )}
+
+            {importState === 'error' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--color-accent)', background: 'rgba(200,85,61,0.07)', border: '1px solid rgba(200,85,61,0.2)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', lineHeight: 1.5 }}>
+                  {importError}
+                </div>
+                <button onClick={() => setImportState('idle')} style={{ padding: '6px 0', fontSize: 11, cursor: 'pointer', background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
