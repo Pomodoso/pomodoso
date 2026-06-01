@@ -42,7 +42,7 @@ interface HomeStateProps {
   timerState: TimerState;
   timerSettings: TimerSettings;
   detectedTicket: TicketRef | null;
-  detectedExistingTask: SelectedTask | undefined;
+  detectedExistingTasks: SelectedTask[];
   todayPriorities: TodayTask[];
   todayTasks: TodayTask[];
   backlog: SelectedTask[];
@@ -66,6 +66,8 @@ interface HomeStateProps {
   onStartNextPomo: () => Promise<void>;
   onCancelTimer: () => Promise<void>;
   onUpdateTaskStatus: (taskId: string, status: TaskStatus) => void;
+  linkedTasks: SelectedTask[];
+  onSelectLinkedTask: (task: SelectedTask) => void;
   onAddToBacklog: (ticket: TicketRef) => void;
   onLinkToTask: (ticket: TicketRef) => void;
   onOpenSettings: () => void;
@@ -147,15 +149,17 @@ function formatElapsed(seconds: number): string {
 }
 
 export function HomeState({
-  timerState, timerSettings, detectedTicket, detectedExistingTask, todayPriorities, todayTasks, backlog, projects, prioritiesFull,
+  timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, projects, prioritiesFull,
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
+  linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('today');
+  const [linkedDismissed, setLinkedDismissed] = useState(false);
   const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const today = localDate(timezone);
@@ -812,19 +816,20 @@ export function HomeState({
 
       {/* ── Detection banner ── */}
       {(() => {
-        if (!detectedTicket || isBreak || detectedTicket.external_id === dismissedTicketId || !!detectedExistingTask) return null;
-        const bannerMode = detectedExistingTask ? 'view' : 'add';
+        if (!detectedTicket || isBreak || detectedTicket.external_id === dismissedTicketId) return null;
+        const todayIds = new Set([...todayPriorities, ...todayTasks].map(t => t.id));
+        const visibleTasks = detectedExistingTasks.filter(t => !todayIds.has(t.id));
+        const bannerMode = visibleTasks.length > 0 ? 'view' : (detectedExistingTasks.length > 0 ? null : 'add');
+        if (bannerMode === null) return null;
         return (
           <DetectionBanner
             ticket={detectedTicket}
             mode={bannerMode}
-            relatedTask={detectedExistingTask}
-            onAction={() => {
-              if (bannerMode === 'view' && detectedExistingTask) onSelectTask(detectedExistingTask);
-              else onAddToBacklog(detectedTicket);
-            }}
+            relatedTasks={visibleTasks}
+            onAdd={() => onAddToBacklog(detectedTicket)}
+            onSelect={onSelectTask}
             onLink={() => onLinkToTask(detectedTicket)}
-            onFollowup={bannerMode === 'view' && detectedExistingTask ? () => onCreateFollowup(detectedExistingTask.id) : undefined}
+            onCreateFollowup={onCreateFollowup}
             onDismiss={() => {
               setDismissedTicketId(detectedTicket.external_id);
               void chrome.storage.session.set({ dismissed_ticket_id: detectedTicket.external_id });
@@ -832,6 +837,15 @@ export function HomeState({
           />
         );
       })()}
+
+      {/* ── Linked tasks banner ── */}
+      {linkedTasks.length > 0 && !linkedDismissed && !isBreak && (
+        <LinkedTasksBanner
+          tasks={linkedTasks}
+          onSelect={onSelectLinkedTask}
+          onDismiss={() => setLinkedDismissed(true)}
+        />
+      )}
 
       {/* ── Selection banner ── */}
       {selectedText && !selectionDismissed && !isActive && !isBreak && (
@@ -2662,9 +2676,9 @@ function SuggestionCard({ label, accentColor, children, primaryLabel, secondaryL
   label: string;
   accentColor: string;
   children: React.ReactNode;
-  primaryLabel: string;
+  primaryLabel?: string;
   secondaryLabel?: string;
-  onPrimary: () => void;
+  onPrimary?: () => void;
   onSecondary?: () => void;
   onDismiss: () => void;
 }) {
@@ -2690,8 +2704,8 @@ function SuggestionCard({ label, accentColor, children, primaryLabel, secondaryL
             style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--color-text-faint)', padding: 0, lineHeight: 1 }}
           >×</button>
         </div>
-        <div style={{ marginBottom: 8 }}>{children}</div>
-        <div style={{ display: 'flex', gap: 5 }}>
+        <div style={{ marginBottom: primaryLabel ? 8 : 0 }}>{children}</div>
+        {primaryLabel && onPrimary && <div style={{ display: 'flex', gap: 5 }}>
           <button
             onClick={onPrimary}
             style={{ flex: 1, padding: '4px 0', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)' }}
@@ -2706,7 +2720,7 @@ function SuggestionCard({ label, accentColor, children, primaryLabel, secondaryL
               {secondaryLabel}
             </button>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -2752,13 +2766,85 @@ const PROVIDER_ICONS: Record<string, string> = {
   custom: '◎',
 };
 
-function DetectionBanner({ ticket, mode, relatedTask, onAction, onLink, onFollowup, onDismiss }: {
+function LinkedTasksBanner({ tasks, onSelect, onDismiss }: {
+  tasks: SelectedTask[];
+  onSelect: (task: SelectedTask) => void;
+  onDismiss: () => void;
+}) {
+  const label = tasks.length === 1 ? 'Linked task' : `${tasks.length} linked tasks`;
+  const shown = tasks.slice(0, 3);
+  return (
+    <div style={{ padding: '8px 14px', flexShrink: 0 }}>
+      <div style={{
+        borderRadius: 'var(--radius-md)',
+        borderTop: '1px solid var(--color-border)',
+        borderRight: '1px solid var(--color-border)',
+        borderBottom: '1px solid var(--color-border)',
+        borderLeft: '3px solid var(--color-success)',
+        background: 'var(--color-surface)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+        padding: '8px 10px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-text-muted)', flex: 1 }}>
+            {label}
+          </span>
+          <button
+            onClick={onDismiss}
+            style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--color-text-faint)', padding: 0, lineHeight: 1 }}
+          >×</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {shown.map(task => (
+            <button
+              key={task.id}
+              onClick={() => onSelect(task)}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+                fontSize: 12, color: 'var(--color-text)', lineHeight: 1.4,
+                padding: '5px 8px',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-sm)',
+                fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', gap: 6,
+                overflow: 'hidden',
+              }}
+            >
+              <span style={{ color: 'var(--color-text-faint)', fontSize: 10, flexShrink: 0 }}>↳</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {task.title || <span style={{ fontStyle: 'italic', color: 'var(--color-text-faint)' }}>(untitled)</span>}
+              </span>
+              {task.status === 'done' && (
+                <span style={{ fontSize: 9, color: 'var(--color-success)', fontWeight: 600, flexShrink: 0 }}>DONE</span>
+              )}
+              {task.status === 'in_progress' && (
+                <span style={{ fontSize: 9, color: 'var(--color-warning)', fontWeight: 600, flexShrink: 0 }}>WIP</span>
+              )}
+              {task.status === 'delayed' && (
+                <span style={{ fontSize: 9, color: '#7B5DB4', fontWeight: 600, flexShrink: 0 }}>DELAYED</span>
+              )}
+            </button>
+          ))}
+          {tasks.length > 3 && (
+            <span style={{ fontSize: 11, color: 'var(--color-text-faint)', padding: '2px 8px' }}>
+              +{tasks.length - 3} more
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetectionBanner({ ticket, mode, relatedTasks, onAdd, onSelect, onLink, onCreateFollowup, onDismiss }: {
   ticket: TicketRef;
   mode: 'add' | 'view';
-  relatedTask?: SelectedTask;
-  onAction: () => void;
+  relatedTasks: SelectedTask[];
+  onAdd: () => void;
+  onSelect: (task: SelectedTask) => void;
   onLink: () => void;
-  onFollowup?: () => void;
+  onCreateFollowup: (parentId: string) => void;
   onDismiss: () => void;
 }) {
   const titlePreview = ticket.title.length > 60 ? ticket.title.slice(0, 60) + '…' : ticket.title;
@@ -2766,10 +2852,10 @@ function DetectionBanner({ ticket, mode, relatedTask, onAction, onLink, onFollow
     <SuggestionCard
       label="On this page"
       accentColor="var(--color-info)"
-      primaryLabel={mode === 'add' ? '+ Backlog' : 'View task'}
-      {...(mode === 'add' ? { secondaryLabel: 'Add link to...', onSecondary: onLink } : {})}
-      {...(mode === 'view' && onFollowup ? { secondaryLabel: '+ Follow-up', onSecondary: onFollowup } : {})}
-      onPrimary={onAction}
+      primaryLabel={mode === 'add' ? '+ Backlog' : undefined}
+      secondaryLabel={mode === 'add' ? 'Add link to...' : undefined}
+      onPrimary={mode === 'add' ? onAdd : undefined}
+      onSecondary={mode === 'add' ? onLink : undefined}
       onDismiss={onDismiss}
     >
       <div style={{
@@ -2786,31 +2872,42 @@ function DetectionBanner({ ticket, mode, relatedTask, onAction, onLink, onFollow
         )}
         <span>{titlePreview}</span>
       </div>
-      {mode === 'view' && relatedTask && (
-        <div style={{
-          marginTop: 4, fontSize: 11, color: 'var(--color-text-muted)',
-          padding: '3px 8px',
-          background: 'var(--color-bg)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-sm)',
-          display: 'flex', alignItems: 'center', gap: 6,
-          overflow: 'hidden',
-        }}>
+      {mode === 'view' && relatedTasks.map(task => (
+        <div
+          key={task.id}
+          style={{
+            marginTop: 4, fontSize: 11, color: 'var(--color-text-muted)',
+            padding: '3px 8px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex', alignItems: 'center', gap: 6,
+            overflow: 'hidden',
+          }}
+        >
           <span style={{ color: 'var(--color-text-faint)', fontSize: 10 }}>↳</span>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {relatedTask.title}
-          </span>
-          {relatedTask.status === 'done' && (
+          <button
+            onClick={() => onSelect(task)}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', fontSize: 'inherit', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {task.title}
+          </button>
+          {task.status === 'done' && (
             <span style={{ fontSize: 9, color: 'var(--color-success)', fontWeight: 600, flexShrink: 0 }}>DONE</span>
           )}
-          {relatedTask.status === 'in_progress' && (
+          {task.status === 'in_progress' && (
             <span style={{ fontSize: 9, color: 'var(--color-warning)', fontWeight: 600, flexShrink: 0 }}>WIP</span>
           )}
-          {relatedTask.status === 'delayed' && (
+          {task.status === 'delayed' && (
             <span style={{ fontSize: 9, color: '#7B5DB4', fontWeight: 600, flexShrink: 0 }}>DELAYED</span>
           )}
+          <button
+            onClick={() => onCreateFollowup(task.id)}
+            title="Create follow-up"
+            style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--color-text-faint)', padding: '0 2px', fontFamily: 'inherit' }}
+          >↩</button>
         </div>
-      )}
+      ))}
     </SuggestionCard>
   );
 }

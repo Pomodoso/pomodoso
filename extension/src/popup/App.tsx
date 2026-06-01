@@ -213,14 +213,31 @@ export function App() {
     return t.workspaceId === activeWsId || t.workspaceId == null;
   });
 
-  const detectedExistingTask = detectedTicket
-    ? Object.values(allTasks).find(t => {
+  const detectedExistingTasks = detectedTicket
+    ? Object.values(allTasks).filter(t => {
         if (t.deletedAt) return false;
         if (t.ticketId === detectedTicket.external_id) return true;
         const url = detectedTicket.external_url;
         return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
       })
-    : undefined;
+    : [];
+
+  const [tabUrl, setTabUrl] = useState('');
+  useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (tab?.url) setTabUrl(tab.url);
+    });
+  }, []);
+
+  const detectedIds = new Set(detectedExistingTasks.map(t => t.id));
+  const linkedTasks = tabUrl
+    ? Object.values(allTasks).filter(t => {
+        if (t.deletedAt) return false;
+        if (detectedIds.has(t.id)) return false;
+        if (priorityIds.includes(t.id) || todayIds.includes(t.id)) return false;
+        return t.links?.some(l => l.url === tabUrl || l.url.startsWith(tabUrl) || tabUrl.startsWith(l.url));
+      })
+    : [];
 
   const isInToday = (id: string) => priorityIds.includes(id) || todayIds.includes(id);
 
@@ -281,7 +298,37 @@ export function App() {
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
     await db.tasks.update(id, { ...updates, updatedAt: now() });
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev);
-  }, []);
+
+    if (updates.workspaceId !== undefined) {
+      const newWsId = updates.workspaceId ?? 'default';
+      await db.transaction('rw', [db.taskOrders], async () => {
+        // Scan every order — remove the task from any workspace that isn't the new one
+        const allOrders = await db.taskOrders.toArray();
+        let wasInPriorities = false;
+        let wasInToday = false;
+        for (const order of allOrders) {
+          if (order.wsId === newWsId) continue;
+          const inP = order.priorityIds.includes(id);
+          const inT = order.todayIds.includes(id);
+          if (!inP && !inT) continue;
+          wasInPriorities = wasInPriorities || inP;
+          wasInToday = wasInToday || inT;
+          await db.taskOrders.put({
+            wsId: order.wsId,
+            priorityIds: order.priorityIds.filter(i => i !== id),
+            todayIds: order.todayIds.filter(i => i !== id),
+          });
+        }
+        if (!wasInPriorities && !wasInToday) return;
+        const newOrder = await db.taskOrders.get(newWsId) ?? { wsId: newWsId, priorityIds: [], todayIds: [] };
+        await db.taskOrders.put({
+          wsId: newWsId,
+          priorityIds: wasInPriorities ? [...newOrder.priorityIds, id] : newOrder.priorityIds,
+          todayIds: wasInToday ? [...newOrder.todayIds, id] : newOrder.todayIds,
+        });
+      });
+    }
+  }, [allTasks]);
 
   const deleteTask = useCallback(async (id: string) => {
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
@@ -633,7 +680,9 @@ export function App() {
         timerState={timerState}
         timerSettings={timerSettings}
         detectedTicket={detectedTicket}
-        detectedExistingTask={detectedExistingTask}
+        detectedExistingTasks={detectedExistingTasks}
+        linkedTasks={linkedTasks}
+        onSelectLinkedTask={setSelectedTask}
         todayPriorities={todayPriorities}
         todayTasks={todayTasks}
         backlog={backlog}

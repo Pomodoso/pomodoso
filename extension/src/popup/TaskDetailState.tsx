@@ -270,6 +270,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
             <input
               value={ticketId}
               onChange={e => setTicketId(e.target.value)}
+              onBlur={() => onUpdateTask?.({ ticketId: ticketId.trim() || null })}
               placeholder="e.g. INT-455"
               style={{ ...inputBase, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-info)' }}
             />
