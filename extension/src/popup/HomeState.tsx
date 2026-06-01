@@ -1493,6 +1493,116 @@ function TaskMeasurements({ task }: { task: SelectedTask }) {
   );
 }
 
+function TaskTooltip({
+  task,
+  project,
+  workspaceBadge,
+  anchor,
+}: {
+  task: SelectedTask;
+  project?: Project;
+  workspaceBadge?: Workspace;
+  anchor: { top: number; left: number; width: number };
+}) {
+  const timeStr = fmtTotalTime(task.timeLogs);
+  const pomoCount = task.timeLogs?.filter(l => l.mode === 'pomodoro').length ?? 0;
+  const links = task.links?.length ?? 0;
+  const isFollowup = !!task.parentId;
+
+  const statusBadge: { label: string; color: string } | null =
+    task.status === 'in_progress' ? { label: 'WIP', color: 'var(--color-warning)' }
+    : task.status === 'delayed'   ? { label: 'Delayed', color: '#7B5DB4' }
+    : task.status === 'cancelled' ? { label: 'Cancelled', color: 'var(--color-text-muted)' }
+    : null;
+
+  const hasTopRow = !!(statusBadge || task.ticketId);
+  const hasMiddleRow = !!(timeStr || links > 0 || isFollowup);
+  const hasBottomRow = !!(project || workspaceBadge);
+  if (!hasTopRow && !hasMiddleRow && !hasBottomRow) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: anchor.top - 4,
+      left: anchor.left,
+      transform: 'translateY(-100%)',
+      zIndex: 9999,
+      minWidth: Math.max(anchor.width, 220),
+      padding: '8px 10px',
+      background: 'var(--color-bg)',
+      border: '1px solid var(--color-border-strong)',
+      borderRadius: 'var(--radius-md)',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+      pointerEvents: 'none',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 6,
+      fontSize: 11,
+    }}>
+      {hasTopRow && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {statusBadge && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600, color: statusBadge.color }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusBadge.color, flexShrink: 0 }} />
+              {statusBadge.label}
+            </span>
+          )}
+          {task.ticketId && (
+            <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-info)' }}>
+              {task.ticketId}
+            </span>
+          )}
+        </div>
+      )}
+      {hasTopRow && (hasMiddleRow || hasBottomRow) && (
+        <div style={{ height: 1, background: 'var(--color-border)', margin: '0 -10px' }} />
+      )}
+      {hasMiddleRow && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--color-text-muted)' }}>
+          {timeStr && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>⏱</span>
+              <span>{timeStr}</span>
+              {pomoCount > 0 && <span style={{ color: 'var(--color-text-faint)' }}>· 🍅 {pomoCount}</span>}
+            </span>
+          )}
+          {links > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>🔗</span>
+              <span>{links} link{links > 1 ? 's' : ''}</span>
+            </span>
+          )}
+          {isFollowup && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>↩</span>
+              <span>Follow-up task</span>
+            </span>
+          )}
+        </div>
+      )}
+      {hasBottomRow && (hasTopRow || hasMiddleRow) && (
+        <div style={{ height: 1, background: 'var(--color-border)', margin: '0 -10px' }} />
+      )}
+      {hasBottomRow && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--color-text-muted)' }}>
+          {project && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: project.color, flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</span>
+            </span>
+          )}
+          {workspaceBadge && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: workspaceBadge.color, flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workspaceBadge.name}</span>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DroppableArea({ id }: { id: string }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -1535,11 +1645,15 @@ interface TaskRowProps {
 function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunning, timerHasTask, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
   const isDone = task.status === 'done';
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
+  const cardRef = useRef<HTMLDivElement>(null);
   // Fully interactive when no task is attached to the running timer
   const canPlay = !timerRunning || !timerHasTask || isActiveTask;
   const isSelectable = !timerRunning || !timerHasTask || isActiveTask;
   return (
     <div
+      ref={cardRef}
       onClick={isSelectable ? onSelect : undefined}
       role={isSelectable ? 'button' : undefined}
       tabIndex={isSelectable ? 0 : undefined}
@@ -1612,56 +1726,24 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
           {isDone ? '✓' : ''}
         </button>
       )}
+      {tooltipAnchor && <TaskTooltip task={task} project={project} workspaceBadge={workspaceBadge} anchor={tooltipAnchor} />}
       <div
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
-        style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, cursor: 'pointer' }}
+        onMouseEnter={() => {
+          clearTimeout(tooltipTimer.current);
+          tooltipTimer.current = setTimeout(() => {
+            const rect = cardRef.current?.getBoundingClientRect();
+            if (rect) setTooltipAnchor({ top: rect.top, left: rect.left, width: rect.width });
+          }, 250);
+        }}
+        onMouseLeave={() => { clearTimeout(tooltipTimer.current); setTooltipAnchor(null); }}
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
       >
-        {/* Title — full width */}
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)', textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)', textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
           {task.title || <span style={{ color: 'var(--color-text-faint)', fontStyle: 'italic' }}>(untitled)</span>}
         </span>
-        {/* Row 1: status + ticket + measurements */}
-        {(() => {
-          const statusBadge: { label: string; color: string } | null =
-            task.status === 'in_progress' && !isActiveTask ? { label: 'WIP',       color: 'var(--color-warning)' }
-            : task.status === 'delayed'                    ? { label: 'Delayed',   color: '#7B5DB4' }
-            : task.status === 'cancelled'                  ? { label: 'Cancelled', color: 'var(--color-text-muted)' }
-            : null;
-          const hasDetails = task.ticketId || task.timeLogs?.length || task.links?.length || task.parentId;
-          if (!statusBadge && !hasDetails) return null;
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1 }}>
-              {statusBadge && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, color: statusBadge.color }}>
-                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusBadge.color, flexShrink: 0 }} />
-                  {statusBadge.label}
-                </span>
-              )}
-              {task.ticketId && (
-                <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-info)' }}>
-                  {task.ticketId}
-                </span>
-              )}
-              <TaskMeasurements task={task} />
-            </div>
-          );
-        })()}
-        {/* Row 2: project + workspace labels */}
-        {(project || workspaceBadge) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, lineHeight: 1 }}>
-            {project && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: project.color }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: project.color, flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{project.name}</span>
-              </span>
-            )}
-            {workspaceBadge && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: workspaceBadge.color }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: workspaceBadge.color, flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>{workspaceBadge.name}</span>
-              </span>
-            )}
-          </div>
+        {workspaceBadge && (
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: workspaceBadge.color, flexShrink: 0 }} title={workspaceBadge.name} />
         )}
       </div>
       {isDone ? (
@@ -1707,14 +1789,19 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
   onSelect: () => void;
 }) {
   const isAdded = isInPriorities || isInTasks;
+  const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
+  const cardRef = useRef<HTMLDivElement>(null);
 
   return (
     <div
+      ref={cardRef}
       onClick={onSelect}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect(); }}
       style={{
+        position: 'relative',
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '6px 8px 6px 9px',
         background: 'var(--color-surface)',
@@ -1726,6 +1813,7 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
         cursor: 'pointer',
       }}
     >
+      {tooltipAnchor && <TaskTooltip task={task} project={project} anchor={tooltipAnchor} />}
       <span
         style={{
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 3, alignSelf: 'flex-start',
@@ -1733,31 +1821,22 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
         }}
         title={STATUS_LABELS[task.status]}
       />
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <span style={{ fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div
+        onMouseEnter={() => {
+          clearTimeout(tooltipTimer.current);
+          tooltipTimer.current = setTimeout(() => {
+            const rect = cardRef.current?.getBoundingClientRect();
+            if (rect) setTooltipAnchor({ top: rect.top, left: rect.left, width: rect.width });
+          }, 250);
+        }}
+        onMouseLeave={() => { clearTimeout(tooltipTimer.current); setTooltipAnchor(null); }}
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        <span style={{ fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
           {task.title || <span style={{ color: 'var(--color-text-faint)', fontStyle: 'italic' }}>(untitled)</span>}
         </span>
-        {(task.ticketId || task.timeLogs?.length || task.links?.length || task.parentId || project) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1 }}>
-            {task.status === 'in_progress' && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, color: 'var(--color-warning)' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-warning)', flexShrink: 0 }} />
-                WIP
-              </span>
-            )}
-            {task.ticketId && (
-              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-info)' }}>
-                {task.ticketId}
-              </span>
-            )}
-            <TaskMeasurements task={task} />
-            {project && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: project.color }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: project.color, flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{project.name}</span>
-              </span>
-            )}
-          </div>
+        {project && (
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: project.color, flexShrink: 0 }} title={project.name} />
         )}
       </div>
       {isAdded ? (
