@@ -919,6 +919,7 @@ export function HomeState({
                           isActiveTask={isActive && timerState.taskId === task.id}
                           timerRunning={isActive}
                           timerHasTask={hasTask}
+                          focusSeconds={timerSettings.focusSeconds}
                           onSelect={() => onSelectTask(task)}
                           onPlay={() => handlePlayTask(task)}
                           onDone={() => void onDoneTask()}
@@ -945,6 +946,7 @@ export function HomeState({
                           isActiveTask={isActive && timerState.taskId === task.id}
                           timerRunning={isActive}
                           timerHasTask={hasTask}
+                          focusSeconds={timerSettings.focusSeconds}
                           onSelect={() => onSelectTask(task)}
                           onPlay={() => handlePlayTask(task)}
                           onDone={() => void onDoneTask()}
@@ -972,6 +974,7 @@ export function HomeState({
                           isActiveTask={false}
                           timerRunning={false}
                           timerHasTask={false}
+                          focusSeconds={timerSettings.focusSeconds}
                           onSelect={() => {}}
                           onPlay={() => {}}
                           onDone={() => {}}
@@ -1512,14 +1515,17 @@ function TaskTooltip({
   project,
   workspaceBadge,
   anchor,
+  focusSeconds = 25 * 60,
 }: {
   task: SelectedTask;
   project?: Project;
   workspaceBadge?: Workspace;
   anchor: { top: number; left: number; width: number };
+  focusSeconds?: number;
 }) {
   const timeStr = fmtTotalTime(task.timeLogs);
-  const pomoCount = task.timeLogs?.filter(l => l.mode === 'pomodoro').length ?? 0;
+  const totalPomoSecs = task.timeLogs?.filter(l => l.mode === 'pomodoro').reduce((s, l) => s + l.durationSeconds, 0) ?? 0;
+  const pomoCount = focusSeconds > 0 ? Math.round(totalPomoSecs / focusSeconds) : 0;
   const links = task.links?.length ?? 0;
   const isFollowup = !!task.parentId;
 
@@ -1649,6 +1655,7 @@ interface TaskRowProps {
   isActiveTask: boolean;
   timerRunning: boolean;
   timerHasTask: boolean;
+  focusSeconds: number;
   onSelect: () => void;
   onPlay: () => void;
   onDone: () => void;
@@ -1656,7 +1663,7 @@ interface TaskRowProps {
   onStatusChange: (status: TaskStatus) => void;
 }
 
-function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunning, timerHasTask, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
+function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunning, timerHasTask, focusSeconds, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
   const isDone = task.status === 'done';
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -1725,22 +1732,27 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
         </div>
       )}
 
-      {index !== undefined ? (
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
-          style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: isDone ? 'var(--color-success)' : 'var(--color-accent)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', padding: 0 }}
-        >
-          {isDone ? '✓' : index}
-        </button>
-      ) : (
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
-          style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${isDone ? 'var(--color-success)' : 'var(--color-border-strong)'}`, background: isDone ? 'var(--color-success)' : 'transparent', color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
-        >
-          {isDone ? '✓' : ''}
-        </button>
-      )}
-      {tooltipAnchor && <TaskTooltip task={task} project={project} workspaceBadge={workspaceBadge} anchor={tooltipAnchor} />}
+      {(() => {
+        const isWip = task.status === 'in_progress' && !isActiveTask;
+        const isDelayed = task.status === 'delayed';
+        const btnColor = isDone ? 'var(--color-success)' : isWip ? 'var(--color-warning)' : isDelayed ? '#7B5DB4' : 'var(--color-accent)';
+        return index !== undefined ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
+            style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: btnColor, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            {isDone ? '✓' : index}
+          </button>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowStatusPicker(v => !v); }}
+            style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, border: `1.5px solid ${btnColor}`, background: isDone ? 'var(--color-success)' : 'transparent', color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          >
+            {isDone ? '✓' : ''}
+          </button>
+        );
+      })()}
+      {tooltipAnchor && <TaskTooltip task={task} project={project} workspaceBadge={workspaceBadge} anchor={tooltipAnchor} focusSeconds={focusSeconds} />}
       <div
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
         onMouseEnter={() => {

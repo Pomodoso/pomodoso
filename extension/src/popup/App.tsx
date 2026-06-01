@@ -374,7 +374,10 @@ export function App() {
     setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
     playSound('task-done', soundSettings);
     await detachTask();
-  }, [timerState, detachTask, soundSettings]);
+    // detachTask causes the background to create a pendingSegment for the same segment
+    // we just logged above — clear it immediately so it doesn't get double-written.
+    await clearPendingSegment();
+  }, [timerState, detachTask, clearPendingSegment, soundSettings]);
 
   const handleDetachTask = useCallback(async () => {
     await detachTask();
