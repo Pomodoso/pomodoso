@@ -83,6 +83,8 @@ interface HomeStateProps {
   onSetActiveWs: (id: string) => void;
   timezone: string;
   maxPriorities: number;
+  weekStart: number;
+  workDays: number[];
 }
 
 const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
@@ -155,6 +157,7 @@ export function HomeState({
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
+  weekStart, workDays,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
@@ -1088,7 +1091,7 @@ export function HomeState({
                   onDeleteHabit={(id) => void db.habits.update(id, { deletedAt: now(), updatedAt: now() })}
                 />
               ) : (
-                <HabitHistoryView habits={visibleHabits} timezone={timezone} />
+                <HabitHistoryView habits={visibleHabits} timezone={timezone} weekStart={weekStart} />
               )}
             </>
           )
@@ -1146,6 +1149,8 @@ export function HomeState({
                 activeWsId={activeWsId}
                 projects={projects}
                 timezone={timezone}
+                weekStart={weekStart}
+                workDays={workDays}
                 onSelectTask={onSelectTask}
                 onSelectMeeting={(m) => {
                   setSelectedMeeting(m);
@@ -2963,10 +2968,19 @@ function getEffectiveDate(task: { updatedAt: string; timeLogs?: { startedAt: str
 
 type HistoryDateFilter = 'week' | 'month' | 'custom';
 
-function TaskHistoryView({ activeWsId, projects, timezone, onSelectTask, onSelectMeeting }: {
+function weekStartDate(timezone: string, weekStart: number): string {
+  // weekStart: 0=Mon…6=Sun. Returns YYYY-MM-DD of the most recent weekStart day.
+  const todayDow = (new Date(localDate(timezone) + 'T12:00:00').getDay() + 6) % 7;
+  const daysSince = (todayDow - weekStart + 7) % 7;
+  return localDate(timezone, -daysSince);
+}
+
+function TaskHistoryView({ activeWsId, projects, timezone, weekStart, workDays, onSelectTask, onSelectMeeting }: {
   activeWsId: string;
   projects: Project[];
   timezone: string;
+  weekStart: number;
+  workDays: number[];
   onSelectTask: (task: SelectedTask) => void;
   onSelectMeeting?: (m: CalendarMeeting) => void;
 }) {
@@ -2977,7 +2991,7 @@ function TaskHistoryView({ activeWsId, projects, timezone, onSelectTask, onSelec
   const [filterProjectId, setFilterProjectId] = useState<string | null>(null);
 
   const todayStr = localDate(timezone);
-  const weekCutoff = localDate(timezone, -7);
+  const weekCutoff = weekStartDate(timezone, weekStart);
   const monthCutoff = localDate(timezone, -30);
 
   const allHistory = useLiveQuery(
@@ -3262,16 +3276,17 @@ function TaskHistoryView({ activeWsId, projects, timezone, onSelectTask, onSelec
 
 type HabitHistoryDateFilter = 'week' | 'month' | 'custom';
 
-function HabitHistoryView({ habits, timezone }: {
+function HabitHistoryView({ habits, timezone, weekStart }: {
   habits: HabitDef[];
   timezone: string;
+  weekStart: number;
 }) {
   const [dateFilter, setDateFilter] = useState<HabitHistoryDateFilter>('week');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState(() => localDate(timezone));
 
   const todayStr = localDate(timezone);
-  const weekCutoff = localDate(timezone, -7);
+  const weekCutoff = weekStartDate(timezone, weekStart);
   const monthCutoff = localDate(timezone, -30);
 
   const habitIdSet = new Set(habits.map(h => h.id));

@@ -56,9 +56,13 @@ interface SettingsStateProps {
   onUpdateSoundSettings: (updates: Partial<SoundSettings>) => void;
   onUpdateTimezone: (tz: string) => void;
   onUpdateMaxPriorities: (n: number) => void;
+  weekStart: number;
+  workDays: number[];
+  onUpdateWeekStart: (day: number) => void;
+  onUpdateWorkDays: (days: number[]) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, activeWsId, initialPage, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
 
   if (page === 'calendar') {
@@ -91,7 +95,7 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
   }
 
   if (page === 'general') {
-    return <GeneralPage timezone={timezone} maxPriorities={maxPriorities} onUpdateTimezone={onUpdateTimezone} onUpdateMaxPriorities={onUpdateMaxPriorities} onBack={() => setPage('main')} />;
+    return <GeneralPage timezone={timezone} maxPriorities={maxPriorities} weekStart={weekStart} workDays={workDays} onUpdateTimezone={onUpdateTimezone} onUpdateMaxPriorities={onUpdateMaxPriorities} onUpdateWeekStart={onUpdateWeekStart} onUpdateWorkDays={onUpdateWorkDays} onBack={() => setPage('main')} />;
   }
 
   if (page === 'data') {
@@ -155,11 +159,17 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
 
 // ── General sub-page ──────────────────────────────────────────────────────────
 
-function GeneralPage({ timezone, maxPriorities, onUpdateTimezone, onUpdateMaxPriorities, onBack }: {
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function GeneralPage({ timezone, maxPriorities, weekStart, workDays, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays, onBack }: {
   timezone: string;
   maxPriorities: number;
+  weekStart: number;
+  workDays: number[];
   onUpdateTimezone: (tz: string) => void;
   onUpdateMaxPriorities: (n: number) => void;
+  onUpdateWeekStart: (day: number) => void;
+  onUpdateWorkDays: (days: number[]) => void;
   onBack: () => void;
 }) {
   const [tzInput, setTzInput] = useState(timezone);
@@ -234,6 +244,60 @@ function GeneralPage({ timezone, maxPriorities, onUpdateTimezone, onUpdateMaxPri
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
               Max tasks shown in Today's priorities. Default is 3.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 6 }}>Week starts on</div>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {([0, 6] as const).map(day => (
+                <button
+                  key={day}
+                  onClick={() => onUpdateWeekStart(day)}
+                  style={{
+                    padding: '5px 14px', fontSize: 12, fontWeight: weekStart === day ? 600 : 400,
+                    borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: `1px solid ${weekStart === day ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                    background: weekStart === day ? 'var(--color-accent)' : 'var(--color-surface)',
+                    color: weekStart === day ? '#fff' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {day === 0 ? 'Monday' : 'Sunday'}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
+              Used for "this week" in history.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 6 }}>Work days</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {DAY_LABELS.map((label, i) => {
+                const active = workDays.includes(i);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      const next = active ? workDays.filter(d => d !== i) : [...workDays, i].sort();
+                      onUpdateWorkDays(next);
+                    }}
+                    style={{
+                      width: 34, height: 34, fontSize: 11, fontWeight: active ? 600 : 400,
+                      borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                      border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                      background: active ? 'var(--color-accent)' : 'var(--color-surface)',
+                      color: active ? '#fff' : 'var(--color-text-muted)',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
+              Used to filter history to work days only.
             </div>
           </div>
 

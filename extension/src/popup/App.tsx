@@ -57,6 +57,8 @@ export function App() {
   const soundSettingsRow    = useLiveQuery(() => db.settings.get('sound_settings'), [migrated]);
   const timezoneRow         = useLiveQuery(() => db.settings.get('timezone'), [migrated]);
   const maxPrioritiesRow    = useLiveQuery(() => db.settings.get('max_priorities'), [migrated]);
+  const weekStartRow        = useLiveQuery(() => db.settings.get('week_start'), [migrated]);
+  const workDaysRow         = useLiveQuery(() => db.settings.get('work_days'), [migrated]);
 
   // ── Derive plain objects from query results ────────────────────────────────
   const allTasks: Record<string, TaskRow> = {};
@@ -72,6 +74,9 @@ export function App() {
   const soundSettings: SoundSettings = (soundSettingsRow?.value as SoundSettings | undefined) ?? { ...DEFAULT_SOUND_SETTINGS };
   const timezone: string = (timezoneRow?.value as string | undefined) ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const maxPriorities: number = (maxPrioritiesRow?.value as number | undefined) ?? 3;
+  // 0=Mon…6=Sun convention (matches habit days). Defaults: week starts Monday, work days Mon–Fri.
+  const weekStart: number   = (weekStartRow?.value as number | undefined) ?? 0;
+  const workDays: number[]  = (workDaysRow?.value as number[] | undefined) ?? [0, 1, 2, 3, 4];
 
   // ── Local (device-only) state ──────────────────────────────────────────────
   const [activeWsId, setActiveWsId]             = useLocalStorage<string>('pom_active_ws', 'default');
@@ -495,6 +500,14 @@ export function App() {
     await db.settings.put({ key: 'max_priorities', value: n });
   }, []);
 
+  const updateWeekStart = useCallback(async (day: number) => {
+    await db.settings.put({ key: 'week_start', value: day });
+  }, []);
+
+  const updateWorkDays = useCallback(async (days: number[]) => {
+    await db.settings.put({ key: 'work_days', value: days });
+  }, []);
+
   // ── Ticket / selection actions ─────────────────────────────────────────────
   const linkTicketToTask = useCallback(async (ticket: TicketRef, task: TaskRow) => {
     const existing = allTasks[task.id];
@@ -642,6 +655,10 @@ export function App() {
           onUpdateSoundSettings={(updates) => void updateSoundSettings(updates)}
           onUpdateTimezone={(tz) => void updateTimezone(tz)}
           onUpdateMaxPriorities={(n) => void updateMaxPriorities(n)}
+          weekStart={weekStart}
+          workDays={workDays}
+          onUpdateWeekStart={(d) => void updateWeekStart(d)}
+          onUpdateWorkDays={(d) => void updateWorkDays(d)}
         />
       </PopupShell>
     );
@@ -695,6 +712,8 @@ export function App() {
         activeWsId={activeWsId}
         timezone={timezone}
         maxPriorities={maxPriorities}
+        weekStart={weekStart}
+        workDays={workDays}
         onSetActiveWs={setActiveWsId}
         onAddToPriorities={(task) => void addToPriorities(task)}
         onAddToTasks={(task) => void addToTasks(task)}
