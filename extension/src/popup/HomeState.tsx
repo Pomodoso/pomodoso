@@ -34,7 +34,7 @@ import {
 
 marked.use({ breaks: true });
 
-type Tab = 'today' | 'habits' | 'tasks' | 'schedule';
+export type Tab = 'today' | 'habits' | 'tasks' | 'schedule';
 
 type WeekCellKind = 'full' | 'partial' | 'empty';
 
@@ -85,6 +85,8 @@ interface HomeStateProps {
   maxPriorities: number;
   weekStart: number;
   workDays: number[];
+  activeTab: Tab;
+  onSetActiveTab: (tab: Tab) => void;
 }
 
 const WEEK_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
@@ -148,11 +150,10 @@ export function HomeState({
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
-  weekStart, workDays,
+  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('today');
   const [linkedDismissed, setLinkedDismissed] = useState(false);
   const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];

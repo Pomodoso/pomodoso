@@ -5,7 +5,7 @@ import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types'
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
 import { useLocalStorage } from './useStorage';
-import { HomeState } from './HomeState';
+import { HomeState, type Tab } from './HomeState';
 import { TaskDetailState } from './TaskDetailState';
 import { SettingsState } from './SettingsState';
 import { LinkPickerState } from './LinkPickerState';
@@ -125,6 +125,7 @@ export function App() {
   }, [migrated]);
 
   // ── Transient UI state ─────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<Tab>('today');
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar'>('main');
@@ -781,6 +782,8 @@ export function App() {
         onCreateTask={(title) => void createTask(title)}
         onCreateFollowup={(parentId) => void createFollowup(parentId)}
         onReorderToday={(p, t) => void reorderToday(p, t)}
+        activeTab={activeTab}
+        onSetActiveTab={setActiveTab}
       />
     </PopupShell>
   );
