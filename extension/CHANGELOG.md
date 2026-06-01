@@ -4,6 +4,22 @@
 
 ### Extension
 
+- **Compact task cards with tooltips** — Task cards now show only the title and a workspace color dot, reducing card height from ~60px to ~36px. Hovering reveals a tooltip (above the card, using `position: fixed` to escape the scroll container) with status badge, ticket ID, time logged, pomodoro count, link count, follow-up indicator, project, and workspace. Pomodoro count is calculated as `round(totalPomoSeconds / focusSeconds)` rather than counting log entries.
+
+- **WIP / Delayed status indicator** — Tasks with "In Progress" or "Delayed" status now show a colored border on the status checkbox (yellow for WIP, purple for Delayed), matching the existing green fill for Done.
+
+- **Linked tasks banner** — When the current tab URL matches a link saved on one or more tasks, a "Linked task(s)" banner appears above the task list. Each task is listed as a clickable row that opens the task detail directly. The banner is suppressed if all linked tasks are already in Today.
+
+- **Detection banner in view mode** — The "On this page" detection banner now correctly shows in view mode when visiting a known ticket page (Linear, GitHub, Sentry, arXiv) that is already linked to one or more tasks. Supports multiple linked tasks — each listed as a clickable row with its status and a ↩ follow-up button. Previously the banner was always suppressed when a matching task existed.
+
+- **Linked tasks hidden when already in Today** — Neither the detection banner nor the linked tasks banner appear for tasks already visible in Today's list.
+
+- **Task ID now saves on blur** — Editing the Task ID field in the task detail view now persists on blur. Previously changes were lost on navigation.
+
+- **Workspace change moves task order** — Changing a task's workspace now moves it from the old workspace's Today/Priority order to the new one. Previously the task appeared in both workspaces simultaneously.
+
+- **Duplicate time log entries fixed** — Clicking ✓ Done during an active pomodoro was creating two identical log entries. Fixed by clearing the `pendingSegment` the background creates on detach immediately after the popup writes its own entry.
+
 - **Pomodoro count not persisting across sessions** — Fixed a bug where the daily pomodoro counter reset to 0 after each completed session. The `pomosDate` field was not being carried over when transitioning between timer states, causing the date check to always reset the counter.
 
 - **arXiv detection** — Papers on arxiv.org are now automatically detected. Opening the popup on any `arxiv.org/abs/*` page surfaces the paper title and ID with a one-click option to add it to the backlog or link it to an existing task.
