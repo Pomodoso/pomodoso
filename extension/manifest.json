@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Pomodoso",
   "description": "Unified work tracking for developers — pomodoro, tickets, habits.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "permissions": ["storage", "alarms", "notifications", "identity", "tabs", "activeTab", "scripting", "windows"],
   "host_permissions": [
     "https://*/*",
