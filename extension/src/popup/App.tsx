@@ -328,7 +328,33 @@ export function App() {
   }, [wsKey, patchWsOrder]);
 
   const reorderToday = useCallback(async (newPriorityIds: string[], newTodayIds: string[]) => {
-    await db.taskOrders.put({ wsId: wsKey, priorityIds: newPriorityIds, todayIds: newTodayIds });
+    if (wsKey !== 'all') {
+      await db.taskOrders.put({ wsId: wsKey, priorityIds: newPriorityIds, todayIds: newTodayIds });
+      return;
+    }
+    // In 'all' mode the 'all' key only controls display order within each section.
+    // Section membership (priority vs tasks) lives in individual workspace orders,
+    // so cross-section drags must update those directly.
+    const allOrders = await db.taskOrders.filter(o => o.wsId !== 'all').toArray();
+    const currentPrioritySet = new Set(allOrders.flatMap(o => o.priorityIds));
+    const currentTaskSet = new Set(allOrders.flatMap(o => o.todayIds));
+    const movedToPriority = newPriorityIds.filter(id => currentTaskSet.has(id));
+    const movedToTasks = newTodayIds.filter(id => currentPrioritySet.has(id));
+    if (movedToPriority.length > 0 || movedToTasks.length > 0) {
+      for (const order of allOrders) {
+        let pIds = [...order.priorityIds];
+        let tIds = [...order.todayIds];
+        let changed = false;
+        for (const id of movedToPriority) {
+          if (tIds.includes(id)) { tIds = tIds.filter(i => i !== id); if (!pIds.includes(id)) pIds = [...pIds, id]; changed = true; }
+        }
+        for (const id of movedToTasks) {
+          if (pIds.includes(id)) { pIds = pIds.filter(i => i !== id); if (!tIds.includes(id)) tIds = [...tIds, id]; changed = true; }
+        }
+        if (changed) await db.taskOrders.put({ wsId: order.wsId, priorityIds: pIds, todayIds: tIds });
+      }
+    }
+    await db.taskOrders.put({ wsId: 'all', priorityIds: newPriorityIds, todayIds: newTodayIds });
   }, [wsKey]);
 
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
