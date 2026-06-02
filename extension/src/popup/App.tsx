@@ -98,11 +98,26 @@ export function App() {
       const ts = now();
       await db.transaction('rw', [db.tasks, db.taskOrders, db.habits], async () => {
         await db.tasks.bulkPut([
-          { id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
-          { id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
-          { id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
-          { id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
-          { id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts },
+          {
+            id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+            description: '- Open **Settings → Workspaces** (gear icon in the header)\n- Rename "Personal" to your main context (e.g. Work, Study…)\n- Add extra workspaces if you juggle multiple contexts\n- Switch between them from the header — each has its own tasks, habits, and calendar',
+          },
+          {
+            id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+            description: '- Click ▶ next to any task in the Today tab\n- Choose **Pomodoro** (25 min focus) or **Log time** (stopwatch)\n- When the session ends you\'ll be prompted to take a break\n- Your time is logged automatically on the task — check it in the task detail',
+          },
+          {
+            id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+            description: '- Open **Settings → Calendar**\n- Click **Connect Google Calendar** and sign in\n- Select which calendars to sync\n- Today\'s meetings will appear in the **Schedule** tab and in the Today view\n- Click ▶ on a meeting to log time against it',
+          },
+          {
+            id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+            description: '- Go to the **Habits** tab\n- Edit the sample habits (Drink Water, Read, Exercise) or delete them\n- Add your own with **+ Add** — choose between counter (e.g. glasses of water) or checkbox habits\n- Set which days each habit should appear so it only shows when relevant',
+          },
+          {
+            id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+            description: '- Go to **Tasks → Backlog**\n- Create tasks with the **+ Add task** button or the **+** in the header\n- Press **★** to pin a task as a priority for today (max 3)\n- Press **+ Today** to add it to your regular task list\n- Open any page on Linear, GitHub, Jira or arXiv — Pomodoso will detect the ticket automatically',
+          },
         ]);
         await db.taskOrders.put({ wsId: 'default', priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
         await db.habits.bulkPut([
