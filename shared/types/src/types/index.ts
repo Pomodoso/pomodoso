@@ -162,6 +162,21 @@ export interface TicketProviderAdapter {
   detectTicket(url: string, doc: Document): TicketRef | null;
 }
 
+// ─── Recurrence ───────────────────────────────────────────────────────────────
+
+export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq;
+  weekdays?: number[];      // [0=Sun..6=Sat], only for freq='weekly'
+  monthDay?: number;        // 1-31, only for freq='monthly'
+  yearMonth?: number;       // 1-12, only for freq='yearly'
+  yearDay?: number;         // 1-31, only for freq='yearly'
+  time?: string | null;     // 'HH:MM' or null for all-day
+  startDate: string;        // YYYY-MM-DD
+  endDate?: string | null;  // YYYY-MM-DD or null = no end
+}
+
 // ─── Task ─────────────────────────────────────────────────────────────────────
 
 export interface Task {

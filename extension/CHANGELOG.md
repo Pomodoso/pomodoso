@@ -1,6 +1,14 @@
 # Changelog
 
 
+## v0.0.6 (2026-06-02)
+
+### Extension
+
+- **Recurring tasks** — Any task can now repeat on a schedule. Open the task detail and use the new **Repeat** field to set a frequency (daily, weekly, monthly, or yearly), specific days/time, and optional start/end dates. Recurring tasks live in a dedicated **Recurring** section inside the Tasks tab (separate from the backlog) and appear automatically in Today when their scheduled time arrives. Completing a recurring task marks it done for that day only — it resets to `todo` and reappears the next scheduled day. Notes, time logs, and all other task data are shared across every occurrence (it's always the same task object, not a new one per day). A `↺` icon marks recurring tasks in Today.
+
+---
+
 ## v0.0.5 (2026-06-01)
 
 ### Extension

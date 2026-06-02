@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
-import type { TimerMode, DetectionRule, SoundSettings, TimerSettings } from '@pomodoso/types';
+import type { TimerMode, DetectionRule, SoundSettings, TimerSettings, RecurrenceRule } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
+export type { RecurrenceRule };
 
 // ─── Sync meta ────────────────────────────────────────────────────────────────
 // Every syncable row carries these fields. When sync is activated (Phase 2),
@@ -57,6 +58,8 @@ export interface TaskRow extends SyncMeta {
   noteEntries?: NoteEntry[];
   timeLogs?: TimeLogEntry[];
   parentId?: string | null;
+  recurrence?: RecurrenceRule;    // rule that makes this task repeat
+  completedDates?: string[];      // YYYY-MM-DD list of days this recurring task was completed
 }
 
 export interface TaskOrderRow {
@@ -186,6 +189,12 @@ export class PomoDB extends Dexie {
     });
     this.version(6).stores({
       meetings: 'id, workspaceId, googleEventId, recurringEventId',
+    });
+    this.version(7).stores({
+      tasks: 'id, workspaceId, status, updatedAt, deletedAt, syncedAt, parentId, recurrenceTemplateId',
+    });
+    this.version(8).stores({
+      tasks: 'id, workspaceId, status, updatedAt, deletedAt, syncedAt, parentId',
     });
   }
 }

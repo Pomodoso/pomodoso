@@ -3,7 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { marked } from 'marked';
 import type { TimerStartPayload } from '@pomodoso/types';
 import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEntry, Workspace } from './App';
-import { db, localDate } from '../db';
+import { db, localDate, type RecurrenceRule } from '../db';
+import { formatRecurrenceLabel } from '../recurrence';
+import type { RecurrenceFreq } from '@pomodoso/types';
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'todo', label: 'Todo' },
@@ -156,6 +158,19 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [editLinkUrlError, setEditLinkUrlError] = useState('');
   const [showTicketId, setShowTicketId] = useState((task.ticketId ?? '').length > 0);
   const [showDescription, setShowDescription] = useState((task.description ?? '').length > 0);
+  const [showRecurrenceEditor, setShowRecurrenceEditor] = useState(false);
+  const today = localDate(timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule | undefined>(task.recurrence);
+  const [ruleFreq, setRuleFreq] = useState<RecurrenceFreq>(task.recurrence?.freq ?? 'weekly');
+  const [ruleWeekdays, setRuleWeekdays] = useState<number[]>(task.recurrence?.weekdays ?? [new Date().getDay()]);
+  const [ruleMonthDay, setRuleMonthDay] = useState(task.recurrence?.monthDay ?? new Date().getDate());
+  const [ruleYearMonth, setRuleYearMonth] = useState(task.recurrence?.yearMonth ?? new Date().getMonth() + 1);
+  const [ruleYearDay, setRuleYearDay] = useState(task.recurrence?.yearDay ?? new Date().getDate());
+  const [ruleTime, setRuleTime] = useState(task.recurrence?.time ?? '');
+  const [ruleAllDay, setRuleAllDay] = useState(task.recurrence ? !task.recurrence.time : true);
+  const [ruleStartDate, setRuleStartDate] = useState(task.recurrence?.startDate ?? today);
+  const [ruleEndDate, setRuleEndDate] = useState(task.recurrence?.endDate ?? '');
+  const [ruleHasEnd, setRuleHasEnd] = useState(!!task.recurrence?.endDate);
   const [descTab, setDescTab] = useState<'write' | 'preview'>('write');
   const [showProject, setShowProject] = useState(task.projectId !== null);
   const [showTimeLogged, setShowTimeLogged] = useState(false);
@@ -219,6 +234,28 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
       ta.focus();
       ta.setSelectionRange(result.start, result.end);
     });
+  };
+
+  const handleSaveRecurrence = () => {
+    const rule: RecurrenceRule = {
+      freq: ruleFreq,
+      ...(ruleFreq === 'weekly' && { weekdays: ruleWeekdays }),
+      ...(ruleFreq === 'monthly' && { monthDay: ruleMonthDay }),
+      ...(ruleFreq === 'yearly' && { yearMonth: ruleYearMonth, yearDay: ruleYearDay }),
+      time: ruleAllDay ? null : (ruleTime || null),
+      startDate: ruleStartDate || today,
+      endDate: ruleHasEnd && ruleEndDate ? ruleEndDate : null,
+    };
+    setRecurrenceRule(rule);
+    setShowRecurrenceEditor(false);
+    onUpdateTask?.({ recurrence: rule });
+  };
+
+  const handleClearRecurrence = () => {
+    setRecurrenceRule(undefined);
+    setShowRecurrenceEditor(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onUpdateTask?.({ recurrence: undefined as any });
   };
 
   const handleAddTime = () => {
@@ -356,6 +393,129 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
           </>
         )}
       </div>
+
+      {/* Recurrence */}
+      <div style={{ padding: '12px 14px 0' }}>
+          {!recurrenceRule && !showRecurrenceEditor ? (
+            <AddFieldButton label="Add recurrence" onClick={() => setShowRecurrenceEditor(true)} />
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: showRecurrenceEditor ? 8 : 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', flex: 1 }}>
+                  Repeat
+                </span>
+                {!showRecurrenceEditor && recurrenceRule && (
+                  <>
+                    <GhostBtn onClick={() => setShowRecurrenceEditor(true)}>Edit</GhostBtn>
+                    <GhostBtn onClick={handleClearRecurrence} danger style={{ marginLeft: 4 }}>Remove</GhostBtn>
+                  </>
+                )}
+              </div>
+              {!showRecurrenceEditor && recurrenceRule && (
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '4px 0' }}>
+                  <span style={{ marginRight: 6 }}>↺</span>
+                  {formatRecurrenceLabel(recurrenceRule)}
+                  {(recurrenceRule.startDate || recurrenceRule.endDate) && (
+                    <span style={{ fontSize: 11, color: 'var(--color-text-faint)', marginLeft: 8 }}>
+                      {'Starts ' + recurrenceRule.startDate}
+                      {recurrenceRule.endDate ? ' · Ends ' + recurrenceRule.endDate : ' · No end'}
+                    </span>
+                  )}
+                </div>
+              )}
+              {showRecurrenceEditor && (
+                <div style={{ padding: '10px 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                  {/* Frequency tabs */}
+                  <div style={{ display: 'flex', gap: 3, marginBottom: 10 }}>
+                    {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(f => (
+                      <button key={f} onClick={() => setRuleFreq(f)} style={{
+                        flex: 1, padding: '4px 0', fontSize: 11, fontWeight: ruleFreq === f ? 700 : 400,
+                        border: `1px solid ${ruleFreq === f ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                        borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                        background: ruleFreq === f ? 'rgba(var(--color-accent-rgb, 207,70,59),0.1)' : 'transparent',
+                        color: ruleFreq === f ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                        textTransform: 'capitalize',
+                      }}>{f}</button>
+                    ))}
+                  </div>
+                  {/* Day selector */}
+                  {ruleFreq === 'weekly' && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginBottom: 4 }}>Days</div>
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => {
+                          const on = ruleWeekdays.includes(i);
+                          return (
+                            <button key={i} onClick={() => setRuleWeekdays(prev => on ? prev.filter(x => x !== i) : [...prev, i].sort())} style={{
+                              flex: 1, padding: '4px 0', fontSize: 10, fontWeight: on ? 700 : 400,
+                              border: `1px solid ${on ? 'var(--color-info)' : 'var(--color-border)'}`,
+                              borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                              background: on ? 'rgba(74,111,165,0.15)' : 'transparent',
+                              color: on ? 'var(--color-info)' : 'var(--color-text-muted)',
+                            }}>{d}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {ruleFreq === 'monthly' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>Day of month</span>
+                      <input type="number" min={1} max={31} value={ruleMonthDay}
+                        onChange={e => setRuleMonthDay(Math.max(1, Math.min(31, parseInt(e.target.value) || 1)))}
+                        style={{ width: 48, ...numInputStyle }} />
+                    </div>
+                  )}
+                  {ruleFreq === 'yearly' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>Month</span>
+                      <input type="number" min={1} max={12} value={ruleYearMonth}
+                        onChange={e => setRuleYearMonth(Math.max(1, Math.min(12, parseInt(e.target.value) || 1)))}
+                        style={{ width: 40, ...numInputStyle }} />
+                      <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>Day</span>
+                      <input type="number" min={1} max={31} value={ruleYearDay}
+                        onChange={e => setRuleYearDay(Math.max(1, Math.min(31, parseInt(e.target.value) || 1)))}
+                        style={{ width: 48, ...numInputStyle }} />
+                    </div>
+                  )}
+                  {/* Time */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-faint)', flexShrink: 0 }}>Time</span>
+                    <input type="time" value={ruleTime} disabled={ruleAllDay}
+                      onChange={e => setRuleTime(e.target.value)}
+                      style={{ fontSize: 12, padding: '3px 6px', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg)', color: ruleAllDay ? 'var(--color-text-faint)' : 'var(--color-text)', outline: 'none' }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={ruleAllDay} onChange={e => setRuleAllDay(e.target.checked)} />
+                      All day
+                    </label>
+                  </div>
+                  {/* Start/end dates */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>Starts</span>
+                      <input type="date" value={ruleStartDate} onChange={e => setRuleStartDate(e.target.value)}
+                        style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg)', color: 'var(--color-text)', outline: 'none' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--color-text-faint)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={ruleHasEnd} onChange={e => setRuleHasEnd(e.target.checked)} />
+                        Ends
+                      </label>
+                      {ruleHasEnd && (
+                        <input type="date" value={ruleEndDate} onChange={e => setRuleEndDate(e.target.value)}
+                          style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg)', color: 'var(--color-text)', outline: 'none' }} />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <GhostBtn onClick={() => { setShowRecurrenceEditor(false); if (!recurrenceRule) { /* nothing to reset */ } }}>Cancel</GhostBtn>
+                    <GhostBtn onClick={handleSaveRecurrence} accent>Save</GhostBtn>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
       {/* Links */}
       <div style={{ padding: '12px 14px 0' }}>
@@ -837,6 +997,17 @@ const inputBase: React.CSSProperties = {
   borderRadius: 'var(--radius-md)',
   fontSize: 13, color: 'var(--color-text)',
   outline: 'none', fontFamily: 'inherit',
+};
+
+const numInputStyle: React.CSSProperties = {
+  padding: '3px 6px',
+  border: '1px solid var(--color-border)',
+  borderRadius: 4,
+  background: 'var(--color-bg)',
+  fontSize: 12,
+  color: 'var(--color-text)',
+  outline: 'none',
+  textAlign: 'center',
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
   type TaskRow, type TaskOrderRow, type ProjectRow, type WorkspaceRow, type DetectionRuleRow,
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
+import { shouldBeInTodayNow } from '../recurrence';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
 export type { TaskStatus, TaskLink, TimeLogEntry, NoteEntry, TaskRow as SelectedTask, ProjectRow as Project, WorkspaceRow as Workspace } from '../db';
@@ -139,6 +140,32 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated]);
 
+  // ── Add recurring tasks to Today when their scheduled time arrives ────────
+  // Runs on every popup open. Tasks with a scheduled time only appear after
+  // that time has passed; all-day tasks appear immediately.
+  useEffect(() => {
+    if (!migrated) return;
+    void (async () => {
+      const today = localDate(timezone);
+      const recurring = await db.tasks.filter(t => !t.deletedAt && !!t.recurrence).toArray();
+      for (const task of recurring) {
+        if (!shouldBeInTodayNow(task.recurrence!, today)) continue;
+        if ((task.completedDates ?? []).includes(today)) continue;
+        const wsId = task.workspaceId ?? 'default';
+        const order = await db.taskOrders.get(wsId);
+        const todayIds = order?.todayIds ?? [];
+        if (!todayIds.includes(task.id)) {
+          await db.taskOrders.put({
+            wsId,
+            priorityIds: order?.priorityIds ?? [],
+            todayIds: [...todayIds, task.id],
+          });
+        }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [migrated]);
+
   // ── Transient UI state ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
@@ -161,7 +188,7 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated]);
 
-  // ── Day rollover: remove completed tasks from Today ───────────────────────
+  // ── Day rollover: clean up Today for the new day ──────────────────────────
   useEffect(() => {
     if (dbLoading || lastSeenDateLoading) return;
     const today = localDate(timezone);
@@ -171,12 +198,16 @@ export function App() {
     void (async () => {
       const orders = await db.taskOrders.toArray();
       for (const order of orders) {
-        const isDone = async (id: string) => {
+        const shouldRemove = async (id: string) => {
           const t = await db.tasks.get(id);
-          return t?.status === 'done' || t?.status === 'cancelled';
+          if (!t) return true;
+          // Recurring tasks are always cleared on rollover; the recurring effect
+          // re-adds them if they're scheduled for the new day.
+          if (t.recurrence) return true;
+          return t.status === 'done' || t.status === 'cancelled';
         };
-        const newPriorityIds = (await Promise.all(order.priorityIds.map(async id => ({ id, done: await isDone(id) })))).filter(x => !x.done).map(x => x.id);
-        const newTodayIds    = (await Promise.all(order.todayIds.map(async id => ({ id, done: await isDone(id) })))).filter(x => !x.done).map(x => x.id);
+        const newPriorityIds = (await Promise.all(order.priorityIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
+        const newTodayIds    = (await Promise.all(order.todayIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
         if (newPriorityIds.length !== order.priorityIds.length || newTodayIds.length !== order.todayIds.length) {
           await db.taskOrders.put({ wsId: order.wsId, priorityIds: newPriorityIds, todayIds: newTodayIds });
         }
@@ -257,11 +288,18 @@ export function App() {
   const todayPriorities = priorityIds.map(id => allTasks[id]).filter((t): t is TaskRow => !!t);
   const todayTasks      = todayIds.map(id => allTasks[id]).filter((t): t is TaskRow => !!t);
 
+  const inWs = (t: TaskRow) =>
+    activeWsId === 'all' || t.workspaceId === activeWsId || t.workspaceId == null;
+
+  const recurringTemplates = Object.values(allTasks).filter(t =>
+    !!t.recurrence && !t.deletedAt && inWs(t),
+  );
+
   const backlog = Object.values(allTasks).filter(t => {
     if (t.status === 'done' || t.status === 'cancelled') return false;
     if (priorityIds.includes(t.id) || todayIds.includes(t.id)) return false;
-    if (activeWsId === 'all') return true;
-    return t.workspaceId === activeWsId || t.workspaceId == null;
+    if (t.recurrence) return false; // templates live in Recurring section, not backlog
+    return inWs(t);
   });
 
   const detectedExistingTasks = detectedTicket
@@ -372,7 +410,30 @@ export function App() {
     await db.taskOrders.put({ wsId: 'all', priorityIds: newPriorityIds, todayIds: newTodayIds });
   }, [wsKey]);
 
+  const markRecurringDoneToday = useCallback(async (taskId: string) => {
+    const today = localDate(timezone);
+    const completedDates = [...new Set([...(allTasks[taskId]?.completedDates ?? []), today])];
+    await db.tasks.update(taskId, { completedDates, status: 'todo', updatedAt: now() });
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, completedDates } : prev);
+    // Remove from all workspace orders so it disappears from Today
+    const orders = await db.taskOrders.toArray();
+    for (const order of orders) {
+      if (order.priorityIds.includes(taskId) || order.todayIds.includes(taskId)) {
+        await db.taskOrders.put({
+          wsId: order.wsId,
+          priorityIds: order.priorityIds.filter(i => i !== taskId),
+          todayIds: order.todayIds.filter(i => i !== taskId),
+        });
+      }
+    }
+  }, [allTasks, timezone]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
+    // Recurring tasks use completedDates instead of status:'done' so they reappear tomorrow.
+    if (updates.status === 'done' && allTasks[id]?.recurrence) {
+      await markRecurringDoneToday(id);
+      return;
+    }
     await db.tasks.update(id, { ...updates, updatedAt: now() });
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev);
 
@@ -440,21 +501,26 @@ export function App() {
     const { taskId, taskSegmentStartedAt } = timerState;
     if (!taskId) { await detachTask(); return; }
     const elapsed = taskSegmentStartedAt ? Math.floor((Date.now() - taskSegmentStartedAt) / 1000) : 0;
-    await db.transaction('rw', db.tasks, async () => {
-      const task = await db.tasks.get(taskId);
-      if (!task) return;
-      const timeLogs = elapsed > 0 && taskSegmentStartedAt
-        ? [...(task.timeLogs ?? []), { id: crypto.randomUUID(), startedAt: new Date(taskSegmentStartedAt).toISOString(), durationSeconds: elapsed, mode: timerState.mode }]
-        : task.timeLogs;
-      await db.tasks.update(taskId, { status: 'done', timeLogs, updatedAt: now() });
-    });
-    setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+    // Log the elapsed time first
+    if (elapsed > 0 && taskSegmentStartedAt) {
+      await db.transaction('rw', db.tasks, async () => {
+        const task = await db.tasks.get(taskId);
+        if (!task) return;
+        const entry = { id: crypto.randomUUID(), startedAt: new Date(taskSegmentStartedAt).toISOString(), durationSeconds: elapsed, mode: timerState.mode };
+        await db.tasks.update(taskId, { timeLogs: [...(task.timeLogs ?? []), entry], updatedAt: now() });
+      });
+    }
+    // Recurring: mark done for today; one-off: mark permanently done
+    if (allTasks[taskId]?.recurrence) {
+      await markRecurringDoneToday(taskId);
+    } else {
+      await db.tasks.update(taskId, { status: 'done', updatedAt: now() });
+      setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+    }
     playSound('task-done', soundSettings);
     await detachTask();
-    // detachTask causes the background to create a pendingSegment for the same segment
-    // we just logged above — clear it immediately so it doesn't get double-written.
     await clearPendingSegment();
-  }, [timerState, detachTask, clearPendingSegment, soundSettings]);
+  }, [timerState, detachTask, clearPendingSegment, soundSettings, allTasks, markRecurringDoneToday]);
 
   const handleDetachTask = useCallback(async () => {
     await detachTask();
@@ -470,14 +536,19 @@ export function App() {
         const timeLogs = elapsed > 0 && taskSegmentStartedAt
           ? [...(task.timeLogs ?? []), { id: crypto.randomUUID(), startedAt: new Date(taskSegmentStartedAt).toISOString(), durationSeconds: elapsed, mode: timerState.mode }]
           : task.timeLogs;
-        const updates: Partial<TaskRow> = { timeLogs, updatedAt: now() };
-        if (closeTask) updates.status = 'done';
-        await db.tasks.update(taskId, updates);
+        await db.tasks.update(taskId, { timeLogs, updatedAt: now() });
       });
-      if (closeTask) setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+      if (closeTask) {
+        if (allTasks[taskId]?.recurrence) {
+          await markRecurringDoneToday(taskId);
+        } else {
+          await db.tasks.update(taskId, { status: 'done', updatedAt: now() });
+          setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+        }
+      }
     }
     await stop();
-  }, [timerState, stop]);
+  }, [timerState, stop, allTasks, markRecurringDoneToday]);
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
     if (timerState.status === 'active' && timerState.mode === 'pomodoro' && payload.mode === 'pomodoro') {
@@ -786,6 +857,7 @@ export function App() {
         todayPriorities={todayPriorities}
         todayTasks={todayTasks}
         backlog={backlog}
+        recurringTemplates={recurringTemplates}
         projects={projects}
         prioritiesFull={priorityIds.length >= maxPriorities}
         workspaces={workspaces}

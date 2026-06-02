@@ -31,6 +31,7 @@ import {
   type HabitIconKind,
   type MeetingTrackMode,
 } from '../db';
+import { formatRecurrenceLabel } from '../recurrence';
 
 marked.use({ breaks: true });
 
@@ -46,6 +47,7 @@ interface HomeStateProps {
   todayPriorities: TodayTask[];
   todayTasks: TodayTask[];
   backlog: SelectedTask[];
+  recurringTemplates: SelectedTask[];
   projects: Project[];
   prioritiesFull: boolean;
   onAddToPriorities: (task: SelectedTask) => void;
@@ -144,7 +146,7 @@ function formatElapsed(seconds: number): string {
 }
 
 export function HomeState({
-  timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, projects, prioritiesFull,
+  timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, recurringTemplates, projects, prioritiesFull,
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
@@ -169,6 +171,7 @@ export function HomeState({
     [today],
   ) ?? [];
   const [tasksSubTab, setTasksSubTab] = useState<'backlog' | 'history'>('backlog');
+  const [recurringCollapsed, setRecurringCollapsed] = useState(false);
   const [habitsSubTab, setHabitsSubTab] = useState<'today' | 'history'>('today');
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitDef | null>(null);
@@ -1123,6 +1126,30 @@ export function HomeState({
                     );
                   })}
                 </div>
+
+                {/* Recurring templates section */}
+                {recurringTemplates.length > 0 && (
+                  <div style={{ padding: '8px 14px 0' }}>
+                    <button
+                      onClick={() => setRecurringCollapsed(v => !v)}
+                      style={{ display: 'flex', alignItems: 'center', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, gap: 6, marginBottom: 6 }}
+                    >
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', flex: 1, textAlign: 'left' }}>
+                        Recurring
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-faint)', fontFamily: 'var(--font-mono)' }}>{recurringTemplates.length}</span>
+                      <span style={{ fontSize: 10, color: 'var(--color-text-faint)', marginLeft: 4 }}>{recurringCollapsed ? '▼' : '▲'}</span>
+                    </button>
+                    {!recurringCollapsed && recurringTemplates.map(task => (
+                      <RecurringTemplateRow
+                        key={task.id}
+                        task={task}
+                        onSelect={() => onSelectTask(task)}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ padding: '8px 14px 12px' }}>
                   <button
                     onClick={() => setShowQuickAdd(true)}
@@ -1772,6 +1799,9 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
         style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
       >
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)', textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {task.recurrence && (
+            <span title={formatRecurrenceLabel(task.recurrence)} style={{ fontSize: 10, color: 'var(--color-info)', marginRight: 4, verticalAlign: 'middle' }}>↺</span>
+          )}
           {task.title || <span style={{ color: 'var(--color-text-faint)', fontStyle: 'italic' }}>(untitled)</span>}
         </span>
         {workspaceBadge && (
@@ -1865,6 +1895,9 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
         style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}
       >
         <span style={{ fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {task.recurrence && (
+            <span title={`Recurring template`} style={{ fontSize: 10, color: 'var(--color-info)', marginRight: 4, verticalAlign: 'middle' }}>↺</span>
+          )}
           {task.title || <span style={{ color: 'var(--color-text-faint)', fontStyle: 'italic' }}>(untitled)</span>}
         </span>
         {project && (
@@ -1898,6 +1931,33 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
           <button onClick={onAddToTasks} title="Add to today's tasks" style={{ padding: '2px 7px', fontSize: 11, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', color: 'var(--color-text-muted)' }}>+ Today</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function RecurringTemplateRow({ task, onSelect }: { task: SelectedTask; onSelect: () => void }) {
+  return (
+    <div
+      onClick={onSelect}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 0',
+        borderBottom: '1px solid var(--color-border)',
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ fontSize: 13, color: 'var(--color-info)', flexShrink: 0 }}>↺</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {task.title || <span style={{ fontStyle: 'italic', color: 'var(--color-text-faint)' }}>(untitled)</span>}
+        </div>
+        {task.recurrence && (
+          <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 1 }}>
+            {formatRecurrenceLabel(task.recurrence)}
+          </div>
+        )}
+      </div>
+      <span style={{ fontSize: 10, color: 'var(--color-text-faint)', flexShrink: 0 }}>›</span>
     </div>
   );
 }
