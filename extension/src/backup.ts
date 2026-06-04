@@ -1,6 +1,7 @@
 import { db } from './db';
 
-const EXCLUDED_SETTINGS = new Set(['calendar_last_synced']);
+// auth_session contains JWT tokens — never export
+const EXCLUDED_SETTINGS = new Set(['calendar_last_synced', 'auth_session']);
 const EXPECTED_TABLES = ['tasks', 'taskOrders', 'projects', 'workspaces', 'habits', 'habitHistory', 'meetings', 'detectionRules', 'settings'] as const;
 
 export interface BackupEnvelope {

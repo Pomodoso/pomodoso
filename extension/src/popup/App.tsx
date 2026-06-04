@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
+import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
 import { useLocalStorage } from './useStorage';
@@ -32,6 +33,7 @@ const INITIAL_RULES: DetectionRuleRow[] = [
 ];
 
 export function App() {
+  const auth = useAuth();
   const { timerState, detectedTicket, selectedText, clearSelection, loading: timerLoading, start, attachTask, detachTask, pausePomo, resumePomo, completePomo, startBreak, snooze, stop, clearPendingSegment, extendBreak, startNextPomo } = useTimerState();
 
   // ── Migration: chrome.storage.local → IndexedDB (runs once) ──────────────
@@ -87,7 +89,7 @@ export function App() {
   // ── Loading state ──────────────────────────────────────────────────────────
   const dbLoading = !migrated || allTasksArr === undefined || taskOrdersArr === undefined ||
     projectsArr === undefined || workspacesArr === undefined || rulesArr === undefined;
-  const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading;
+  const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading || auth.loading;
 
   // ── First-launch: seed sample data ────────────────────────────────────────
   useEffect(() => {
@@ -170,7 +172,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar'>('main');
+  const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar' | 'account'>('main');
   const [linkingTicket, setLinkingTicket] = useState<TicketRef | null>(null);
   const [addingNoteText, setAddingNoteText] = useState<string | null>(null);
 
@@ -810,6 +812,8 @@ export function App() {
           workDays={workDays}
           onUpdateWeekStart={(d) => void updateWeekStart(d)}
           onUpdateWorkDays={(d) => void updateWorkDays(d)}
+          entitlements={auth.entitlements}
+          auth={auth}
         />
       </PopupShell>
     );
@@ -889,6 +893,10 @@ export function App() {
         onLinkToTask={(ticket) => setLinkingTicket(ticket)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenCalendarSettings={() => { setSettingsInitialPage('calendar'); setShowSettings(true); }}
+        onOpenAccount={() => { setSettingsInitialPage('account'); setShowSettings(true); }}
+        onSignOut={() => void auth.signOut()}
+        isSignedIn={Boolean(auth.session)}
+        isSyncing={Boolean(auth.session) && auth.entitlements.features.sync}
         selectedText={selectedText}
         onCreateFromText={(text) => void createFromText(text)}
         onAddTextToNotes={(text) => setAddingNoteText(text)}

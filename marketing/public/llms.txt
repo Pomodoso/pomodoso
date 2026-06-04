@@ -1,0 +1,34 @@
+# Pomodoso
+
+> A Chrome extension for developers and knowledge workers that unifies daily work tracking.
+
+## What it does
+
+Pomodoso automatically detects Linear and GitHub tickets while you browse, integrates a Pomodoro timer that measures effective time per task, records daily priorities and tasks, tracks recurring habits, and connects to Google Calendar to measure real meeting time. Everything logged becomes daily and weekly reports ready to share.
+
+## Key features
+
+- Auto ticket detection: Linear, GitHub, Jira, Sentry, arXiv, custom URL patterns
+- Pomodoro timer (25/5/15 min cycles) and Stopwatch mode
+- Task management with 3 daily priorities
+- Habit tracking (boolean and counter, daily or custom schedule)
+- Google Calendar integration for meeting tracking
+- Workspaces to separate Work/Personal
+- Daily and weekly report generation (Markdown, Slack-friendly)
+- Local-first storage with IndexedDB — works offline
+
+## Pricing
+
+- **Free**: Full extension, 1 workspace, local storage, 30-day history
+- **Pro ($29/year or ~$3.49/month)**: Multi-device sync, web dashboard, unlimited workspaces, full history
+
+## Install
+
+Available on the Chrome Web Store: https://chrome.google.com/webstore
+
+## Links
+
+- Website: https://pomodoso.com
+- Dashboard: https://app.pomodoso.com
+- Pricing: https://pomodoso.com/pricing
+- Privacy: https://pomodoso.com/privacy

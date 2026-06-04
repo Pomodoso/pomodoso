@@ -74,6 +74,10 @@ interface HomeStateProps {
   onLinkToTask: (ticket: TicketRef) => void;
   onOpenSettings: () => void;
   onOpenCalendarSettings: () => void;
+  onOpenAccount: () => void;
+  onSignOut: () => void;
+  isSignedIn: boolean;
+  isSyncing: boolean;
   selectedText: string | null;
   onCreateFromText: (text: string) => void;
   onAddTextToNotes: (text: string) => void;
@@ -150,11 +154,13 @@ export function HomeState({
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
-  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings,
+  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
-  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab,
+  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, isSyncing,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
   const [linkedDismissed, setLinkedDismissed] = useState(false);
   const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
@@ -458,8 +464,70 @@ export function HomeState({
         </span>
         <div style={{ display: 'flex', gap: 2 }}>
           <IconButton title="Add task" onClick={() => setShowQuickAdd(true)}>+</IconButton>
-          <IconButton title="Settings" onClick={onOpenSettings}>⚙</IconButton>
-          <IconButton title="Open app" onClick={() => chrome.tabs.create({ url: 'https://app.pomodoso.app' })}>↗</IconButton>
+          {/* ── Header menu ── */}
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowMenu(v => !v)}
+              title="Menu"
+              style={{
+                width: 28, height: 28, borderRadius: 'var(--radius-sm)',
+                border: 'none', cursor: 'pointer',
+                background: showMenu ? 'var(--color-surface)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              {/* Sync status dot */}
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: isSyncing ? '#4ade80' : isSignedIn ? 'var(--color-text-faint)' : 'transparent',
+                border: isSignedIn ? 'none' : '1.5px solid var(--color-text-faint)',
+              }} />
+              {/* Hamburger lines */}
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                {[0,1,2].map(i => (
+                  <span key={i} style={{ width: 11, height: 1.5, borderRadius: 1, background: 'currentColor', display: 'block' }} />
+                ))}
+              </span>
+            </button>
+
+            {showMenu && (() => {
+              const rect = menuRef.current?.getBoundingClientRect();
+              return (<>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setShowMenu(false)} />
+                <div style={{
+                  position: 'fixed',
+                  top: (rect?.bottom ?? 40) + 4,
+                  right: 8,
+                  zIndex: 99,
+                  minWidth: 172, padding: '4px',
+                  background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                  display: 'flex', flexDirection: 'column', gap: 1,
+                }}>
+                  {/* Sync status */}
+                  {isSignedIn ? (
+                    <div style={{ padding: '6px 10px 4px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: isSyncing ? '#4ade80' : 'var(--color-text-faint)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                        {isSyncing ? 'Syncing' : 'Free plan'}
+                      </span>
+                    </div>
+                  ) : (
+                    <MenuRow icon="◉" label="Sign in to sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
+                  )}
+                  <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
+                  <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://app.pomodoso.app' }); }} />
+                  {isSignedIn && (<>
+                    <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
+                    <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
+                    <MenuRow icon="✕" label="Sign out" onClick={() => { setShowMenu(false); onSignOut(); }} danger />
+                  </>)}
+                </div>
+              </>);
+            })()}
+          </div>
         </div>
       </div>
 
@@ -3488,6 +3556,24 @@ function SmallButton({ children, onClick, title, disabled }: { children: React.R
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       {children}
+    </button>
+  );
+}
+
+function MenuRow({ icon, label, onClick, danger }: { icon: string; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 10px', width: '100%', textAlign: 'left',
+        background: 'none', border: 'none', cursor: 'pointer',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 12, color: danger ? '#f87171' : 'var(--color-text)',
+      }}
+    >
+      <span style={{ width: 14, textAlign: 'center', fontSize: 11, color: danger ? '#f87171' : 'var(--color-text-muted)', flexShrink: 0 }}>{icon}</span>
+      {label}
     </button>
   );
 }

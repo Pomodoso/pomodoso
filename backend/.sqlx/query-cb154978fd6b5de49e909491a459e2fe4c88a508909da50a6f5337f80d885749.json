@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT plan, feature_overrides FROM subscription WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "plan",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "feature_overrides",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "cb154978fd6b5de49e909491a459e2fe4c88a508909da50a6f5337f80d885749"
+}

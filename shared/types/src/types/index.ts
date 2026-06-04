@@ -58,6 +58,7 @@ export interface Subscription {
 
 export interface EntitlementFeatures {
   sync: boolean;
+  dashboard: boolean;
   multi_workspace: boolean;
   calendar: boolean;
   ai_summary: boolean;
@@ -77,6 +78,7 @@ export const FREE_ENTITLEMENTS: Entitlements = {
   plan: 'free',
   features: {
     sync: false,
+    dashboard: false,
     multi_workspace: false,
     calendar: false,
     ai_summary: false,
@@ -85,6 +87,22 @@ export const FREE_ENTITLEMENTS: Entitlements = {
     max_devices: 1,
     max_workspaces: 1,
     history_days: 30,
+  },
+};
+
+export const PRO_ENTITLEMENTS: Entitlements = {
+  plan: 'pro',
+  features: {
+    sync: true,
+    dashboard: true,
+    multi_workspace: true,
+    calendar: true,
+    ai_summary: false,
+    history_unlimited: true,
+    api_integrations: false,
+    max_devices: 10,
+    max_workspaces: 999,
+    history_days: 9999,
   },
 };
 

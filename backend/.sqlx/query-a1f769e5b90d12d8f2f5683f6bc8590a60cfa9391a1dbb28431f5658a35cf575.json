@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subscription\n        SET plan = $1, status = 'active',\n            stripe_subscription_id = COALESCE($2, stripe_subscription_id),\n            updated_at = NOW()\n        WHERE stripe_customer_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1f769e5b90d12d8f2f5683f6bc8590a60cfa9391a1dbb28431f5658a35cf575"
+}

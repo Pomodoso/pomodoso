@@ -1,0 +1,22 @@
+{
+  "name": "@pomodoso/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pomodoso/types": "workspace:*",
+    "@supabase/supabase-js": "^2.49.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

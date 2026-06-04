@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subscription\n        SET status = $1, current_period_end = $2, updated_at = NOW()\n        WHERE stripe_subscription_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c83f906e18336b7813ea87316d54e32c1768745d4204c532c1423b5929743d0"
+}
