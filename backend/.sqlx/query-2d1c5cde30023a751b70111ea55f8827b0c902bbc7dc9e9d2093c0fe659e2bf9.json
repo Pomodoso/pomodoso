@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO project (id, workspace_id, name, color, updated_at, deleted_at, synced_at)\n        VALUES ($1, $2, $3, $4, $5, $6, NOW())\n        ON CONFLICT (id) DO UPDATE SET\n          name       = EXCLUDED.name,\n          color      = EXCLUDED.color,\n          updated_at = EXCLUDED.updated_at,\n          deleted_at = EXCLUDED.deleted_at,\n          synced_at  = NOW()\n        WHERE EXCLUDED.updated_at > project.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d1c5cde30023a751b70111ea55f8827b0c902bbc7dc9e9d2093c0fe659e2bf9"
+}

@@ -1,92 +1,276 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import type { MeResponse } from '@pomodoso/api';
 import { api } from '../../lib/api.ts';
+import TodayPage from './TodayPage.tsx';
+
+interface WorkspaceInfo {
+  id: string;
+  name: string;
+  color: string;
+}
+
+function initials(str: string): string {
+  return str
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(s => s[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 export default function Dashboard() {
   const { session, entitlements } = useAuth();
+  const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [activeWsId, setActiveWsId] = useState<string | null>(null);
+  const [wsMenuOpen, setWsMenuOpen] = useState(false);
+  const wsMenuRef = useRef<HTMLDivElement>(null);
+
+  const refreshWorkspaces = () => {
+    if (!session) return;
+    api
+      .get<WorkspaceInfo[]>('/workspaces')
+      .then((ws) => {
+        setWorkspaces(ws);
+        // If the current active workspace was deleted, fall back to the first one
+        setActiveWsId(prev => {
+          if (ws.length === 0) return null;
+          if (prev && ws.some(w => w.id === prev)) return prev;
+          return ws[0].id;
+        });
+      })
+      .catch(console.error);
+  };
 
   useEffect(() => {
-    api.get<MeResponse>('/me')
-      .then(setMe)
-      .catch(console.error);
+    if (!session) return;
+    api.get<MeResponse>('/me').then(setMe).catch(console.error);
+    refreshWorkspaces();
+
+    // Refresh workspace list when the user switches back to this tab
+    // (e.g. after deleting workspaces in the extension)
+    window.addEventListener('focus', refreshWorkspaces);
+    return () => window.removeEventListener('focus', refreshWorkspaces);
   }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!wsMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (wsMenuRef.current && !wsMenuRef.current.contains(e.target as Node)) {
+        setWsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [wsMenuOpen]);
 
   const handleSignOut = async () => {
     await signOut(supabase);
-    window.location.href = '/login';
+    navigate('/login');
   };
 
+  const activeWs = workspaces.find(w => w.id === activeWsId);
+  const userEmail = me?.user.email ?? session?.user.email ?? '';
+  const userName = me?.user.name ?? userEmail;
+  const userInitials = initials(userName || userEmail);
   const isPro = entitlements.features.dashboard;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      {/* Header */}
-      <header className="border-b border-neutral-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-bold tracking-tight">Pomodoso</span>
-          <span className="text-xs text-neutral-500 bg-neutral-800 px-2 py-0.5 rounded-full">
-            {isPro ? 'Pro' : 'Free'}
-          </span>
+    <div className="pomo-app">
+      {/* ── Sidebar ────────────────────────────────────────────────────────────── */}
+      <aside className="pomo-sidebar">
+        {/* Brand */}
+        <div className="pomo-brand">
+          <div className="pomo-brand-logo">
+            <i className="ti ti-tomato" />
+          </div>
+          Pomodoso
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-neutral-400">{me?.user.email ?? session?.user.email}</span>
-          <Link to="/settings" className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors">
-            Settings
-          </Link>
-          <button
-            onClick={() => void handleSignOut()}
-            className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-10">
-        {!isPro && (
-          <div className="rounded-xl border border-neutral-700 bg-neutral-900/50 px-5 py-4 mb-8 flex items-center justify-between gap-4">
-            <p className="text-sm text-neutral-400">
-              Unlock multi-device sync, full history, and unlimited workspaces with{' '}
-              <span className="text-neutral-200 font-medium">Pomodoso Pro</span>.
-            </p>
-            <Link
-              to="/settings/billing"
-              className="shrink-0 px-4 py-2 bg-white text-neutral-900 text-xs font-semibold rounded-lg hover:bg-neutral-100 transition-colors"
+        {/* Workspace switcher */}
+        {activeWs && (
+          <div ref={wsMenuRef} style={{ position: 'relative' }}>
+            <div
+              className="pomo-ws-switcher"
+              onClick={() => setWsMenuOpen(o => !o)}
+              style={{ cursor: workspaces.length > 1 ? 'pointer' : 'default' }}
             >
-              Upgrade
-            </Link>
+              <span
+                className="pomo-ws-dot"
+                style={{ background: activeWs.color ?? 'var(--accent)' }}
+              >
+                {activeWs.name[0]?.toUpperCase()}
+              </span>
+              <span style={{ flex: 1, fontWeight: 500 }}>{activeWs.name}</span>
+              {workspaces.length > 1 && (
+                <i
+                  className={`ti ti-chevron-${wsMenuOpen ? 'up' : 'down'}`}
+                  style={{ fontSize: 12, color: 'var(--text-tert)' }}
+                />
+              )}
+            </div>
+
+            {wsMenuOpen && workspaces.length > 1 && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 4px)',
+                left: 0,
+                right: 0,
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                zIndex: 100,
+                overflow: 'hidden',
+              }}>
+                {workspaces.map(ws => (
+                  <div
+                    key={ws.id}
+                    onClick={() => { setActiveWsId(ws.id); setWsMenuOpen(false); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      background: ws.id === activeWsId ? 'var(--bg-darker)' : 'transparent',
+                      fontSize: 13,
+                      color: 'var(--text)',
+                    }}
+                    onMouseEnter={e => { if (ws.id !== activeWsId) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-darker)'; }}
+                    onMouseLeave={e => { if (ws.id !== activeWsId) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                  >
+                    <span style={{
+                      width: 18, height: 18, borderRadius: 4,
+                      background: ws.color ?? 'var(--accent)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0,
+                    }}>
+                      {ws.name[0]?.toUpperCase()}
+                    </span>
+                    <span style={{ flex: 1 }}>{ws.name}</span>
+                    {ws.id === activeWsId && (
+                      <i className="ti ti-check" style={{ fontSize: 12, color: 'var(--accent)' }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        <h1 className="text-2xl font-bold mb-8">Dashboard</h1>
+        {/* Workspace section */}
+        <div className="pomo-nav-section">Workspace</div>
+        <a className="pomo-nav-item active" href="/dashboard">
+          <i className="ti ti-layout-dashboard" /> Today
+        </a>
+        <a className="pomo-nav-item disabled" href="/dashboard/reports">
+          <i className="ti ti-file-text" /> Reports
+          <span className="pomo-soon">Soon</span>
+        </a>
+        <a className="pomo-nav-item disabled" href="/dashboard/history">
+          <i className="ti ti-calendar-stats" /> History
+          <span className="pomo-soon">Soon</span>
+        </a>
 
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <StatCard label="Focus time today" value="—" />
-          <StatCard label="Pomodoros today" value="—" />
-          <StatCard label="Tasks completed" value="—" />
-        </div>
+        {/* Settings section */}
+        <div className="pomo-nav-section">Settings</div>
+        <a className="pomo-nav-item disabled" href="/dashboard/projects">
+          <i className="ti ti-folders" /> Projects
+          <span className="pomo-soon">Soon</span>
+        </a>
+        <a className="pomo-nav-item disabled" href="/dashboard/habits">
+          <i className="ti ti-checkup-list" /> Habits
+          <span className="pomo-soon">Soon</span>
+        </a>
+        <a className="pomo-nav-item disabled" href="/dashboard/calendar">
+          <i className="ti ti-calendar" /> Calendar
+          <span className="pomo-soon">Soon</span>
+        </a>
+        <a className="pomo-nav-item disabled" href="/dashboard/integrations">
+          <i className="ti ti-plug" /> Integrations
+          <span className="pomo-soon">Soon</span>
+        </a>
 
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-6">
-          <h2 className="text-sm font-semibold text-neutral-300 mb-4">This week</h2>
-          <p className="text-sm text-neutral-500">
-            Start using the extension to see your focus data here.
-          </p>
+        {/* User footer */}
+        <div className="pomo-sidebar-footer">
+          {/* Billing */}
+          {!isPro && (
+            <Link
+              to="/settings/billing"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '7px 10px',
+                borderRadius: 6,
+                background: 'var(--accent-soft)',
+                border: '1px solid rgba(200,85,61,0.2)',
+                marginBottom: 6,
+                textDecoration: 'none',
+                fontSize: 12,
+                color: 'var(--accent)',
+                fontWeight: 500,
+              }}
+            >
+              <i className="ti ti-sparkles" style={{ fontSize: 14 }} />
+              Upgrade to Pro
+            </Link>
+          )}
+
+          {/* User row */}
+          <div className="pomo-user-row">
+            <div className="pomo-avatar">{userInitials}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontWeight: 500,
+                color: 'var(--text)',
+                fontSize: 12,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {userName !== userEmail ? userName : userEmail}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-tert)' }}>
+                {isPro ? 'Pro' : 'Free plan'}
+              </div>
+            </div>
+            <button
+              onClick={() => void handleSignOut()}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-tert)',
+                padding: 4,
+                fontSize: 14,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              title="Sign out"
+            >
+              <i className="ti ti-logout" />
+            </button>
+          </div>
         </div>
+      </aside>
+
+      {/* ── Main content ────────────────────────────────────────────────────────── */}
+      <main className="pomo-main">
+        {activeWsId ? (
+          <TodayPage workspaceId={activeWsId} />
+        ) : (
+          <div style={{ padding: '60px 0', color: 'var(--text-tert)', fontSize: 13 }}>
+            Loading workspace…
+          </div>
+        )}
       </main>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-      <div className="text-xs text-neutral-500 mb-1">{label}</div>
-      <div className="text-2xl font-bold">{value}</div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import type { ISOTimestamp, UUID } from '@pomodoso/types';
-import type { ApiClient } from './client.ts';
+import type { IApiClient } from './client.ts';
 
 export interface SyncEntity {
   table: string;
@@ -24,14 +24,14 @@ export interface PullResponse {
 }
 
 export async function pushEntities(
-  client: ApiClient,
+  client: IApiClient,
   body: PushBody,
 ): Promise<PushResponse> {
   return client.post<PushResponse>('/sync/push', body);
 }
 
 export async function pullEntities(
-  client: ApiClient,
+  client: IApiClient,
   workspaceId: UUID,
   since?: ISOTimestamp,
 ): Promise<PullResponse> {

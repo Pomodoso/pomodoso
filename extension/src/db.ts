@@ -102,6 +102,7 @@ export interface HabitRow extends SyncMeta {
 }
 
 export interface HabitHistoryRow {
+  id?: string;            // UUID — assigned on first sync, stable thereafter
   habitId: string;
   date: string;           // YYYY-MM-DD
   count?: number;
@@ -195,6 +196,10 @@ export class PomoDB extends Dexie {
     });
     this.version(8).stores({
       tasks: 'id, workspaceId, status, updatedAt, deletedAt, syncedAt, parentId',
+    });
+    // v9: add id index to habitHistory for sync
+    this.version(9).stores({
+      habitHistory: '[habitId+date], habitId, date, id',
     });
   }
 }

@@ -1,1 +1,477 @@
 @import "tailwindcss";
+
+:root {
+  --bg: #FBFAF7;
+  --bg-darker: #F4F1EB;
+  --surface: #FFFFFF;
+  --border: #E8E5DD;
+  --border-strong: #D6D2C8;
+  --text: #1A1A17;
+  --text-sec: #5F5D55;
+  --text-tert: #98948A;
+  --accent: #C8553D;
+  --accent-soft: #FAEEEA;
+  --success: #4A7C4A;
+  --success-soft: #EBF1E9;
+  --warning: #B07A1F;
+  --warning-soft: #FAF1DE;
+  --info: #4A6FA5;
+  --info-soft: #E9EFF7;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── App layout ──────────────────────────────────────────────────────────────── */
+.pomo-app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+.pomo-sidebar {
+  background: var(--bg-darker);
+  border-right: 1px solid var(--border);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.pomo-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 14px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  text-decoration: none;
+}
+.pomo-brand-logo {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+
+.pomo-ws-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.pomo-ws-dot {
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pomo-nav-section {
+  font-size: 10px;
+  color: var(--text-tert);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  padding: 10px 10px 4px;
+}
+
+.pomo-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--text-sec);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.1s;
+}
+.pomo-nav-item:hover { background: rgba(0,0,0,0.04); }
+.pomo-nav-item.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+}
+.pomo-nav-item.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.pomo-nav-item i { font-size: 15px; opacity: 0.85; }
+.pomo-soon {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-tert);
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.pomo-sidebar-footer {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.pomo-user-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-sec);
+  text-decoration: none;
+}
+.pomo-user-row:hover { background: rgba(0,0,0,0.04); }
+.pomo-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--warning));
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── Main content ────────────────────────────────────────────────────────────── */
+.pomo-main { padding: 28px 36px; }
+
+.pomo-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pomo-eyebrow {
+  font-size: 11px;
+  color: var(--text-tert);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pomo-page-title { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
+
+.pomo-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+.pomo-btn:hover { background: var(--bg-darker); }
+.pomo-btn-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.pomo-btn-primary:hover { opacity: 0.9; }
+.pomo-btn i { font-size: 14px; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────────── */
+.pomo-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.pomo-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.pomo-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.pomo-card-title i { font-size: 17px; color: var(--text-sec); }
+.pomo-card-meta {
+  font-size: 11px;
+  color: var(--text-tert);
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* ── Pomodoro bar ────────────────────────────────────────────────────────────── */
+.pomo-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+.pomo-bar-eyebrow {
+  font-size: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.pomo-bar-task { font-size: 15px; font-weight: 500; margin-bottom: 3px; }
+.pomo-bar-meta {
+  font-size: 12px;
+  color: var(--text-sec);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Grid layout ─────────────────────────────────────────────────────────────── */
+.pomo-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 20px;
+}
+.pomo-left-col { display: flex; flex-direction: column; gap: 20px; }
+.pomo-right-col { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Priority list ───────────────────────────────────────────────────────────── */
+.pomo-priority-list { display: flex; flex-direction: column; gap: 4px; }
+.pomo-priority-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.pomo-priority-item:hover { background: var(--bg-darker); }
+.pomo-priority-mark {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+.pomo-priority-mark.done { background: var(--success); }
+
+/* ── Task list ───────────────────────────────────────────────────────────────── */
+.pomo-task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  font-size: 13px;
+  border-radius: 4px;
+}
+.pomo-task-row:hover { background: var(--bg); }
+.pomo-task-cb {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.pomo-task-cb.checked { background: var(--success); border-color: var(--success); color: white; font-size: 11px; }
+
+/* ── Work log ────────────────────────────────────────────────────────────────── */
+.pomo-project-group { margin-bottom: 14px; }
+.pomo-project-group:last-child { margin-bottom: 0; }
+.pomo-project-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-sec);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+.pomo-project-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+}
+.pomo-work-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+.pomo-work-row:hover { background: var(--bg-darker); }
+.pomo-work-row.active { background: var(--accent-soft); border: 1px solid var(--accent); }
+.pomo-time-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tert);
+  white-space: nowrap;
+}
+.pomo-status-pill {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.pomo-status-done { color: var(--success); background: var(--success-soft); }
+.pomo-status-active { color: var(--accent); background: var(--accent-soft); }
+.pomo-status-todo { color: var(--text-tert); background: var(--bg-darker); }
+.pomo-status-progress { color: var(--warning); background: var(--warning-soft); }
+
+/* ── Habits ──────────────────────────────────────────────────────────────────── */
+.pomo-habit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 4px;
+  font-size: 13px;
+}
+.pomo-habit-name { display: flex; align-items: center; gap: 8px; }
+.pomo-habit-name i { font-size: 16px; color: var(--text-sec); }
+
+.pomo-counter { display: flex; gap: 3px; }
+.pomo-counter-dot {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid var(--border-strong);
+}
+.pomo-counter-dot.filled { background: var(--info); border-color: var(--info); }
+
+.pomo-switch {
+  width: 32px; height: 18px;
+  border-radius: 9px;
+  background: var(--border-strong);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pomo-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+.pomo-switch.on { background: var(--success); }
+.pomo-switch.on::after { transform: translateX(14px); }
+
+/* ── Time chart ──────────────────────────────────────────────────────────────── */
+.pomo-time-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: var(--border);
+}
+.pomo-time-legend { display: flex; flex-direction: column; gap: 6px; }
+.pomo-time-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.pomo-time-legend-name { display: flex; align-items: center; gap: 7px; }
+.pomo-time-legend-dot { width: 9px; height: 9px; border-radius: 2px; }
+.pomo-time-legend-val { font-family: var(--font-mono); color: var(--text-sec); font-size: 11px; }
+
+/* ── Stats ───────────────────────────────────────────────────────────────────── */
+.pomo-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.pomo-stat { padding: 12px; background: var(--bg); border-radius: 6px; }
+.pomo-stat-value { font-size: 22px; font-weight: 700; line-height: 1; margin-bottom: 3px; letter-spacing: -0.5px; }
+.pomo-stat-label { font-size: 11px; color: var(--text-sec); }
+
+/* ── Pill ────────────────────────────────────────────────────────────────────── */
+.pomo-ticket-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--info);
+  background: var(--info-soft);
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────────── */
+.pomo-empty {
+  text-align: center;
+  padding: 24px 12px;
+  color: var(--text-tert);
+  font-size: 12px;
+}
+.pomo-empty i { font-size: 28px; display: block; margin-bottom: 8px; opacity: 0.5; }
+
+/* ── Mini ring ───────────────────────────────────────────────────────────────── */
+.pomo-mini-ring { position: relative; width: 56px; height: 56px; }
+.pomo-mini-ring svg { transform: rotate(-90deg); }
+.pomo-mini-ring-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+}
+
+/* ── Project badge ───────────────────────────────────────────────────────────── */
+.pomo-project-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+@keyframes pomo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.pomo-active-dot { animation: pomo-pulse 2s infinite; }

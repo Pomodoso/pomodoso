@@ -16,6 +16,7 @@ import {
   type TaskRow, type TaskOrderRow, type ProjectRow, type WorkspaceRow, type DetectionRuleRow,
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
+import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { shouldBeInTodayNow } from '../recurrence';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
@@ -54,6 +55,33 @@ export function App() {
     if (workspacesArr.length === 0) {
       void db.workspaces.put({ ...DEFAULT_WORKSPACE, updatedAt: now() });
     }
+  }, [migrated, workspacesArr]);
+
+  // ── Migrate 'default' workspace to a proper UUID (sync requires valid UUIDs) ──
+  // Runs once when DB loads. Replaces the sentinel 'default' id with a real UUID
+  // across all tables, then updates the persisted activeWsId.
+  useEffect(() => {
+    if (!migrated || workspacesArr === undefined) return;
+    const defaultWs = workspacesArr.find(w => w.id === 'default');
+    if (!defaultWs) return;
+    void (async () => {
+      const newId = crypto.randomUUID();
+      await db.transaction('rw', [db.workspaces, db.tasks, db.habits, db.meetings, db.taskOrders], async () => {
+        await db.workspaces.put({ ...defaultWs, id: newId, syncedAt: undefined });
+        await db.tasks.filter(t => t.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
+        await db.habits.filter(h => h.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
+        await db.meetings.filter(m => m.workspaceId === 'default').modify({ workspaceId: newId });
+        const order = await db.taskOrders.get('default');
+        if (order) {
+          await db.taskOrders.put({ ...order, wsId: newId });
+          await db.taskOrders.delete('default');
+        }
+        await db.workspaces.delete('default');
+      });
+      // activeWsId at this point is still 'default' (migration just ran)
+      setActiveWsId(newId);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated, workspacesArr]);
   const rulesArr       = useLiveQuery(() => db.detectionRules.filter(r => !r.deletedAt).toArray(), [migrated]);
   const timerSettingsRow    = useLiveQuery(() => db.settings.get('timer_settings'), [migrated]);
@@ -175,6 +203,28 @@ export function App() {
   const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar' | 'account'>('main');
   const [linkingTicket, setLinkingTicket] = useState<TicketRef | null>(null);
   const [addingNoteText, setAddingNoteText] = useState<string | null>(null);
+
+  // ── Sync ──────────────────────────────────────────────────────────────────────
+  const API_URL = import.meta.env.VITE_API_URL as string | undefined;
+  const [syncStatus, setSyncStatus] = useState<'disconnected' | 'connected' | 'syncing' | 'error'>('disconnected');
+
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeWsId);
+  const canSync = Boolean(auth.session && auth.entitlements.features.sync && API_URL && activeWsId && isValidUuid);
+
+  useEffect(() => {
+    if (!auth.session) { setSyncStatus('disconnected'); clearSync(); return; }
+    if (!canSync) { setSyncStatus('connected'); return; }
+
+    initSync(auth.session.access_token, activeWsId, API_URL!, setSyncStatus);
+
+    // Initial sync on login / popup open
+    setSyncStatus('syncing');
+    void syncAll(auth.session.access_token, activeWsId, API_URL!)
+      .then(() => setSyncStatus('connected'))
+      .catch((err) => { console.error('[sync]', err); setSyncStatus('error'); });
+
+    return () => clearSync();
+  }, [auth.session?.access_token, canSync, activeWsId]);
 
   // ── After a fresh calendar connect: open Settings > Calendar so the user can select calendars
   useEffect(() => {
@@ -437,6 +487,7 @@ export function App() {
       return;
     }
     await db.tasks.update(id, { ...updates, updatedAt: now() });
+    triggerSync();
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev);
 
     if (updates.workspaceId !== undefined) {
@@ -484,6 +535,7 @@ export function App() {
         }
       }
     });
+    triggerSync();
   }, []);
 
   // ── Time logging ───────────────────────────────────────────────────────────
@@ -550,6 +602,7 @@ export function App() {
       }
     }
     await stop();
+    void clearActiveTimer();
   }, [timerState, stop, allTasks, markRecurringDoneToday]);
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
@@ -560,27 +613,40 @@ export function App() {
     await start(payload);
     if (payload.mode === 'pomodoro') playSound('focus-start', soundSettings);
     if (payload.taskId) await updateTask(payload.taskId, { status: 'in_progress' });
+    void pushActiveTimer(
+      new Date().toISOString(),
+      payload.mode,
+      payload.taskId,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timerSettings.pomodoroDuration ?? null,
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerState, start, soundSettings, updateTask]);
+  }, [timerState, start, soundSettings, updateTask, timerSettings]);
 
   const handleAttachTask = useCallback(async (payload: TimerAttachPayload) => {
     await attachTask(payload);
     await updateTask(payload.taskId, { status: 'in_progress' });
   }, [attachTask, updateTask]);
 
-  const handleCancelTimer = useCallback(async () => { await stop(); }, [stop]);
+  const handleCancelTimer = useCallback(async () => {
+    await stop();
+    void clearActiveTimer();
+  }, [stop]);
 
   // ── Project mutations ──────────────────────────────────────────────────────
   const addProject = useCallback(async (project: Omit<ProjectRow, keyof import('../db').SyncMeta>) => {
     await db.projects.put({ ...project, updatedAt: now() } as ProjectRow);
+    triggerSync();
   }, []);
 
   const updateProject = useCallback(async (id: string, updates: Partial<ProjectRow>) => {
     await db.projects.update(id, { ...updates, updatedAt: now() });
+    triggerSync();
   }, []);
 
   const deleteProject = useCallback(async (id: string) => {
     await db.projects.update(id, { deletedAt: now(), updatedAt: now() });
+    triggerSync();
   }, []);
 
   // ── Workspace mutations ────────────────────────────────────────────────────
@@ -605,6 +671,7 @@ export function App() {
 
   const updateWorkspace = useCallback(async (id: string, name: string, color: string) => {
     await db.workspaces.update(id, { name, color, updatedAt: now() });
+    triggerSync();
   }, []);
 
   // ── Rule mutations ─────────────────────────────────────────────────────────
@@ -630,27 +697,39 @@ export function App() {
   const updateTimerSettings = useCallback(async (updates: Partial<TimerSettings>) => {
     const current = (await db.settings.get('timer_settings'))?.value as TimerSettings ?? { ...DEFAULT_TIMER_SETTINGS };
     await db.settings.put({ key: 'timer_settings', value: { ...current, ...updates } });
+    await db.settings.put({ key: 'timer_settings_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateSoundSettings = useCallback(async (updates: Partial<SoundSettings>) => {
     const current = (await db.settings.get('sound_settings'))?.value as SoundSettings ?? { ...DEFAULT_SOUND_SETTINGS };
     await db.settings.put({ key: 'sound_settings', value: { ...current, ...updates } });
+    await db.settings.put({ key: 'sound_settings_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateTimezone = useCallback(async (tz: string) => {
     await db.settings.put({ key: 'timezone', value: tz });
+    await db.settings.put({ key: 'timezone_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateMaxPriorities = useCallback(async (n: number) => {
     await db.settings.put({ key: 'max_priorities', value: n });
+    await db.settings.put({ key: 'max_priorities_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateWeekStart = useCallback(async (day: number) => {
     await db.settings.put({ key: 'week_start', value: day });
+    await db.settings.put({ key: 'week_start_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateWorkDays = useCallback(async (days: number[]) => {
     await db.settings.put({ key: 'work_days', value: days });
+    await db.settings.put({ key: 'work_days_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   // ── Ticket / selection actions ─────────────────────────────────────────────
@@ -814,6 +893,7 @@ export function App() {
           onUpdateWorkDays={(d) => void updateWorkDays(d)}
           entitlements={auth.entitlements}
           auth={auth}
+          onSyncNow={canSync ? syncNow : undefined}
         />
       </PopupShell>
     );
@@ -895,8 +975,9 @@ export function App() {
         onOpenCalendarSettings={() => { setSettingsInitialPage('calendar'); setShowSettings(true); }}
         onOpenAccount={() => { setSettingsInitialPage('account'); setShowSettings(true); }}
         onSignOut={() => void auth.signOut()}
+        onSyncNow={canSync ? syncNow : undefined}
         isSignedIn={Boolean(auth.session)}
-        isSyncing={Boolean(auth.session) && auth.entitlements.features.sync}
+        syncStatus={syncStatus}
         selectedText={selectedText}
         onCreateFromText={(text) => void createFromText(text)}
         onAddTextToNotes={(text) => setAddingNoteText(text)}

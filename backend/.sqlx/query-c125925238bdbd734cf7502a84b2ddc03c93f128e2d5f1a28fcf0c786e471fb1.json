@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)::bigint as \"count!\"\n        FROM task\n        WHERE workspace_id = $1\n          AND status = 'done'\n          AND completed_at IS NOT NULL\n          AND DATE(completed_at AT TIME ZONE 'UTC') = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c125925238bdbd734cf7502a84b2ddc03c93f128e2d5f1a28fcf0c786e471fb1"
+}

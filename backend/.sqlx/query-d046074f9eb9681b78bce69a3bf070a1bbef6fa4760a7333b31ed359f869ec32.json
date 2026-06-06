@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)::bigint as \"count!\"\n        FROM pomodoro_session\n        WHERE workspace_id = $1\n          AND kind = 'focus'\n          AND status IN ('completed', 'interrupted')\n          AND started_at >= date_trunc('week', $2::date::timestamptz)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d046074f9eb9681b78bce69a3bf070a1bbef6fa4760a7333b31ed359f869ec32"
+}

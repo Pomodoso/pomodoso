@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO habit_log (\n          id, habit_id, workspace_id, date, value, completed_at, updated_at, synced_at\n        ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())\n        ON CONFLICT (habit_id, date) DO UPDATE SET\n          value        = EXCLUDED.value,\n          completed_at = EXCLUDED.completed_at,\n          updated_at   = EXCLUDED.updated_at,\n          synced_at    = NOW()\n        WHERE EXCLUDED.updated_at > habit_log.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7f081cd1785f26b2e4745b47aeef2b3900eb89535fc429c0c3a2a9742c14d23"
+}

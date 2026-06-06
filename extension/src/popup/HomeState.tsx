@@ -76,8 +76,9 @@ interface HomeStateProps {
   onOpenCalendarSettings: () => void;
   onOpenAccount: () => void;
   onSignOut: () => void;
+  onSyncNow?: () => void;
   isSignedIn: boolean;
-  isSyncing: boolean;
+  syncStatus: 'disconnected' | 'connected' | 'syncing' | 'error';
   selectedText: string | null;
   onCreateFromText: (text: string) => void;
   onAddTextToNotes: (text: string) => void;
@@ -154,9 +155,9 @@ export function HomeState({
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
-  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut,
+  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
-  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, isSyncing,
+  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
   const [showMenu, setShowMenu] = useState(false);
@@ -480,8 +481,10 @@ export function HomeState({
               {/* Sync status dot */}
               <span style={{
                 width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                background: isSyncing ? '#4ade80' : isSignedIn ? 'var(--color-text-faint)' : 'transparent',
-                border: isSignedIn ? 'none' : '1.5px solid var(--color-text-faint)',
+                background: syncStatus === 'syncing' ? '#4ade80'
+                  : syncStatus === 'connected' ? '#facc15'
+                  : syncStatus === 'error' ? '#f97316'
+                  : '#f87171',
               }} />
               {/* Hamburger lines */}
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
@@ -508,15 +511,26 @@ export function HomeState({
                   {/* Sync status */}
                   {isSignedIn ? (
                     <div style={{ padding: '6px 10px 4px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: isSyncing ? '#4ade80' : 'var(--color-text-faint)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                        {isSyncing ? 'Syncing' : 'Free plan'}
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                        background: syncStatus === 'syncing' ? '#4ade80'
+                          : syncStatus === 'connected' ? '#facc15'
+                          : syncStatus === 'error' ? '#f97316'
+                          : '#f87171',
+                      }} />
+                      <span style={{ fontSize: 11, color: syncStatus === 'error' ? '#f97316' : 'var(--color-text-muted)' }}>
+                        {syncStatus === 'syncing' ? 'Syncing…'
+                          : syncStatus === 'error' ? 'Sync error — backend offline?'
+                          : 'Connected'}
                       </span>
                     </div>
                   ) : (
                     <MenuRow icon="◉" label="Sign in to sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
                   )}
                   <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
+                  {onSyncNow && (
+                    <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
+                  )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
                   <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://app.pomodoso.app' }); }} />
                   {isSignedIn && (<>

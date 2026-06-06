@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO workspace_member (workspace_id, user_id, role)\n        VALUES ($1, $2, 'owner')\n        ON CONFLICT (workspace_id, user_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9bf4e763e82ce5e52bfe8e2ed2f8bc986f33af353e88f3a9a727065b8c78a1f5"
+}

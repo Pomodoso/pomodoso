@@ -73,6 +73,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/me/entitlements", get(routes::me::get_entitlements).route_layer(auth.clone()))
         .route("/sync/push", post(routes::sync::push).route_layer(auth.clone()))
         .route("/sync/pull", get(routes::sync::pull).route_layer(auth.clone()))
+        .route("/workspaces", get(routes::today::get_workspaces).route_layer(auth.clone()))
+        .route("/today", get(routes::today::get_today).route_layer(auth.clone()))
         .route("/billing/checkout", post(routes::billing::create_checkout).route_layer(auth.clone()))
         .route("/billing/portal", post(routes::billing::create_portal).route_layer(auth.clone()))
         .with_state(state)

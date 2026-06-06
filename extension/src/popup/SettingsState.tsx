@@ -47,6 +47,7 @@ interface SettingsStateProps {
   initialPage?: SettingsPage;
   entitlements: Entitlements;
   auth: AuthState;
+  onSyncNow?: () => void;
   onBack: () => void;
   onAddRule: (rule: DetectionRule) => void;
   onToggleRule: (id: string) => void;
@@ -65,11 +66,11 @@ interface SettingsStateProps {
   onUpdateWorkDays: (days: number[]) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
 
   if (page === 'account') {
-    return <AccountPage auth={auth} entitlements={entitlements} onBack={() => setPage('main')} />;
+    return <AccountPage auth={auth} entitlements={entitlements} onSyncNow={onSyncNow} onBack={() => setPage('main')} />;
   }
 
   if (page === 'calendar') {
@@ -491,9 +492,10 @@ function WorkspacesPage({ workspaces, canAddWorkspace, onAdd, onUpdate, onDelete
 
 // ── Account & Sync sub-page ───────────────────────────────────────────────────
 
-function AccountPage({ auth, entitlements, onBack }: {
+function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
   auth: AuthState;
   entitlements: Entitlements;
+  onSyncNow?: () => void;
   onBack: () => void;
 }) {
   const [email, setEmail] = useState('');
@@ -571,6 +573,14 @@ function AccountPage({ auth, entitlements, onBack }: {
                 </div>
               )}
 
+              {onSyncNow && (
+                <button
+                  onClick={onSyncNow}
+                  style={{ width: '100%', padding: '8px 12px', marginBottom: 8, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text)', fontWeight: 600 }}
+                >
+                  ↺ Sync now
+                </button>
+              )}
               <button
                 onClick={() => void auth.signOut()}
                 style={{ width: '100%', padding: '8px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}
