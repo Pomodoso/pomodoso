@@ -323,6 +323,19 @@ async fn handle_checkout_completed(state: &AppState, event: &Value) -> Result<()
     .execute(&state.pool)
     .await?;
 
+    // Confirmation email — best effort, fire and forget.
+    if let Some(u) = sqlx::query!(
+        r#"SELECT u.email, u.name FROM "user" u
+           JOIN subscription s ON s.user_id = u.id
+           WHERE s.stripe_customer_id = $1"#,
+        customer_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    {
+        crate::email::send_payment_confirmation(state, &u.email, &u.name, plan);
+    }
+
     Ok(())
 }
 

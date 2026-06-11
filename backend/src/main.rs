@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod email;
 mod error;
 mod middleware;
 mod models;

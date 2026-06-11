@@ -23,7 +23,10 @@ pub async fn get_me(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<MeResponse>> {
     let user = upsert_user(&state, &auth).await?;
-    let sub = get_or_create_subscription(&state, user.id).await?;
+    let (sub, is_new) = get_or_create_subscription(&state, user.id).await?;
+    if is_new {
+        crate::email::send_welcome(&state, &user.email, &user.name);
+    }
     let entitlements = Entitlements::from_subscription(&sub);
 
     Ok(Json(MeResponse { user, entitlements }))
@@ -33,7 +36,7 @@ pub async fn get_entitlements(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<Entitlements>> {
-    let sub = get_or_create_subscription(&state, auth.id).await?;
+    let (sub, _) = get_or_create_subscription(&state, auth.id).await?;
     Ok(Json(Entitlements::from_subscription(&sub)))
 }
 
@@ -96,7 +99,12 @@ async fn upsert_user(state: &AppState, auth: &AuthUser) -> Result<User> {
     Ok(user)
 }
 
-async fn get_or_create_subscription(state: &AppState, user_id: Uuid) -> Result<Subscription> {
+/// Returns the user's subscription and whether it was just created on this call
+/// (used to fire the welcome email exactly once).
+async fn get_or_create_subscription(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<(Subscription, bool)> {
     // Try to get existing subscription
     let existing = sqlx::query_as!(
         Subscription,
@@ -114,7 +122,7 @@ async fn get_or_create_subscription(state: &AppState, user_id: Uuid) -> Result<S
     .await?;
 
     if let Some(sub) = existing {
-        return Ok(sub);
+        return Ok((sub, false));
     }
 
     // First login: provision free subscription. No server-side workspace —
@@ -123,17 +131,20 @@ async fn get_or_create_subscription(state: &AppState, user_id: Uuid) -> Result<S
     provision_new_user(state, user_id).await
 }
 
-async fn provision_new_user(state: &AppState, user_id: Uuid) -> Result<Subscription> {
+async fn provision_new_user(state: &AppState, user_id: Uuid) -> Result<(Subscription, bool)> {
     // ON CONFLICT DO NOTHING guards against race conditions when two requests
-    // arrive simultaneously for a new user.
-    sqlx::query!(
+    // arrive simultaneously for a new user. rows_affected() tells us whether
+    // THIS call created the row (→ send welcome) vs. lost the race.
+    let created = sqlx::query!(
         "INSERT INTO subscription (id, user_id, plan, status)
          VALUES (gen_random_uuid(), $1, 'free', 'active')
          ON CONFLICT (user_id) DO NOTHING",
         user_id,
     )
     .execute(&state.pool)
-    .await?;
+    .await?
+    .rows_affected()
+        > 0;
 
     let sub = sqlx::query_as!(
         Subscription,
@@ -149,5 +160,5 @@ async fn provision_new_user(state: &AppState, user_id: Uuid) -> Result<Subscript
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(sub)
+    Ok((sub, created))
 }
