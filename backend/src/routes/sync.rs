@@ -83,6 +83,11 @@ pub async fn push(
     // carries in data.workspace_id (falling back to the legacy body field); the
     // user must be a member of that workspace.
     let allowed = user_workspace_ids(&state, auth.id).await?;
+    // Passed to each upsert so a `DO UPDATE` can only ever touch a row that
+    // already lives in one of the user's workspaces (ids are global PKs, so a
+    // known foreign id would otherwise let an attacker re-home another user's
+    // task/project/habit into their own workspace).
+    let allowed_vec: Vec<uuid::Uuid> = allowed.iter().copied().collect();
 
     for entity in body
         .entities
@@ -95,11 +100,15 @@ pub async fn push(
             _ => continue, // unknown or foreign workspace — skip entity
         };
         let ok = match entity.table.as_str() {
-            "project" => push_project(&state, ws, entity).await.is_ok(),
-            "task" => push_task(&state, ws, entity).await.is_ok(),
-            "habit" => push_habit(&state, ws, entity).await.is_ok(),
-            "habit_log" => push_habit_log(&state, ws, entity).await.is_ok(),
-            "pomodoro_session" => push_pomodoro_session(&state, ws, entity).await.is_ok(),
+            "project" => push_project(&state, ws, &allowed_vec, entity).await.is_ok(),
+            "task" => push_task(&state, ws, &allowed_vec, entity).await.is_ok(),
+            "habit" => push_habit(&state, ws, &allowed_vec, entity).await.is_ok(),
+            "habit_log" => push_habit_log(&state, ws, &allowed_vec, entity)
+                .await
+                .is_ok(),
+            "pomodoro_session" => push_pomodoro_session(&state, ws, &allowed_vec, entity)
+                .await
+                .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
             _ => false,
         };
@@ -136,6 +145,16 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
     };
     let name = e.data["name"].as_str().unwrap_or("Workspace").to_owned();
     let color = e.data["color"].as_str().unwrap_or("#6366f1").to_owned();
+
+    // Never adopt a workspace that already belongs to someone else. Without this,
+    // pushing a workspace entity with a known foreign id would self-grant an
+    // 'owner' membership row below and expose that account's data via pull.
+    let existing_owner = sqlx::query_scalar!("SELECT owner_id FROM workspace WHERE id = $1", id,)
+        .fetch_optional(&state.pool)
+        .await?;
+    if matches!(existing_owner, Some(owner) if owner != user_id) {
+        return Ok(());
+    }
 
     sqlx::query!(
         r#"
@@ -174,7 +193,12 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
     Ok(())
 }
 
-async fn push_project(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_project(
+    state: &AppState,
+    workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
+    e: &SyncEntity,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -194,6 +218,7 @@ async fn push_project(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity
           deleted_at   = EXCLUDED.deleted_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= project.updated_at
+          AND project.workspace_id = ANY($7)
         "#,
         id,
         workspace_id,
@@ -201,13 +226,19 @@ async fn push_project(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity
         color,
         e.updated_at,
         e.deleted_at,
+        allowed,
     )
     .execute(&state.pool)
     .await?;
     Ok(())
 }
 
-async fn push_task(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_task(
+    state: &AppState,
+    workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
+    e: &SyncEntity,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -246,6 +277,7 @@ async fn push_task(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -
           deleted_at   = EXCLUDED.deleted_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= task.updated_at
+          AND task.workspace_id = ANY($13)
         "#,
         id,
         workspace_id,
@@ -259,13 +291,19 @@ async fn push_task(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -
         extra,
         e.updated_at,
         e.deleted_at,
+        allowed,
     )
     .execute(&state.pool)
     .await?;
     Ok(())
 }
 
-async fn push_habit(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_habit(
+    state: &AppState,
+    workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
+    e: &SyncEntity,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -295,6 +333,7 @@ async fn push_habit(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) 
           deleted_at     = EXCLUDED.deleted_at,
           synced_at      = NOW()
         WHERE EXCLUDED.updated_at >= habit.updated_at
+          AND habit.workspace_id = ANY($11)
         "#,
         id,
         workspace_id,
@@ -306,13 +345,19 @@ async fn push_habit(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) 
         freq_days,
         e.updated_at,
         e.deleted_at,
+        allowed,
     )
     .execute(&state.pool)
     .await?;
     Ok(())
 }
 
-async fn push_habit_log(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_habit_log(
+    state: &AppState,
+    workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
+    e: &SyncEntity,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -342,6 +387,7 @@ async fn push_habit_log(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnti
           updated_at   = EXCLUDED.updated_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= habit_log.updated_at
+          AND habit_log.workspace_id = ANY($8)
         "#,
         id,
         habit_id,
@@ -350,6 +396,7 @@ async fn push_habit_log(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnti
         value,
         completed_at,
         e.updated_at,
+        allowed,
     )
     .execute(&state.pool)
     .await?;
@@ -359,6 +406,7 @@ async fn push_habit_log(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnti
 async fn push_pomodoro_session(
     state: &AppState,
     workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
     e: &SyncEntity,
 ) -> Result<()> {
     let id = match parse_entity_id(e) {
@@ -411,6 +459,7 @@ async fn push_pomodoro_session(
           updated_at              = EXCLUDED.updated_at,
           synced_at               = NOW()
         WHERE EXCLUDED.updated_at >= pomodoro_session.updated_at
+          AND pomodoro_session.workspace_id = ANY($13)
         "#,
         id,
         workspace_id,
@@ -424,6 +473,7 @@ async fn push_pomodoro_session(
         status,
         device_id,
         e.updated_at,
+        allowed,
     )
     .execute(&state.pool)
     .await?;
