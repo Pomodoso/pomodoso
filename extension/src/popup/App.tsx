@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
+import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
 import { useLocalStorage } from './useStorage';
@@ -15,6 +16,8 @@ import {
   type TaskRow, type TaskOrderRow, type ProjectRow, type WorkspaceRow, type DetectionRuleRow,
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
+import { detectTicketFromRules } from '../ticketRules';
+import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { shouldBeInTodayNow } from '../recurrence';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
@@ -32,6 +35,7 @@ const INITIAL_RULES: DetectionRuleRow[] = [
 ];
 
 export function App() {
+  const auth = useAuth();
   const { timerState, detectedTicket, selectedText, clearSelection, loading: timerLoading, start, attachTask, detachTask, pausePomo, resumePomo, completePomo, startBreak, snooze, stop, clearPendingSegment, extendBreak, startNextPomo } = useTimerState();
 
   // ── Migration: chrome.storage.local → IndexedDB (runs once) ──────────────
@@ -52,6 +56,33 @@ export function App() {
     if (workspacesArr.length === 0) {
       void db.workspaces.put({ ...DEFAULT_WORKSPACE, updatedAt: now() });
     }
+  }, [migrated, workspacesArr]);
+
+  // ── Migrate 'default' workspace to a proper UUID (sync requires valid UUIDs) ──
+  // Runs once when DB loads. Replaces the sentinel 'default' id with a real UUID
+  // across all tables, then updates the persisted activeWsId.
+  useEffect(() => {
+    if (!migrated || workspacesArr === undefined) return;
+    const defaultWs = workspacesArr.find(w => w.id === 'default');
+    if (!defaultWs) return;
+    void (async () => {
+      const newId = crypto.randomUUID();
+      await db.transaction('rw', [db.workspaces, db.tasks, db.habits, db.meetings, db.taskOrders], async () => {
+        await db.workspaces.put({ ...defaultWs, id: newId, syncedAt: undefined });
+        await db.tasks.filter(t => t.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
+        await db.habits.filter(h => h.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
+        await db.meetings.filter(m => m.workspaceId === 'default').modify({ workspaceId: newId });
+        const order = await db.taskOrders.get('default');
+        if (order) {
+          await db.taskOrders.put({ ...order, wsId: newId });
+          await db.taskOrders.delete('default');
+        }
+        await db.workspaces.delete('default');
+      });
+      // activeWsId at this point is still 'default' (migration just ran)
+      setActiveWsId(newId);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated, workspacesArr]);
   const rulesArr       = useLiveQuery(() => db.detectionRules.filter(r => !r.deletedAt).toArray(), [migrated]);
   const timerSettingsRow    = useLiveQuery(() => db.settings.get('timer_settings'), [migrated]);
@@ -87,12 +118,27 @@ export function App() {
   // ── Loading state ──────────────────────────────────────────────────────────
   const dbLoading = !migrated || allTasksArr === undefined || taskOrdersArr === undefined ||
     projectsArr === undefined || workspacesArr === undefined || rulesArr === undefined;
-  const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading;
+  const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading || auth.loading;
+
+  // ── Active workspace vanished (merged into a duplicate / deleted remotely) ──
+  useEffect(() => {
+    if (dbLoading || workspacesArr === undefined) return;
+    if (activeWsId === 'all' || activeWsId === 'default') return;
+    if (workspacesArr.some(w => w.id === activeWsId)) return;
+    const first = workspacesArr[0];
+    if (first) setActiveWsId(first.id);
+  }, [dbLoading, activeWsId, workspacesArr, setActiveWsId]);
 
   // ── First-launch: seed sample data ────────────────────────────────────────
   useEffect(() => {
-    if (onboarded || dbLoading || onboardedLoading) return;
+    if (onboarded || dbLoading || onboardedLoading || auth.loading) return;
     const seed = async () => {
+      // A signed-in account gets its data via sync (and restored backups bring
+      // their own) — seeding here would duplicate samples across devices.
+      if (auth.session || (await db.tasks.count()) > 0) {
+        setOnboarded(true);
+        return;
+      }
       const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
       const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
       const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
@@ -131,7 +177,7 @@ export function App() {
     };
     void seed();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onboarded, dbLoading, onboardedLoading]);
+  }, [onboarded, dbLoading, onboardedLoading, auth.loading, auth.session]);
 
   // ── Calendar sync on popup open ───────────────────────────────────────────
   useEffect(() => {
@@ -170,9 +216,49 @@ export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar'>('main');
+  const [settingsInitialPage, setSettingsInitialPage] = useState<'main' | 'calendar' | 'account'>('main');
   const [linkingTicket, setLinkingTicket] = useState<TicketRef | null>(null);
   const [addingNoteText, setAddingNoteText] = useState<string | null>(null);
+
+  // ── Sync ──────────────────────────────────────────────────────────────────────
+  // Sync is user-global: every workspace and its data syncs, regardless of which
+  // workspace is active in the UI (including the "All" view).
+  const API_URL = import.meta.env.VITE_API_URL as string | undefined;
+  const [syncStatus, setSyncStatus] = useState<'disconnected' | 'connected' | 'syncing' | 'offline' | 'error'>('disconnected');
+
+  const canSync = Boolean(auth.session && auth.entitlements.features.sync && API_URL);
+
+  useEffect(() => {
+    if (!auth.session) { setSyncStatus('disconnected'); clearSync(); return; }
+    if (!canSync) { setSyncStatus('connected'); return; }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) { setSyncStatus('offline'); }
+
+    initSync(auth.session.access_token, API_URL!, setSyncStatus);
+
+    // Initial sync on login / popup open
+    setSyncStatus('syncing');
+    void syncAll(auth.session.access_token, API_URL!)
+      .then(() => setSyncStatus('connected'))
+      .catch((err) => {
+        console.warn('[sync]', err);
+        const offline = (typeof navigator !== 'undefined' && !navigator.onLine) || err instanceof TypeError;
+        setSyncStatus(offline ? 'offline' : 'error');
+      });
+
+    return () => clearSync();
+  }, [auth.session?.access_token, canSync]);
+
+  // Live offline/online transitions while the popup is open
+  useEffect(() => {
+    const onOffline = () => setSyncStatus(s => (s === 'disconnected' ? s : 'offline'));
+    const onOnline = () => { if (canSync) syncNow(); };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [canSync]);
 
   // ── After a fresh calendar connect: open Settings > Calendar so the user can select calendars
   useEffect(() => {
@@ -302,21 +388,31 @@ export function App() {
     return inWs(t);
   });
 
-  const detectedExistingTasks = detectedTicket
-    ? Object.values(allTasks).filter(t => {
-        if (t.deletedAt) return false;
-        if (t.ticketId === detectedTicket.external_id) return true;
-        const url = detectedTicket.external_url;
-        return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
-      })
-    : [];
-
   const [tabUrl, setTabUrl] = useState('');
+  const [tabTitle, setTabTitle] = useState('');
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       if (tab?.url) setTabUrl(tab.url);
+      if (tab?.title) setTabTitle(tab.title);
     });
   }, []);
+
+  // Rule-driven detection: custom rules (and presets without a native content
+  // script, e.g. Jira/Notion) match the tab URL generically. Native provider
+  // detections (Linear, GitHub…) take precedence — they extract richer data.
+  const ruleTicket = !detectedTicket && tabUrl
+    ? detectTicketFromRules(rules, tabUrl, tabTitle)
+    : null;
+  const activeTicket = detectedTicket ?? ruleTicket;
+
+  const detectedExistingTasks = activeTicket
+    ? Object.values(allTasks).filter(t => {
+        if (t.deletedAt) return false;
+        if (activeTicket.external_id && t.ticketId === activeTicket.external_id) return true;
+        const url = activeTicket.external_url;
+        return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
+      })
+    : [];
 
   const detectedIds = new Set(detectedExistingTasks.map(t => t.id));
   const linkedTasks = tabUrl
@@ -346,6 +442,7 @@ export function App() {
         todayIds: cur.todayIds.filter(id => id !== task.id),
       });
     });
+    triggerSync();
   }, [priorityIds, wsKey]);
 
   const addToTasks = useCallback(async (task: TaskRow) => {
@@ -357,6 +454,7 @@ export function App() {
       const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
       await db.taskOrders.put({ wsId: targetWsId, priorityIds: cur.priorityIds, todayIds: [...cur.todayIds, task.id] });
     });
+    triggerSync();
   }, [isInToday, wsKey]);
 
   const removeFromToday = useCallback(async (taskId: string) => {
@@ -378,11 +476,13 @@ export function App() {
         todayIds:    o.todayIds.filter(id => id !== taskId),
       }));
     }
+    triggerSync();
   }, [wsKey, patchWsOrder]);
 
   const reorderToday = useCallback(async (newPriorityIds: string[], newTodayIds: string[]) => {
     if (wsKey !== 'all') {
       await db.taskOrders.put({ wsId: wsKey, priorityIds: newPriorityIds, todayIds: newTodayIds });
+      triggerSync();
       return;
     }
     // In 'all' mode the 'all' key only controls display order within each section.
@@ -408,6 +508,7 @@ export function App() {
       }
     }
     await db.taskOrders.put({ wsId: 'all', priorityIds: newPriorityIds, todayIds: newTodayIds });
+    triggerSync();
   }, [wsKey]);
 
   const markRecurringDoneToday = useCallback(async (taskId: string) => {
@@ -426,6 +527,7 @@ export function App() {
         });
       }
     }
+    triggerSync();
   }, [allTasks, timezone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
@@ -435,6 +537,7 @@ export function App() {
       return;
     }
     await db.tasks.update(id, { ...updates, updatedAt: now() });
+    triggerSync();
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev);
 
     if (updates.workspaceId !== undefined) {
@@ -482,6 +585,7 @@ export function App() {
         }
       }
     });
+    triggerSync();
   }, []);
 
   // ── Time logging ───────────────────────────────────────────────────────────
@@ -493,6 +597,7 @@ export function App() {
       const newEntry = { id: crypto.randomUUID(), startedAt, durationSeconds, mode: timerState.mode };
       await db.tasks.update(taskId, { timeLogs: [...(task.timeLogs ?? []), newEntry], updatedAt: now() });
     });
+    triggerSync();
   }, [timerState.mode]);
 
   // ── Session actions ────────────────────────────────────────────────────────
@@ -520,6 +625,7 @@ export function App() {
     playSound('task-done', soundSettings);
     await detachTask();
     await clearPendingSegment();
+    triggerSync();
   }, [timerState, detachTask, clearPendingSegment, soundSettings, allTasks, markRecurringDoneToday]);
 
   const handleDetachTask = useCallback(async () => {
@@ -548,6 +654,8 @@ export function App() {
       }
     }
     await stop();
+    void clearActiveTimer();
+    triggerSync();
   }, [timerState, stop, allTasks, markRecurringDoneToday]);
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
@@ -558,33 +666,47 @@ export function App() {
     await start(payload);
     if (payload.mode === 'pomodoro') playSound('focus-start', soundSettings);
     if (payload.taskId) await updateTask(payload.taskId, { status: 'in_progress' });
+    void pushActiveTimer(
+      new Date().toISOString(),
+      payload.mode,
+      payload.taskId,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      payload.mode === 'pomodoro' ? timerSettings.focusSeconds : null,
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerState, start, soundSettings, updateTask]);
+  }, [timerState, start, soundSettings, updateTask, timerSettings]);
 
   const handleAttachTask = useCallback(async (payload: TimerAttachPayload) => {
     await attachTask(payload);
     await updateTask(payload.taskId, { status: 'in_progress' });
   }, [attachTask, updateTask]);
 
-  const handleCancelTimer = useCallback(async () => { await stop(); }, [stop]);
+  const handleCancelTimer = useCallback(async () => {
+    await stop();
+    void clearActiveTimer();
+  }, [stop]);
 
   // ── Project mutations ──────────────────────────────────────────────────────
   const addProject = useCallback(async (project: Omit<ProjectRow, keyof import('../db').SyncMeta>) => {
     await db.projects.put({ ...project, updatedAt: now() } as ProjectRow);
+    triggerSync();
   }, []);
 
   const updateProject = useCallback(async (id: string, updates: Partial<ProjectRow>) => {
     await db.projects.update(id, { ...updates, updatedAt: now() });
+    triggerSync();
   }, []);
 
   const deleteProject = useCallback(async (id: string) => {
     await db.projects.update(id, { deletedAt: now(), updatedAt: now() });
+    triggerSync();
   }, []);
 
   // ── Workspace mutations ────────────────────────────────────────────────────
   const addWorkspace = useCallback(async (name: string, color: string): Promise<WorkspaceRow> => {
     const ws: WorkspaceRow = { id: crypto.randomUUID(), name, color, updatedAt: now() };
     await db.workspaces.put(ws);
+    triggerSync();
     return ws;
   }, []);
 
@@ -599,10 +721,12 @@ export function App() {
       }
     });
     if (activeWsId === id) setActiveWsId('default');
+    triggerSync();
   }, [activeWsId, setActiveWsId]);
 
   const updateWorkspace = useCallback(async (id: string, name: string, color: string) => {
     await db.workspaces.update(id, { name, color, updatedAt: now() });
+    triggerSync();
   }, []);
 
   // ── Rule mutations ─────────────────────────────────────────────────────────
@@ -628,27 +752,39 @@ export function App() {
   const updateTimerSettings = useCallback(async (updates: Partial<TimerSettings>) => {
     const current = (await db.settings.get('timer_settings'))?.value as TimerSettings ?? { ...DEFAULT_TIMER_SETTINGS };
     await db.settings.put({ key: 'timer_settings', value: { ...current, ...updates } });
+    await db.settings.put({ key: 'timer_settings_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateSoundSettings = useCallback(async (updates: Partial<SoundSettings>) => {
     const current = (await db.settings.get('sound_settings'))?.value as SoundSettings ?? { ...DEFAULT_SOUND_SETTINGS };
     await db.settings.put({ key: 'sound_settings', value: { ...current, ...updates } });
+    await db.settings.put({ key: 'sound_settings_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateTimezone = useCallback(async (tz: string) => {
     await db.settings.put({ key: 'timezone', value: tz });
+    await db.settings.put({ key: 'timezone_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateMaxPriorities = useCallback(async (n: number) => {
     await db.settings.put({ key: 'max_priorities', value: n });
+    await db.settings.put({ key: 'max_priorities_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateWeekStart = useCallback(async (day: number) => {
     await db.settings.put({ key: 'week_start', value: day });
+    await db.settings.put({ key: 'week_start_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   const updateWorkDays = useCallback(async (days: number[]) => {
     await db.settings.put({ key: 'work_days', value: days });
+    await db.settings.put({ key: 'work_days_updated_at', value: now() });
+    triggerSync();
   }, []);
 
   // ── Ticket / selection actions ─────────────────────────────────────────────
@@ -663,12 +799,16 @@ export function App() {
   }, [allTasks, updateTask]);
 
   const addToBacklog = useCallback(async (ticket: TicketRef) => {
-    const existing = Object.values(allTasks).find(t => t.ticketId === ticket.external_id);
+    // Rule-detected tickets may have no id — dedupe by link URL instead
+    const existing = Object.values(allTasks).find(t => !t.deletedAt && (
+      (ticket.external_id && t.ticketId === ticket.external_id) ||
+      t.links?.some(l => l.url === ticket.external_url)
+    ));
     if (existing) { setSelectedTask(existing); return; }
     const newTask: TaskRow = {
       id: crypto.randomUUID(),
       title: ticket.title,
-      ticketId: ticket.external_id,
+      ticketId: ticket.external_id || null,
       projectId: null,
       workspaceId: activeWsId === 'all' ? null : activeWsId,
       status: 'todo',
@@ -676,6 +816,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [allTasks, activeWsId]);
 
@@ -692,6 +833,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [allTasks]);
 
@@ -706,6 +848,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [activeWsId]);
 
@@ -724,6 +867,7 @@ export function App() {
       ...(truncated ? { description: text } : {}),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
     clearSelection();
   }, [activeWsId, clearSelection]);
@@ -810,6 +954,9 @@ export function App() {
           workDays={workDays}
           onUpdateWeekStart={(d) => void updateWeekStart(d)}
           onUpdateWorkDays={(d) => void updateWorkDays(d)}
+          entitlements={auth.entitlements}
+          auth={auth}
+          onSyncNow={canSync ? syncNow : undefined}
         />
       </PopupShell>
     );
@@ -850,7 +997,7 @@ export function App() {
       <HomeState
         timerState={timerState}
         timerSettings={timerSettings}
-        detectedTicket={detectedTicket}
+        detectedTicket={activeTicket}
         detectedExistingTasks={detectedExistingTasks}
         linkedTasks={linkedTasks}
         onSelectLinkedTask={setSelectedTask}
@@ -889,6 +1036,11 @@ export function App() {
         onLinkToTask={(ticket) => setLinkingTicket(ticket)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenCalendarSettings={() => { setSettingsInitialPage('calendar'); setShowSettings(true); }}
+        onOpenAccount={() => { setSettingsInitialPage('account'); setShowSettings(true); }}
+        onSignOut={() => void auth.signOut()}
+        onSyncNow={canSync ? syncNow : undefined}
+        isSignedIn={Boolean(auth.session)}
+        syncStatus={syncStatus}
         selectedText={selectedText}
         onCreateFromText={(text) => void createFromText(text)}
         onAddTextToNotes={(text) => setAddingNoteText(text)}

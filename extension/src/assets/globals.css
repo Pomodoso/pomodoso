@@ -77,3 +77,9 @@ body {
 .notes-preview h1, .notes-preview h2, .notes-preview h3 {
   font-size: 13px; font-weight: 700; margin: 8px 0 4px;
 }
+
+/* Pulsing dot — remote timer banner */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

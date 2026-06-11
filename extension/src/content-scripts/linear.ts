@@ -16,10 +16,11 @@ observer.observe(document.body, { childList: true, subtree: true });
 window.addEventListener('popstate', detectAndReport);
 
 export function detectLinearTicket(url: string, doc: Document): TicketRef | null {
-  const match = url.match(/linear\.app\/[^/]+\/issue\/([A-Z]+-\d+)/);
+  // Team keys are uppercase alphanumeric (must start with a letter), e.g. ENG, DP1
+  const match = url.match(/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)/i);
   if (!match || !match[1]) return null;
 
-  const externalId = match[1];
+  const externalId = match[1].toUpperCase();
 
   const ogTitle = doc.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content;
   const pageTitle = doc.title;

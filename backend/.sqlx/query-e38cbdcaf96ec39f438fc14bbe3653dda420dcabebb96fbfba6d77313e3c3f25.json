@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,\n               t.project_id,\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "ticket_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "project_color?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e38cbdcaf96ec39f438fc14bbe3653dda420dcabebb96fbfba6d77313e3c3f25"
+}

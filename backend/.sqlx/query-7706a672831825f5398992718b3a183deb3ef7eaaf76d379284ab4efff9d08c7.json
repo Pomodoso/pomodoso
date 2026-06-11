@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.id FROM workspace w\n                   JOIN workspace_member m ON m.workspace_id = w.id\n                   WHERE m.user_id = $1 AND w.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7706a672831825f5398992718b3a183deb3ef7eaaf76d379284ab4efff9d08c7"
+}

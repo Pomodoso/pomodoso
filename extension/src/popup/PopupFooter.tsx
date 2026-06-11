@@ -31,7 +31,7 @@ export function PopupFooter({ pomosToday, minutesToday }: PopupFooterProps) {
           cursor: 'pointer',
           padding: 0,
         }}
-        onClick={() => chrome.tabs.create({ url: 'https://app.pomodoso.app' })}
+        onClick={() => chrome.tabs.create({ url: 'https://pomodoso.com' })}
       >
         Open app ↗
       </button>

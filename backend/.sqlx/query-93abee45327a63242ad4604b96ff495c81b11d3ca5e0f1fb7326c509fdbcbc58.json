@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE subscription SET status = 'past_due', updated_at = NOW() WHERE stripe_subscription_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "93abee45327a63242ad4604b96ff495c81b11d3ca5e0f1fb7326c509fdbcbc58"
+}

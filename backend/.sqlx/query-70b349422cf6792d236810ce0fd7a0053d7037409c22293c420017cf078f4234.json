@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subscription\n        SET plan = 'free', status = 'cancelled',\n            cancelled_at = NOW(), updated_at = NOW()\n        WHERE stripe_subscription_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70b349422cf6792d236810ce0fd7a0053d7037409c22293c420017cf078f4234"
+}

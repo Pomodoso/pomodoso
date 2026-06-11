@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO \"user\" (id, email, name, avatar_url)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (id) DO UPDATE\n          SET email      = EXCLUDED.email,\n              name       = EXCLUDED.name,\n              avatar_url = COALESCE(EXCLUDED.avatar_url, \"user\".avatar_url),\n              updated_at = NOW()\n        RETURNING id, email, name, avatar_url, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "8ced101ead0b7e070343285b6513b4de025c9bc9929276142f8cf88edaf0b88e"
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { DetectionRule, SoundSettings, SoundEvent } from '@pomodoso/types';
+import type { DetectionRule, SoundSettings, SoundEvent, Entitlements } from '@pomodoso/types';
 import { playSound } from '../sounds';
 import type { TimerSettings } from './App';
 import {
@@ -14,6 +14,7 @@ import {
 import type { ExtensionResponse } from '@pomodoso/types';
 import { db } from '../db';
 import { exportDb, importDb } from '../backup';
+import type { AuthState } from './useAuth';
 
 
 const PRESET_CATALOG = [
@@ -21,13 +22,13 @@ const PRESET_CATALOG = [
   { id: 'github',  name: 'GitHub',  icon: '⊙', urlPattern: 'github\\.com\\/[^/]+\\/[^/]+\\/(pull|issues)\\/', description: 'PRs and issues on GitHub' },
   { id: 'gmail',   name: 'Gmail',   icon: '✉', urlPattern: 'mail\\.google\\.com\\/mail',                      description: 'Email threads in Gmail' },
   { id: 'notion',  name: 'Notion',  icon: '◻', urlPattern: 'notion\\.so\\/',                                  description: 'Pages in Notion' },
-  { id: 'jira',    name: 'Jira',    icon: '◈', urlPattern: '\\.atlassian\\.net\\/browse\\/',                  description: 'Issues in Jira' },
+  { id: 'jira',    name: 'Jira',    icon: '◈', urlPattern: '\\.atlassian\\.net\\/browse\\/([A-Z][A-Z0-9]*-\\d+)', description: 'Issues in Jira' },
   { id: 'figma',   name: 'Figma',   icon: '⬡', urlPattern: 'figma\\.com\\/(file|design)\\/',                  description: 'Files in Figma' },
   { id: 'clickup', name: 'ClickUp', icon: '⬆', urlPattern: 'app\\.clickup\\.com\\/',                          description: 'Tasks in ClickUp' },
   { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
 ];
 
-type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data';
+type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data' | 'account';
 
 interface Workspace {
   id: string;
@@ -44,6 +45,9 @@ interface SettingsStateProps {
   maxPriorities: number;
   activeWsId: string;
   initialPage?: SettingsPage;
+  entitlements: Entitlements;
+  auth: AuthState;
+  onSyncNow?: () => void;
   onBack: () => void;
   onAddRule: (rule: DetectionRule) => void;
   onToggleRule: (id: string) => void;
@@ -62,8 +66,12 @@ interface SettingsStateProps {
   onUpdateWorkDays: (days: number[]) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
+
+  if (page === 'account') {
+    return <AccountPage auth={auth} entitlements={entitlements} onSyncNow={onSyncNow} onBack={() => setPage('main')} />;
+  }
 
   if (page === 'calendar') {
     return <CalendarPage workspaces={workspaces} activeWsId={activeWsId} timezone={timezone} onBack={() => setPage('main')} />;
@@ -87,7 +95,16 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
   }
 
   if (page === 'workspaces') {
-    return <WorkspacesPage workspaces={workspaces} onAdd={onAddWorkspace} onUpdate={onUpdateWorkspace} onDelete={onDeleteWorkspace} onBack={() => setPage('main')} />;
+    return (
+      <WorkspacesPage
+        workspaces={workspaces}
+        canAddWorkspace={entitlements.features.multi_workspace || workspaces.length < 1}
+        onAdd={onAddWorkspace}
+        onUpdate={onUpdateWorkspace}
+        onDelete={onDeleteWorkspace}
+        onBack={() => setPage('main')}
+      />
+    );
   }
 
   if (page === 'sounds') {
@@ -102,11 +119,22 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
     return <DataPage onBack={() => setPage('main')} />;
   }
 
+  const isPro = entitlements.features.sync;
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <SubPageHeader title="Settings" onBack={onBack} />
       <div className="scroll-area">
         <div style={{ padding: '10px 14px' }}>
+          {/* Account row — always visible */}
+          <NavGroup>
+            <NavRow
+              icon="◍"
+              title="Account & Sync"
+              description={auth.session ? (isPro ? 'Pro · syncing' : 'Free · upgrade for sync') : 'Sign in to sync across devices'}
+              onClick={() => setPage('account')}
+            />
+          </NavGroup>
           <NavGroup>
             <NavRow
               icon="◎"
@@ -311,8 +339,9 @@ function GeneralPage({ timezone, maxPriorities, weekStart, workDays, onUpdateTim
 
 const WS_COLORS = ['#C8553D', '#4A6FA5', '#2D8A7A', '#7B5DB4', '#B07A1F', '#2A7A4A'];
 
-function WorkspacesPage({ workspaces, onAdd, onUpdate, onDelete, onBack }: {
+function WorkspacesPage({ workspaces, canAddWorkspace, onAdd, onUpdate, onDelete, onBack }: {
   workspaces: Workspace[];
+  canAddWorkspace: boolean;
   onAdd: (name: string, color: string) => void;
   onUpdate: (id: string, name: string, color: string) => void;
   onDelete: (id: string) => void;
@@ -434,7 +463,7 @@ function WorkspacesPage({ workspaces, onAdd, onUpdate, onDelete, onBack }: {
                 <button onClick={() => { setAdding(false); setName(''); }} style={{ padding: '6px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer' }}>Cancel</button>
               </div>
             </div>
-          ) : (
+          ) : canAddWorkspace ? (
             <button onClick={() => setAdding(true)} style={{
               width: '100%', padding: '8px 12px',
               background: 'none', border: '1px dashed var(--color-border-strong)',
@@ -444,6 +473,226 @@ function WorkspacesPage({ workspaces, onAdd, onUpdate, onDelete, onBack }: {
             }}>
               <span style={{ fontSize: 14 }}>+</span> New workspace
             </button>
+          ) : (
+            <div style={{
+              width: '100%', padding: '10px 12px', boxSizing: 'border-box',
+              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--color-text-muted)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            }}>
+              <span>Multiple workspaces require Pro</span>
+              <span style={{ fontSize: 11, color: 'var(--color-accent)', fontWeight: 600 }}>Pro</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Account & Sync sub-page ───────────────────────────────────────────────────
+
+function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
+  auth: AuthState;
+  entitlements: Entitlements;
+  onSyncNow?: () => void;
+  onBack: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
+  const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Enter your email above first, then tap "Forgot password?"');
+      return;
+    }
+    setError('');
+    setResetState('sending');
+    try {
+      await auth.resetPassword(email.trim());
+      setResetState('sent');
+    } catch (e) {
+      setResetState('idle');
+      setError(e instanceof Error ? e.message : 'Could not send reset email');
+    }
+  };
+
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) return;
+    setError('');
+    setLoading(true);
+    try {
+      await auth.signIn(email.trim(), password);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sign in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuth = async (provider: 'google' | 'microsoft') => {
+    setError('');
+    setOauthLoading(provider);
+    try {
+      if (provider === 'google') {
+        await auth.signInWithGoogle();
+      } else {
+        await auth.signInWithMicrosoft();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sign in failed');
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const isPro = entitlements.features.sync;
+  const btnBase: React.CSSProperties = {
+    width: '100%', padding: '8px 0', border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600,
+    background: 'var(--color-bg)', color: 'var(--color-text)',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+  };
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <SubPageHeader title="Account & Sync" onBack={onBack} />
+      <div className="scroll-area">
+        <div style={{ padding: '14px 14px' }}>
+          {auth.session ? (
+            <>
+              <div style={{ padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 4 }}>Signed in as</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>{auth.session.user.email}</div>
+                <div style={{ fontSize: 11, color: isPro ? 'var(--color-accent)' : 'var(--color-text-faint)', marginTop: 4, fontWeight: 600 }}>
+                  {isPro ? '✓ Pro' : 'Free plan'}
+                </div>
+              </div>
+
+              {!isPro && (
+                <div style={{ padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 6 }}>Upgrade to Pro</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
+                    Sync across devices · Unlimited workspaces · Web dashboard
+                  </div>
+                  <a
+                    href="https://pomodoso.com/pricing"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: 'block', textAlign: 'center', padding: '7px 0', background: 'var(--color-accent)', color: '#fff', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    Upgrade to Pro →
+                  </a>
+                </div>
+              )}
+
+              {onSyncNow && (
+                <button
+                  onClick={onSyncNow}
+                  style={{ width: '100%', padding: '8px 12px', marginBottom: 8, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text)', fontWeight: 600 }}
+                >
+                  ↺ Sync now
+                </button>
+              )}
+              <button
+                onClick={() => void auth.signOut()}
+                style={{ width: '100%', padding: '8px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
+                Sign in to sync your data across devices with Pomodoso Pro.
+              </p>
+
+              {/* OAuth buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+                <button
+                  onClick={() => void handleOAuth('google')}
+                  disabled={oauthLoading !== null || loading}
+                  style={{ ...btnBase, opacity: oauthLoading === 'google' ? 0.7 : 1 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+                    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+                    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+                    <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+                    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                  </svg>
+                  {oauthLoading === 'google' ? 'Signing in…' : 'Continue with Google'}
+                </button>
+                <button
+                  onClick={() => void handleOAuth('microsoft')}
+                  disabled={oauthLoading !== null || loading}
+                  style={{ ...btnBase, opacity: oauthLoading === 'microsoft' ? 0.7 : 1 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 21 21" fill="none">
+                    <rect x="0" y="0" width="10" height="10" fill="#F25022"/>
+                    <rect x="11" y="0" width="10" height="10" fill="#7FBA00"/>
+                    <rect x="0" y="11" width="10" height="10" fill="#00A4EF"/>
+                    <rect x="11" y="11" width="10" height="10" fill="#FFB900"/>
+                  </svg>
+                  {oauthLoading === 'microsoft' ? 'Signing in…' : 'Continue with Microsoft'}
+                </button>
+              </div>
+
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+                <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>or</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+              </div>
+
+              {/* Email/password form */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void handleSignIn(); }}
+                  style={{ padding: '7px 10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none' }}
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void handleSignIn(); }}
+                  style={{ padding: '7px 10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none' }}
+                />
+                {error && <p style={{ margin: 0, fontSize: 11, color: '#e55' }}>{error}</p>}
+                <button
+                  onClick={() => void handleSignIn()}
+                  disabled={loading || oauthLoading !== null || !email.trim() || !password}
+                  style={{ padding: '8px 0', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+                >
+                  {loading ? 'Signing in…' : 'Sign in'}
+                </button>
+                {resetState === 'sent' ? (
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                    ✓ Reset link sent — check your email, then come back and sign in.
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => void handleForgotPassword()}
+                    disabled={resetState === 'sending'}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-text-muted)', textDecoration: 'underline', padding: 0, fontFamily: 'inherit' }}
+                  >
+                    {resetState === 'sending' ? 'Sending reset link…' : 'Forgot password?'}
+                  </button>
+                )}
+              </div>
+              <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
+                No account?{' '}
+                <a href="https://pomodoso.com/login" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>Sign up at pomodoso.com</a>
+              </p>
+            </>
           )}
         </div>
       </div>

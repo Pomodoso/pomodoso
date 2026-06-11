@@ -31,6 +31,7 @@ import {
   type HabitIconKind,
   type MeetingTrackMode,
 } from '../db';
+import { triggerSync } from '../syncEngine';
 import { formatRecurrenceLabel } from '../recurrence';
 
 marked.use({ breaks: true });
@@ -74,6 +75,11 @@ interface HomeStateProps {
   onLinkToTask: (ticket: TicketRef) => void;
   onOpenSettings: () => void;
   onOpenCalendarSettings: () => void;
+  onOpenAccount: () => void;
+  onSignOut: () => void;
+  onSyncNow?: () => void;
+  isSignedIn: boolean;
+  syncStatus: 'disconnected' | 'connected' | 'syncing' | 'offline' | 'error';
   selectedText: string | null;
   onCreateFromText: (text: string) => void;
   onAddTextToNotes: (text: string) => void;
@@ -145,20 +151,75 @@ function formatElapsed(seconds: number): string {
   return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
+// ─── Remote timer banner ───────────────────────────────────────────────────────
+// Shown when the active_timer beacon synced from another device is still live.
+
+interface RemoteBeacon {
+  started_at?: string;
+  mode?: string;
+  task_id?: string | null;
+  duration_seconds?: number | null;
+}
+
+function RemoteTimerBanner({ beacon }: { beacon: RemoteBeacon }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(i);
+  }, []);
+  const task = useLiveQuery(
+    () => beacon.task_id ? db.tasks.get(beacon.task_id) : Promise.resolve(undefined),
+    [beacon.task_id],
+  );
+
+  const startedAt = beacon.started_at ? new Date(beacon.started_at).getTime() : 0;
+  if (!startedAt) return null;
+  const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  const planned = beacon.duration_seconds ?? null;
+  // Stale beacon: pomodoro past its planned end (+grace), or stopwatch older than 12h
+  if (planned != null && elapsed > planned + 300) return null;
+  if (planned == null && elapsed > 12 * 3600) return null;
+
+  const timeLabel = planned != null ? formatTime(Math.max(0, planned - elapsed)) : formatElapsed(elapsed);
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', flexShrink: 0,
+      borderBottom: '1px solid var(--color-border)', background: 'var(--color-accent-soft)',
+    }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+        background: 'var(--color-accent)', animation: 'pulse 1.6s ease-in-out infinite',
+      }} />
+      <span style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+        {beacon.mode === 'pomodoro' ? 'Pomodoro' : 'Timer'} running on another device
+        {task?.title ? ` · ${task.title}` : ''}
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: 'var(--color-accent)', flexShrink: 0 }}>
+        {timeLabel}
+      </span>
+    </div>
+  );
+}
+
 export function HomeState({
   timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, recurringTemplates, projects, prioritiesFull,
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
-  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings,
+  onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
-  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab,
+  weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
   const [linkedDismissed, setLinkedDismissed] = useState(false);
   const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
+  const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
+  const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
   const today = localDate(timezone);
   const todayHabitRecords: HabitHistoryRow[] = useLiveQuery(
     () => db.habitHistory.where('date').equals(today).toArray(),
@@ -266,6 +327,7 @@ export function HomeState({
       ...(justCompleted ? { completedAt: now() } : {}),
       updatedAt: now(),
     });
+    triggerSync();
   }, [habits, today]);
 
   const handleHabitToggle = useCallback(async (id: string) => {
@@ -279,6 +341,7 @@ export function HomeState({
       ...(nowDone ? { completedAt: now() } : {}),
       updatedAt: now(),
     });
+    triggerSync();
   }, [today]);
 
   const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
@@ -458,8 +521,86 @@ export function HomeState({
         </span>
         <div style={{ display: 'flex', gap: 2 }}>
           <IconButton title="Add task" onClick={() => setShowQuickAdd(true)}>+</IconButton>
-          <IconButton title="Settings" onClick={onOpenSettings}>⚙</IconButton>
-          <IconButton title="Open app" onClick={() => chrome.tabs.create({ url: 'https://app.pomodoso.app' })}>↗</IconButton>
+          {/* ── Header menu ── */}
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowMenu(v => !v)}
+              title="Menu"
+              style={{
+                width: 28, height: 28, borderRadius: 'var(--radius-sm)',
+                border: 'none', cursor: 'pointer',
+                background: showMenu ? 'var(--color-surface)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              {/* Sync status dot */}
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: syncStatus === 'syncing' ? '#4ade80'
+                  : syncStatus === 'connected' ? '#facc15'
+                  : syncStatus === 'offline' ? '#9ca3af'
+                  : syncStatus === 'error' ? '#f97316'
+                  : '#f87171',
+              }} />
+              {/* Hamburger lines */}
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                {[0,1,2].map(i => (
+                  <span key={i} style={{ width: 11, height: 1.5, borderRadius: 1, background: 'currentColor', display: 'block' }} />
+                ))}
+              </span>
+            </button>
+
+            {showMenu && (() => {
+              const rect = menuRef.current?.getBoundingClientRect();
+              return (<>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setShowMenu(false)} />
+                <div style={{
+                  position: 'fixed',
+                  top: (rect?.bottom ?? 40) + 4,
+                  right: 8,
+                  zIndex: 99,
+                  minWidth: 172, padding: '4px',
+                  background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                  display: 'flex', flexDirection: 'column', gap: 1,
+                }}>
+                  {/* Sync status */}
+                  {isSignedIn ? (
+                    <div style={{ padding: '6px 10px 4px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                        background: syncStatus === 'syncing' ? '#4ade80'
+                          : syncStatus === 'connected' ? '#facc15'
+                          : syncStatus === 'offline' ? '#9ca3af'
+                          : syncStatus === 'error' ? '#f97316'
+                          : '#f87171',
+                      }} />
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                        {syncStatus === 'syncing' ? 'Syncing…'
+                          : syncStatus === 'offline' ? 'Offline — changes saved on this device'
+                          : syncStatus === 'error' ? 'Sync paused — will retry automatically'
+                          : 'Connected'}
+                      </span>
+                    </div>
+                  ) : (
+                    <MenuRow icon="◉" label="Sign in to sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
+                  )}
+                  <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
+                  {onSyncNow && (
+                    <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
+                  )}
+                  <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com' }); }} />
+                  {isSignedIn && (<>
+                    <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
+                    <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
+                    <MenuRow icon="✕" label="Sign out" onClick={() => { setShowMenu(false); onSignOut(); }} danger />
+                  </>)}
+                </div>
+              </>);
+            })()}
+          </div>
         </div>
       </div>
 
@@ -815,9 +956,16 @@ export function HomeState({
         </div>
       )}
 
+      {/* ── Remote timer (running on another device) ── */}
+      {!isActive && !isBreak && remoteBeacon?.started_at && (
+        <RemoteTimerBanner beacon={remoteBeacon} />
+      )}
+
       {/* ── Detection banner ── */}
       {(() => {
-        if (!detectedTicket || isBreak || detectedTicket.external_id === dismissedTicketId) return null;
+        if (!detectedTicket || isBreak) return null;
+        // Rule-detected tickets may lack an id — dismiss by URL in that case
+        if ((detectedTicket.external_id || detectedTicket.external_url) === dismissedTicketId) return null;
         const todayIds = new Set([...todayPriorities, ...todayTasks].map(t => t.id));
         const visibleTasks = detectedExistingTasks.filter(t => !todayIds.has(t.id));
         const bannerMode = visibleTasks.length > 0 ? 'view' : (detectedExistingTasks.length > 0 ? null : 'add');
@@ -832,8 +980,9 @@ export function HomeState({
             onLink={() => onLinkToTask(detectedTicket)}
             onCreateFollowup={onCreateFollowup}
             onDismiss={() => {
-              setDismissedTicketId(detectedTicket.external_id);
-              void chrome.storage.session.set({ dismissed_ticket_id: detectedTicket.external_id });
+              const key = detectedTicket.external_id || detectedTicket.external_url;
+              setDismissedTicketId(key);
+              void chrome.storage.session.set({ dismissed_ticket_id: key });
             }}
           />
         );
@@ -1055,6 +1204,7 @@ export function HomeState({
             <HabitForm
               onSave={(habit) => {
                 void db.habits.put({ ...habit, workspaceId: activeWsId === 'all' ? null : activeWsId, updatedAt: now() });
+                triggerSync();
                 setIsAddingHabit(false);
               }}
               onCancel={() => setIsAddingHabit(false)}
@@ -1064,6 +1214,7 @@ export function HomeState({
               initialHabit={editingHabit}
               onSave={(updated) => {
                 void db.habits.update(editingHabit.id, { ...updated, updatedAt: now() });
+                triggerSync();
                 setEditingHabit(null);
               }}
               onCancel={() => setEditingHabit(null)}
@@ -1087,7 +1238,7 @@ export function HomeState({
                   onToggleShowInToday={() => setShowHabitsInToday(v => !v)}
                   onAddHabit={() => setIsAddingHabit(true)}
                   onEditHabit={setEditingHabit}
-                  onDeleteHabit={(id) => void db.habits.update(id, { deletedAt: now(), updatedAt: now() })}
+                  onDeleteHabit={(id) => { void db.habits.update(id, { deletedAt: now(), updatedAt: now() }); triggerSync(); }}
                 />
               ) : (
                 <HabitHistoryView habits={visibleHabits} timezone={timezone} weekStart={weekStart} />
@@ -3488,6 +3639,24 @@ function SmallButton({ children, onClick, title, disabled }: { children: React.R
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       {children}
+    </button>
+  );
+}
+
+function MenuRow({ icon, label, onClick, danger }: { icon: string; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 10px', width: '100%', textAlign: 'left',
+        background: 'none', border: 'none', cursor: 'pointer',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 12, color: danger ? '#f87171' : 'var(--color-text)',
+      }}
+    >
+      <span style={{ width: 14, textAlign: 'center', fontSize: 11, color: danger ? '#f87171' : 'var(--color-text-muted)', flexShrink: 0 }}>{icon}</span>
+      {label}
     </button>
   );
 }

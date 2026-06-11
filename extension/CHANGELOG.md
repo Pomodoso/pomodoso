@@ -1,6 +1,38 @@
 # Changelog
 
 
+## v1.1.0 (2026-06-11)
+
+### Sync v2 (extensión + backend)
+
+- **Sync global por usuario** — El sync ya no está atado al workspace activo: push y pull cubren todos los workspaces de la cuenta (incluida la vista "All", que antes desactivaba el sync por completo). Cada entidad viaja con su propio `workspace_id`; el backend valida membresía por entidad.
+- **Sync en background** — El push ya no muere al cerrar el popup: cada cambio le avisa al service worker, que sincroniza ~2.5s después aunque el popup esté cerrado. Un alarm cada 1 minuto hace pull periódico, así los cambios de otro dispositivo llegan solos (y la UI abierta se actualiza en vivo vía Dexie liveQuery).
+- **Pomodoros y work log en la web** — Los time logs de las tareas se sincronizan como `pomodoro_session`; el dashboard web ahora muestra Work log, Today's time, stats de la semana y el timer activo (beacon `active_timer`, con auto-expiración cuando el pomo vence).
+- **Today/Priorities sincronizados** — La membresía y orden de las listas (`task_order`) viaja por sync; la web filtra Today igual que la extensión en vez de mostrar todo el backlog.
+- **Identidad de workspace = nombre** — Workspaces con el mismo nombre (creados por otra instalación o un import) convergen en cada sync: gana el UUID menor, las tareas/proyectos/hábitos/meetings/órdenes y la config de calendario migran al canónico y el duplicado se elimina. Renombrar mantiene el UUID. Funciona retroactivamente con duplicados existentes.
+- **Campos ricos del task sincronizan** — description, links, notas múltiples, recurrencia, completedDates y preferredMode viajan en `task.extra` (JSONB) y hacen round-trip entre extensiones.
+- **`ticket_id` como texto** — La DB guardaba UUID y los IDs reales son strings tipo `INT-455`; ahora es TEXT y no se pierde.
+- **Timer remoto visible** — Si hay un pomodoro corriendo en otro dispositivo, el popup muestra un banner con la tarea y el tiempo restante.
+- **Dispositivos** — Cada instalación se registra con un UUID propio (tipo, browser, versión, last seen/last sync) y se lista en la web en Plan & devices.
+- **Estados de sync no alarmantes** — "Sync error — backend offline?" → "Sync paused — will retry automatically"; nuevo estado **Offline** (gris) cuando no hay internet, con reintento automático al volver la conexión.
+
+### Extension
+
+- **Reglas de detección conectadas** — Las reglas de Settings ahora funcionan: las custom (y presets sin content script como Jira/Notion) matchean la URL del tab — el capture group 1 del regex es el ID del ticket y el título del tab el título. Los toggles de Linear/GitHub/arXiv ahora silencian de verdad su detección nativa.
+- **Fix: Linear no detectaba keys con dígitos** — `DP1-3584` no matcheaba (el regex solo aceptaba letras en la key del equipo). Ahora soporta keys alfanuméricas.
+- **Export/Import arreglado** — El backup ya no incluye estado de sync (`sync_last_pull`, `syncedAt`, `device_id`): al importar, todo se re-pushea y se hace pull completo — los proyectos asociados a tasks ya no se pierden. La config de Google Calendar se exporta/importa y sobrevive los merges de workspace. Importar sobre un workspace existente lo fusiona en vez de duplicarlo.
+- **Recuperar contraseña** — Link "Forgot password?" en el login (extensión y web) que manda el mail de reset; nueva página `/reset-password` en la web para definir la nueva.
+- **Sin datos de ejemplo duplicados** — Una segunda instalación con sesión iniciada ya no crea las tareas/hábitos de muestra; espera los datos del sync.
+
+### Web
+
+- **Vista "All workspaces"** en el dashboard, igual que en la extensión.
+- **Generate report** — Reporte diario en markdown (tareas, work log por proyecto, hábitos, stats) con copiar/descargar.
+- **Plan & devices** — Billing rediseñado con el layout del dashboard (sidebar compartido) + lista de dispositivos de la cuenta.
+- Empty state claro cuando todavía no hay datos sincronizados; ticket pills en work log y focus banner; íconos de navegadores en la landing.
+
+---
+
 ## v0.0.6 (2026-06-02)
 
 ### Extension
