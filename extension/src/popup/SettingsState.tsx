@@ -22,7 +22,7 @@ const PRESET_CATALOG = [
   { id: 'github',  name: 'GitHub',  icon: '⊙', urlPattern: 'github\\.com\\/[^/]+\\/[^/]+\\/(pull|issues)\\/', description: 'PRs and issues on GitHub' },
   { id: 'gmail',   name: 'Gmail',   icon: '✉', urlPattern: 'mail\\.google\\.com\\/mail',                      description: 'Email threads in Gmail' },
   { id: 'notion',  name: 'Notion',  icon: '◻', urlPattern: 'notion\\.so\\/',                                  description: 'Pages in Notion' },
-  { id: 'jira',    name: 'Jira',    icon: '◈', urlPattern: '\\.atlassian\\.net\\/browse\\/',                  description: 'Issues in Jira' },
+  { id: 'jira',    name: 'Jira',    icon: '◈', urlPattern: '\\.atlassian\\.net\\/browse\\/([A-Z][A-Z0-9]*-\\d+)', description: 'Issues in Jira' },
   { id: 'figma',   name: 'Figma',   icon: '⬡', urlPattern: 'figma\\.com\\/(file|design)\\/',                  description: 'Files in Figma' },
   { id: 'clickup', name: 'ClickUp', icon: '⬆', urlPattern: 'app\\.clickup\\.com\\/',                          description: 'Tasks in ClickUp' },
   { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
@@ -503,6 +503,23 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
+  const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Enter your email above first, then tap "Forgot password?"');
+      return;
+    }
+    setError('');
+    setResetState('sending');
+    try {
+      await auth.resetPassword(email.trim());
+      setResetState('sent');
+    } catch (e) {
+      setResetState('idle');
+      setError(e instanceof Error ? e.message : 'Could not send reset email');
+    }
+  };
 
   const handleSignIn = async () => {
     if (!email.trim() || !password) return;
@@ -657,6 +674,19 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                 >
                   {loading ? 'Signing in…' : 'Sign in'}
                 </button>
+                {resetState === 'sent' ? (
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                    ✓ Reset link sent — check your email, then come back and sign in.
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => void handleForgotPassword()}
+                    disabled={resetState === 'sending'}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-text-muted)', textDecoration: 'underline', padding: 0, fontFamily: 'inherit' }}
+                  >
+                    {resetState === 'sending' ? 'Sending reset link…' : 'Forgot password?'}
+                  </button>
+                )}
               </div>
               <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
                 No account?{' '}

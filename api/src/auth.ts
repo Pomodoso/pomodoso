@@ -34,6 +34,23 @@ export async function signUpWithEmail(
   if (error) throw error;
 }
 
+export async function resetPasswordForEmail(
+  supabase: SupabaseClient,
+  email: string,
+  redirectTo: string,
+): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
+}
+
+export async function updatePassword(
+  supabase: SupabaseClient,
+  newPassword: string,
+): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 export async function signOut(supabase: SupabaseClient): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;

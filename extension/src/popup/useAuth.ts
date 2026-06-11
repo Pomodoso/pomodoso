@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getSupabaseClient, TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut } from '@pomodoso/api';
+import { getSupabaseClient, TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail } from '@pomodoso/api';
 import type { Entitlements } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { db } from '../db';
@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 
 const SESSION_KEY = 'auth_session';
 const ENTITLEMENTS_KEY = 'entitlements';
+const WEB_URL = (import.meta.env.VITE_WEB_URL as string | undefined) ?? 'https://pomodoso.com';
 
 export interface AuthState {
   session: Session | null;
@@ -19,6 +20,7 @@ export interface AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   isConfigured: boolean;
 }
@@ -157,6 +159,14 @@ export function useAuth(): AuthState {
     await oauthFlow('azure', SUPABASE_URL!, SUPABASE_ANON_KEY!, persistSession, setSession);
   }, [isConfigured, persistSession]);
 
+  const resetPassword = useCallback(async (email: string) => {
+    if (!isConfigured) throw new Error('Auth not configured');
+    const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+    // The email link lands on the web app, which has a proper page to set
+    // a new password (popups can't receive Supabase redirects).
+    await resetPasswordForEmail(supabase, email, `${WEB_URL}/reset-password`);
+  }, [isConfigured]);
+
   const signOut = useCallback(async () => {
     if (!isConfigured) return;
     const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
@@ -167,5 +177,5 @@ export function useAuth(): AuthState {
     await db.settings.delete(ENTITLEMENTS_KEY);
   }, [isConfigured]);
 
-  return { session, entitlements, loading, signIn, signInWithGoogle, signInWithMicrosoft, signOut, isConfigured };
+  return { session, entitlements, loading, signIn, signInWithGoogle, signInWithMicrosoft, resetPassword, signOut, isConfigured };
 }

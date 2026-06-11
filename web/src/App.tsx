@@ -3,6 +3,7 @@ import { AuthProvider } from './lib/AuthContext.tsx'
 import { ProtectedRoute } from './components/ProtectedRoute.tsx'
 import Landing from './pages/Landing.tsx'
 import Login from './pages/Login.tsx'
+import ResetPassword from './pages/ResetPassword.tsx'
 import Dashboard from './pages/dashboard/Dashboard.tsx'
 import Billing from './pages/settings/Billing.tsx'
 import Pricing from './pages/Pricing.tsx'
@@ -18,6 +19,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/refund" element={<Refund />} />

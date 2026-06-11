@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { signInWithProvider, signInWithEmail, signUpWithEmail } from '@pomodoso/api';
+import { signInWithProvider, signInWithEmail, signUpWithEmail, resetPasswordForEmail } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { useAuth } from '../lib/AuthContext.tsx';
 
@@ -15,6 +15,20 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [signupDone, setSignupDone] = useState(false);
+  const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) { setError('Enter your email first, then click "Forgot password?"'); return; }
+    setError('');
+    setResetState('sending');
+    try {
+      await resetPasswordForEmail(getSupabase(), email.trim(), `${window.location.origin}/reset-password`);
+      setResetState('sent');
+    } catch (err) {
+      setResetState('idle');
+      setError(err instanceof Error ? err.message : 'Could not send reset email');
+    }
+  };
 
   if (session) return <Navigate to={next} replace />;
 
@@ -140,6 +154,20 @@ export default function Login() {
           >
             {loading ? 'Loading…' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
+          {mode === 'signin' && (
+            resetState === 'sent' ? (
+              <p className="text-center text-xs text-neutral-400">✓ Reset link sent — check your email.</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleForgotPassword()}
+                disabled={resetState === 'sending'}
+                className="text-center text-xs text-neutral-500 hover:text-neutral-300 underline"
+              >
+                {resetState === 'sending' ? 'Sending reset link…' : 'Forgot password?'}
+              </button>
+            )
+          )}
         </form>
 
         <p className="text-center text-xs text-neutral-500 mt-6">
