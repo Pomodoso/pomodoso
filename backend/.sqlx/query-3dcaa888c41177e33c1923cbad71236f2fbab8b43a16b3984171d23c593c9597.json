@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT priority_ids, today_ids FROM task_order WHERE workspace_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "priority_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "today_ids",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3dcaa888c41177e33c1923cbad71236f2fbab8b43a16b3984171d23c593c9597"
+}

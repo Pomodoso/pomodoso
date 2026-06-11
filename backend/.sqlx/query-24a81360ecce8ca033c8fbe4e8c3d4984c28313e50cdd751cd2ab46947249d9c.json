@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO habit (\n          id, workspace_id, name, icon, kind, target_count,\n          frequency, frequency_days, updated_at, deleted_at, synced_at\n        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())\n        ON CONFLICT (id) DO UPDATE SET\n          name           = EXCLUDED.name,\n          icon           = EXCLUDED.icon,\n          kind           = EXCLUDED.kind,\n          target_count   = EXCLUDED.target_count,\n          frequency      = EXCLUDED.frequency,\n          frequency_days = EXCLUDED.frequency_days,\n          workspace_id   = EXCLUDED.workspace_id,\n          updated_at     = EXCLUDED.updated_at,\n          deleted_at     = EXCLUDED.deleted_at,\n          synced_at      = NOW()\n        WHERE EXCLUDED.updated_at >= habit.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24a81360ecce8ca033c8fbe4e8c3d4984c28313e50cdd751cd2ab46947249d9c"
+}

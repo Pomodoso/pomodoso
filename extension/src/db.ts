@@ -66,6 +66,8 @@ export interface TaskOrderRow {
   wsId: string;
   priorityIds: string[];
   todayIds: string[];
+  updatedAt?: string;  // stamped automatically by the Dexie hooks below
+  syncedAt?: string;
 }
 
 // ─── Project types ─────────────────────────────────────────────────────────────
@@ -201,10 +203,159 @@ export class PomoDB extends Dexie {
     this.version(9).stores({
       habitHistory: '[habitId+date], habitId, date, id',
     });
+    // v10: sync v2 — re-push everything once. Earlier sync builds reassigned
+    // entities to the active workspace on the server and never pushed time logs
+    // (pomodoro sessions), task orders, or rich task fields. Clearing syncedAt
+    // and the pull cursor makes the next sync a full LWW push + pull.
+    this.version(10).stores({}).upgrade(async tx => {
+      const clearSynced = (t: { syncedAt?: string }) => { delete t.syncedAt; };
+      await tx.table('tasks').toCollection().modify(clearSynced);
+      await tx.table('projects').toCollection().modify(clearSynced);
+      await tx.table('workspaces').toCollection().modify(clearSynced);
+      await tx.table('habits').toCollection().modify(clearSynced);
+      await tx.table('habitHistory').toCollection().modify(clearSynced);
+      const settings = tx.table('settings');
+      const keys = (await settings.toCollection().primaryKeys()) as string[];
+      await settings.bulkDelete(keys.filter(k => k === 'sync_last_pull' || k.endsWith('_synced_at')));
+    });
   }
 }
 
 export const db = new PomoDB();
+
+// ─── Sync apply suppression ────────────────────────────────────────────────────
+// While the sync engine applies rows pulled from the server, the auto-stamping
+// hooks below must not mark those rows dirty again (it would ping-pong forever).
+let applyingRemote = false;
+export function setApplyingRemote(v: boolean): void { applyingRemote = v; }
+export function isApplyingRemote(): boolean { return applyingRemote; }
+
+// taskOrders is written from many call sites — stamp updatedAt centrally so
+// every local reorder/membership change becomes dirty and gets pushed.
+db.taskOrders.hook('creating', function (_pk, obj) {
+  if (applyingRemote) return;
+  (obj as TaskOrderRow).updatedAt = now();
+});
+db.taskOrders.hook('updating', function (mods) {
+  if (applyingRemote) return undefined;
+  const m = mods as Partial<TaskOrderRow>;
+  if ('priorityIds' in m || 'todayIds' in m) return { updatedAt: now() };
+  return undefined;
+});
+
+// ─── Workspace identity: merge duplicates by name ──────────────────────────────
+// A workspace's identity is its (normalized) name. Different installs and
+// backup imports create same-named workspaces under different UUIDs; every
+// sync converges them: the lexicographically smallest UUID is canonical on
+// every device, the rest migrate their data into it and get tombstoned.
+
+const WS_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const wsNameKey = (name: string) => name.trim().toLowerCase();
+
+// Per-workspace calendar config lives in settings as Record<wsId, …> — it must
+// follow the workspace when duplicates merge, or the connection appears "lost".
+const WS_KEYED_SETTINGS = ['calendar_connections', 'calendar_lists', 'calendar_last_synced'];
+
+async function migrateWorkspaceData(fromId: string, toId: string): Promise<boolean> {
+  const ts = now();
+  let moved = 0;
+
+  moved += await db.tasks.where('workspaceId').equals(fromId)
+    .modify({ workspaceId: toId, updatedAt: ts });
+  moved += await db.projects.filter(p => p.workspaceId === fromId)
+    .modify({ workspaceId: toId, updatedAt: ts });
+  moved += await db.meetings.filter(m => m.workspaceId === fromId)
+    .modify({ workspaceId: toId, updatedAt: ts });
+
+  const habitIds: string[] = [];
+  moved += await db.habits.filter(h => h.workspaceId === fromId).modify(h => {
+    habitIds.push(h.id);
+    h.workspaceId = toId;
+    h.updatedAt = ts;
+  });
+  if (habitIds.length) {
+    // Re-stamp their logs so they re-push under the new workspace
+    await db.habitHistory.where('habitId').anyOf(habitIds).modify({ updatedAt: ts });
+  }
+
+  // Today/Priorities: merge the duplicate's order into the canonical one
+  const dupOrder = await db.taskOrders.get(fromId);
+  if (dupOrder) {
+    const canonOrder = await db.taskOrders.get(toId);
+    await db.taskOrders.put({
+      wsId: toId,
+      priorityIds: [...new Set([...(canonOrder?.priorityIds ?? []), ...dupOrder.priorityIds])],
+      todayIds: [...new Set([...(canonOrder?.todayIds ?? []), ...dupOrder.todayIds])],
+    });
+    await db.taskOrders.delete(fromId);
+    moved += 1;
+  }
+
+  // Calendar config keyed by workspace id
+  for (const key of WS_KEYED_SETTINGS) {
+    const row = await db.settings.get(key);
+    const record = row?.value as Record<string, unknown> | undefined;
+    if (record && record[fromId] !== undefined) {
+      if (record[toId] === undefined) record[toId] = record[fromId];
+      delete record[fromId];
+      await db.settings.put({ key, value: record });
+      moved += 1;
+    }
+  }
+
+  return moved > 0;
+}
+
+/** Merges same-named workspaces into the one with the smallest UUID and
+ *  re-homes anything still pointing at a tombstoned workspace whose name has a
+ *  living successor. Returns true when something changed (caller should push). */
+export async function normalizeWorkspaces(): Promise<boolean> {
+  const all = await db.workspaces.toArray();
+  const alive = all.filter(w => !w.deletedAt && WS_UUID_RE.test(w.id));
+  let changed = false;
+
+  // 1. Merge duplicates among living workspaces
+  const groups = new Map<string, WorkspaceRow[]>();
+  for (const w of alive) {
+    const key = wsNameKey(w.name);
+    const g = groups.get(key);
+    if (g) g.push(w);
+    else groups.set(key, [w]);
+  }
+  const canonicalByName = new Map<string, WorkspaceRow>();
+  for (const [key, group] of groups) {
+    group.sort((a, b) => a.id.localeCompare(b.id));
+    const canonical = group[0];
+    if (!canonical) continue;
+    canonicalByName.set(key, canonical);
+    for (const dup of group.slice(1)) {
+      await migrateWorkspaceData(dup.id, canonical.id);
+      await db.workspaces.update(dup.id, { deletedAt: now(), updatedAt: now() });
+      changed = true;
+    }
+  }
+
+  // 2. Adopt orphans: entities still under a workspace that was tombstoned
+  //    (possibly by another device) whose name has a living successor here.
+  for (const dead of all.filter(w => w.deletedAt)) {
+    const target = canonicalByName.get(wsNameKey(dead.name));
+    if (!target || target.id === dead.id) continue;
+    if (await migrateWorkspaceData(dead.id, target.id)) changed = true;
+  }
+
+  return changed;
+}
+
+// ─── Device identity ───────────────────────────────────────────────────────────
+// One UUID per install, generated on first use. Excluded from backups so an
+// imported backup doesn't clone another install's identity.
+export async function getDeviceId(): Promise<string> {
+  const row = await db.settings.get('device_id');
+  if (row?.value) return row.value as string;
+  const id = crypto.randomUUID();
+  await db.settings.put({ key: 'device_id', value: id });
+  return id;
+}
 
 // ─── Migration ────────────────────────────────────────────────────────────────
 // Runs once on the first popup open after the Dexie migration is deployed.

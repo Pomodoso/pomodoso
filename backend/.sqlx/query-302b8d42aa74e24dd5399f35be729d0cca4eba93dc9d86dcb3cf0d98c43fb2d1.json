@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)::bigint as \"pomos!\",\n               COUNT(DISTINCT COALESCE(ticket_id, task_id::text))\n                 FILTER (WHERE ticket_id IS NOT NULL OR task_id IS NOT NULL)::bigint as \"tickets!\"\n        FROM pomodoro_session\n        WHERE workspace_id = ANY($1)\n          AND kind = 'focus'\n          AND status IN ('completed', 'interrupted')\n          AND DATE(started_at AT TIME ZONE $3) >= date_trunc('week', $2::date)::date\n          AND DATE(started_at AT TIME ZONE $3) <= $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pomos!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "tickets!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "302b8d42aa74e24dd5399f35be729d0cca4eba93dc9d86dcb3cf0d98c43fb2d1"
+}

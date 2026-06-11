@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, title, status, notes, project_id, parent_id, ticket_id, updated_at, deleted_at\n               FROM task\n               WHERE workspace_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)",
+  "query": "SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,\n                  updated_at, deleted_at\n           FROM habit\n           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
   "describe": {
     "columns": [
       {
@@ -10,48 +10,53 @@
       },
       {
         "ordinal": 1,
-        "name": "title",
-        "type_info": "Text"
+        "name": "workspace_id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 2,
-        "name": "status",
+        "name": "name",
         "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "notes",
+        "name": "icon",
         "type_info": "Text"
       },
       {
         "ordinal": 4,
-        "name": "project_id",
-        "type_info": "Uuid"
+        "name": "kind",
+        "type_info": "Text"
       },
       {
         "ordinal": 5,
-        "name": "parent_id",
-        "type_info": "Uuid"
+        "name": "target_count",
+        "type_info": "Int4"
       },
       {
         "ordinal": 6,
-        "name": "ticket_id",
-        "type_info": "Uuid"
+        "name": "frequency",
+        "type_info": "Text"
       },
       {
         "ordinal": 7,
+        "name": "frequency_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
+        "UuidArray",
         "Timestamptz"
       ]
     },
@@ -60,12 +65,13 @@
       false,
       false,
       false,
+      false,
       true,
-      true,
+      false,
       true,
       false,
       true
     ]
   },
-  "hash": "0be8f703f02ff18af179d0c47621e88297999a1cdb5903e328dc9e931eed467b"
+  "hash": "8f4f3b91cac02ca40e1d962ca35acd4eaef2a14d90901f7be3f1ba7c9110718c"
 }

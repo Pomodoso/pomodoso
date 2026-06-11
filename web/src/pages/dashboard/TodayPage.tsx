@@ -12,12 +12,14 @@ interface TodayTask {
   project_id: string | null;
   project_name: string | null;
   project_color: string | null;
+  ticket_id: string | null;
   position: number;
 }
 
 interface WorkLogTask {
   task_id: string | null;
   task_title: string;
+  ticket_id: string | null;
   pomos: number;
   duration_seconds: number;
   is_active: boolean;
@@ -51,6 +53,8 @@ interface ActiveSession {
   task_id: string | null;
   task_title: string | null;
   project_name: string | null;
+  ticket_id: string | null;
+  mode: string;
   started_at: string;
   planned_duration_seconds: number | null;
   actual_duration_seconds: number;
@@ -61,6 +65,7 @@ interface TodayStats {
   pomos_today: number;
   seconds_today: number;
   pomos_this_week: number;
+  tickets_this_week: number;
   tasks_done_today: number;
 }
 
@@ -122,26 +127,6 @@ function habitIconColor(icon: string): string {
   return map[icon] ?? 'var(--text-sec)';
 }
 
-function statusPillClass(status: string): string {
-  switch (status) {
-    case 'done': return 'pomo-status-pill pomo-status-done';
-    case 'in_progress': return 'pomo-status-pill pomo-status-progress';
-    case 'todo': return 'pomo-status-pill pomo-status-todo';
-    default: return 'pomo-status-pill pomo-status-todo';
-  }
-}
-
-function statusPillLabel(status: string): string {
-  switch (status) {
-    case 'done': return 'Done';
-    case 'in_progress': return 'Active';
-    case 'todo': return 'Todo';
-    case 'delayed': return 'Delayed';
-    case 'cancelled': return 'Cancelled';
-    default: return status;
-  }
-}
-
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function PomoBar({ session }: { session: ActiveSession }) {
@@ -181,6 +166,7 @@ function PomoBar({ session }: { session: ActiveSession }) {
         </div>
         <div className="pomo-bar-task">{session.task_title ?? 'Focus session'}</div>
         <div className="pomo-bar-meta">
+          {session.ticket_id && <span className="pomo-ticket-pill">{session.ticket_id}</span>}
           {session.project_name && (
             <span style={{ color: 'var(--text-tert)' }}>{session.project_name}</span>
           )}
@@ -304,7 +290,11 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
                 }}>
+                  {task.ticket_id && <span className="pomo-ticket-pill">{task.ticket_id}</span>}
                   {task.task_title}
                 </span>
                 <span className="pomo-time-pill">
@@ -462,6 +452,12 @@ function StatsCard({ stats }: { stats: TodayStats }) {
           <div className="pomo-stat-value">{stats.pomos_this_week}</div>
           <div className="pomo-stat-label">pomos this week</div>
         </div>
+        {stats.tickets_this_week > 0 && (
+          <div className="pomo-stat">
+            <div className="pomo-stat-value">{stats.tickets_this_week}</div>
+            <div className="pomo-stat-label">tickets this week</div>
+          </div>
+        )}
         {stats.pomos_today > 0 && (
           <>
             <div className="pomo-stat">
@@ -479,12 +475,150 @@ function StatsCard({ stats }: { stats: TodayStats }) {
   );
 }
 
+// ─── Daily report ──────────────────────────────────────────────────────────────
+
+function buildReport(data: TodayData, dateStr: string): string {
+  const lines: string[] = [];
+  lines.push(`# Daily report — ${dateStr}`);
+  lines.push('');
+
+  const allTasks = [...data.priorities, ...data.tasks];
+  const done = allTasks.filter(t => t.status === 'done');
+  const pending = allTasks.filter(t => t.status !== 'done');
+
+  if (done.length > 0) {
+    lines.push('## Done');
+    for (const t of done) {
+      const ticket = t.ticket_id ? `[${t.ticket_id}] ` : '';
+      const proj = t.project_name ? ` _(${t.project_name})_` : '';
+      lines.push(`- [x] ${ticket}${t.title}${proj}`);
+    }
+    lines.push('');
+  }
+
+  if (pending.length > 0) {
+    lines.push('## In progress / pending');
+    for (const t of pending) {
+      const ticket = t.ticket_id ? `[${t.ticket_id}] ` : '';
+      const proj = t.project_name ? ` _(${t.project_name})_` : '';
+      lines.push(`- [ ] ${ticket}${t.title}${proj}${t.status === 'in_progress' ? ' — active' : ''}`);
+    }
+    lines.push('');
+  }
+
+  if (data.work_log.length > 0) {
+    const total = data.work_log.reduce((s, p) => s + p.total_seconds, 0);
+    lines.push(`## Time tracked — ${fmtDuration(total)}`);
+    for (const proj of data.work_log) {
+      lines.push(`- **${proj.project_name}** — ${fmtDuration(proj.total_seconds)}`);
+      for (const t of proj.tasks) {
+        const ticket = t.ticket_id ? `[${t.ticket_id}] ` : '';
+        lines.push(`  - ${ticket}${t.task_title} — ${t.pomos}p · ${fmtDuration(t.duration_seconds)}`);
+      }
+    }
+    lines.push('');
+  }
+
+  const loggedHabits = data.habits.filter(h => h.log && (h.log.done || h.log.value > 0));
+  if (loggedHabits.length > 0) {
+    lines.push('## Habits');
+    for (const h of loggedHabits) {
+      const detail = h.kind === 'counter' && h.target_count ? ` (${h.log!.value}/${h.target_count})` : '';
+      lines.push(`- ✓ ${h.name}${detail}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## Stats');
+  lines.push(`- Pomos today: ${data.stats.pomos_today} · ${fmtDuration(data.stats.seconds_today)}`);
+  lines.push(`- Tasks done today: ${data.stats.tasks_done_today}`);
+  lines.push(`- Pomos this week: ${data.stats.pomos_this_week}`);
+  if (data.stats.tickets_this_week > 0) lines.push(`- Tickets this week: ${data.stats.tickets_this_week}`);
+
+  return lines.join('\n');
+}
+
+function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: string; onClose: () => void }) {
+  const report = buildReport(data, dateStr);
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    void navigator.clipboard.writeText(report).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const download = () => {
+    const blob = new Blob([report], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pomodoso-report-${data.date}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 12, width: 'min(640px, 100%)', maxHeight: '85vh',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+            <i className="ti ti-file-text" style={{ marginRight: 6 }} />
+            Daily report
+          </span>
+          <button
+            onClick={onClose}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tert)', fontSize: 16 }}
+            title="Close"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={report}
+          style={{
+            flex: 1, minHeight: 320, resize: 'none', border: 'none', outline: 'none',
+            padding: '14px 18px', fontFamily: 'var(--font-mono)', fontSize: 12.5,
+            lineHeight: 1.55, color: 'var(--text)', background: 'var(--bg-darker)',
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, padding: '12px 18px', borderTop: '1px solid var(--border)', justifyContent: 'flex-end' }}>
+          <button className="pomo-btn" onClick={download}>
+            <i className="ti ti-download" /> Download .md
+          </button>
+          <button className="pomo-btn" onClick={copy}>
+            <i className={`ti ${copied ? 'ti-check' : 'ti-copy'}`} /> {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function TodayPage({ workspaceId }: { workspaceId: string }) {
   const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
 
   const date = todayDate();
 
@@ -492,8 +626,11 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
+    const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    // 'all' → omit workspace_id; the backend aggregates every workspace
+    const wsParam = workspaceId === 'all' ? '' : `workspace_id=${workspaceId}&`;
     api
-      .get<TodayData>(`/today?workspace_id=${workspaceId}&date=${date}`)
+      .get<TodayData>(`/today?${wsParam}date=${date}&tz=${tz}`)
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false));
@@ -535,8 +672,13 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <button className="pomo-btn">
             <i className="ti ti-calendar" /> Week view
           </button>
+          <button className="pomo-btn pomo-btn-primary" onClick={() => setShowReport(true)}>
+            <i className="ti ti-file-export" /> Generate report
+          </button>
         </div>
       </div>
+
+      {showReport && <ReportModal data={data} dateStr={`${dayName}, ${dateStr}`} onClose={() => setShowReport(false)} />}
 
       {/* Active pomodoro bar */}
       {data.active_session && <PomoBar session={data.active_session} />}

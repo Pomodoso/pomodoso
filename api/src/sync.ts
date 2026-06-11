@@ -10,7 +10,8 @@ export interface SyncEntity {
 }
 
 export interface PushBody {
-  workspace_id: UUID;
+  // Legacy fallback — sync is user-global; entities carry their own workspace_id.
+  workspace_id?: UUID;
   entities: SyncEntity[];
 }
 
@@ -32,10 +33,10 @@ export async function pushEntities(
 
 export async function pullEntities(
   client: IApiClient,
-  workspaceId: UUID,
   since?: ISOTimestamp,
 ): Promise<PullResponse> {
-  const params = new URLSearchParams({ workspace_id: workspaceId });
+  const params = new URLSearchParams();
   if (since) params.set('since', since);
-  return client.get<PullResponse>(`/sync/pull?${params}`);
+  const qs = params.toString();
+  return client.get<PullResponse>(`/sync/pull${qs ? `?${qs}` : ''}`);
 }

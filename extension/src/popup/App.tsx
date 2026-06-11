@@ -16,6 +16,7 @@ import {
   type TaskRow, type TaskOrderRow, type ProjectRow, type WorkspaceRow, type DetectionRuleRow,
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
+import { detectTicketFromRules } from '../ticketRules';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { shouldBeInTodayNow } from '../recurrence';
 
@@ -119,10 +120,25 @@ export function App() {
     projectsArr === undefined || workspacesArr === undefined || rulesArr === undefined;
   const loading = timerLoading || dbLoading || lastSeenDateLoading || onboardedLoading || auth.loading;
 
+  // ── Active workspace vanished (merged into a duplicate / deleted remotely) ──
+  useEffect(() => {
+    if (dbLoading || workspacesArr === undefined) return;
+    if (activeWsId === 'all' || activeWsId === 'default') return;
+    if (workspacesArr.some(w => w.id === activeWsId)) return;
+    const first = workspacesArr[0];
+    if (first) setActiveWsId(first.id);
+  }, [dbLoading, activeWsId, workspacesArr, setActiveWsId]);
+
   // ── First-launch: seed sample data ────────────────────────────────────────
   useEffect(() => {
-    if (onboarded || dbLoading || onboardedLoading) return;
+    if (onboarded || dbLoading || onboardedLoading || auth.loading) return;
     const seed = async () => {
+      // A signed-in account gets its data via sync (and restored backups bring
+      // their own) — seeding here would duplicate samples across devices.
+      if (auth.session || (await db.tasks.count()) > 0) {
+        setOnboarded(true);
+        return;
+      }
       const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
       const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
       const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
@@ -161,7 +177,7 @@ export function App() {
     };
     void seed();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onboarded, dbLoading, onboardedLoading]);
+  }, [onboarded, dbLoading, onboardedLoading, auth.loading, auth.session]);
 
   // ── Calendar sync on popup open ───────────────────────────────────────────
   useEffect(() => {
@@ -205,26 +221,44 @@ export function App() {
   const [addingNoteText, setAddingNoteText] = useState<string | null>(null);
 
   // ── Sync ──────────────────────────────────────────────────────────────────────
+  // Sync is user-global: every workspace and its data syncs, regardless of which
+  // workspace is active in the UI (including the "All" view).
   const API_URL = import.meta.env.VITE_API_URL as string | undefined;
-  const [syncStatus, setSyncStatus] = useState<'disconnected' | 'connected' | 'syncing' | 'error'>('disconnected');
+  const [syncStatus, setSyncStatus] = useState<'disconnected' | 'connected' | 'syncing' | 'offline' | 'error'>('disconnected');
 
-  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeWsId);
-  const canSync = Boolean(auth.session && auth.entitlements.features.sync && API_URL && activeWsId && isValidUuid);
+  const canSync = Boolean(auth.session && auth.entitlements.features.sync && API_URL);
 
   useEffect(() => {
     if (!auth.session) { setSyncStatus('disconnected'); clearSync(); return; }
     if (!canSync) { setSyncStatus('connected'); return; }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) { setSyncStatus('offline'); }
 
-    initSync(auth.session.access_token, activeWsId, API_URL!, setSyncStatus);
+    initSync(auth.session.access_token, API_URL!, setSyncStatus);
 
     // Initial sync on login / popup open
     setSyncStatus('syncing');
-    void syncAll(auth.session.access_token, activeWsId, API_URL!)
+    void syncAll(auth.session.access_token, API_URL!)
       .then(() => setSyncStatus('connected'))
-      .catch((err) => { console.error('[sync]', err); setSyncStatus('error'); });
+      .catch((err) => {
+        console.warn('[sync]', err);
+        const offline = (typeof navigator !== 'undefined' && !navigator.onLine) || err instanceof TypeError;
+        setSyncStatus(offline ? 'offline' : 'error');
+      });
 
     return () => clearSync();
-  }, [auth.session?.access_token, canSync, activeWsId]);
+  }, [auth.session?.access_token, canSync]);
+
+  // Live offline/online transitions while the popup is open
+  useEffect(() => {
+    const onOffline = () => setSyncStatus(s => (s === 'disconnected' ? s : 'offline'));
+    const onOnline = () => { if (canSync) syncNow(); };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [canSync]);
 
   // ── After a fresh calendar connect: open Settings > Calendar so the user can select calendars
   useEffect(() => {
@@ -354,21 +388,31 @@ export function App() {
     return inWs(t);
   });
 
-  const detectedExistingTasks = detectedTicket
-    ? Object.values(allTasks).filter(t => {
-        if (t.deletedAt) return false;
-        if (t.ticketId === detectedTicket.external_id) return true;
-        const url = detectedTicket.external_url;
-        return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
-      })
-    : [];
-
   const [tabUrl, setTabUrl] = useState('');
+  const [tabTitle, setTabTitle] = useState('');
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       if (tab?.url) setTabUrl(tab.url);
+      if (tab?.title) setTabTitle(tab.title);
     });
   }, []);
+
+  // Rule-driven detection: custom rules (and presets without a native content
+  // script, e.g. Jira/Notion) match the tab URL generically. Native provider
+  // detections (Linear, GitHub…) take precedence — they extract richer data.
+  const ruleTicket = !detectedTicket && tabUrl
+    ? detectTicketFromRules(rules, tabUrl, tabTitle)
+    : null;
+  const activeTicket = detectedTicket ?? ruleTicket;
+
+  const detectedExistingTasks = activeTicket
+    ? Object.values(allTasks).filter(t => {
+        if (t.deletedAt) return false;
+        if (activeTicket.external_id && t.ticketId === activeTicket.external_id) return true;
+        const url = activeTicket.external_url;
+        return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
+      })
+    : [];
 
   const detectedIds = new Set(detectedExistingTasks.map(t => t.id));
   const linkedTasks = tabUrl
@@ -398,6 +442,7 @@ export function App() {
         todayIds: cur.todayIds.filter(id => id !== task.id),
       });
     });
+    triggerSync();
   }, [priorityIds, wsKey]);
 
   const addToTasks = useCallback(async (task: TaskRow) => {
@@ -409,6 +454,7 @@ export function App() {
       const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
       await db.taskOrders.put({ wsId: targetWsId, priorityIds: cur.priorityIds, todayIds: [...cur.todayIds, task.id] });
     });
+    triggerSync();
   }, [isInToday, wsKey]);
 
   const removeFromToday = useCallback(async (taskId: string) => {
@@ -430,11 +476,13 @@ export function App() {
         todayIds:    o.todayIds.filter(id => id !== taskId),
       }));
     }
+    triggerSync();
   }, [wsKey, patchWsOrder]);
 
   const reorderToday = useCallback(async (newPriorityIds: string[], newTodayIds: string[]) => {
     if (wsKey !== 'all') {
       await db.taskOrders.put({ wsId: wsKey, priorityIds: newPriorityIds, todayIds: newTodayIds });
+      triggerSync();
       return;
     }
     // In 'all' mode the 'all' key only controls display order within each section.
@@ -460,6 +508,7 @@ export function App() {
       }
     }
     await db.taskOrders.put({ wsId: 'all', priorityIds: newPriorityIds, todayIds: newTodayIds });
+    triggerSync();
   }, [wsKey]);
 
   const markRecurringDoneToday = useCallback(async (taskId: string) => {
@@ -478,6 +527,7 @@ export function App() {
         });
       }
     }
+    triggerSync();
   }, [allTasks, timezone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
@@ -547,6 +597,7 @@ export function App() {
       const newEntry = { id: crypto.randomUUID(), startedAt, durationSeconds, mode: timerState.mode };
       await db.tasks.update(taskId, { timeLogs: [...(task.timeLogs ?? []), newEntry], updatedAt: now() });
     });
+    triggerSync();
   }, [timerState.mode]);
 
   // ── Session actions ────────────────────────────────────────────────────────
@@ -574,6 +625,7 @@ export function App() {
     playSound('task-done', soundSettings);
     await detachTask();
     await clearPendingSegment();
+    triggerSync();
   }, [timerState, detachTask, clearPendingSegment, soundSettings, allTasks, markRecurringDoneToday]);
 
   const handleDetachTask = useCallback(async () => {
@@ -603,6 +655,7 @@ export function App() {
     }
     await stop();
     void clearActiveTimer();
+    triggerSync();
   }, [timerState, stop, allTasks, markRecurringDoneToday]);
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
@@ -618,7 +671,7 @@ export function App() {
       payload.mode,
       payload.taskId,
       Intl.DateTimeFormat().resolvedOptions().timeZone,
-      timerSettings.pomodoroDuration ?? null,
+      payload.mode === 'pomodoro' ? timerSettings.focusSeconds : null,
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerState, start, soundSettings, updateTask, timerSettings]);
@@ -653,6 +706,7 @@ export function App() {
   const addWorkspace = useCallback(async (name: string, color: string): Promise<WorkspaceRow> => {
     const ws: WorkspaceRow = { id: crypto.randomUUID(), name, color, updatedAt: now() };
     await db.workspaces.put(ws);
+    triggerSync();
     return ws;
   }, []);
 
@@ -667,6 +721,7 @@ export function App() {
       }
     });
     if (activeWsId === id) setActiveWsId('default');
+    triggerSync();
   }, [activeWsId, setActiveWsId]);
 
   const updateWorkspace = useCallback(async (id: string, name: string, color: string) => {
@@ -744,12 +799,16 @@ export function App() {
   }, [allTasks, updateTask]);
 
   const addToBacklog = useCallback(async (ticket: TicketRef) => {
-    const existing = Object.values(allTasks).find(t => t.ticketId === ticket.external_id);
+    // Rule-detected tickets may have no id — dedupe by link URL instead
+    const existing = Object.values(allTasks).find(t => !t.deletedAt && (
+      (ticket.external_id && t.ticketId === ticket.external_id) ||
+      t.links?.some(l => l.url === ticket.external_url)
+    ));
     if (existing) { setSelectedTask(existing); return; }
     const newTask: TaskRow = {
       id: crypto.randomUUID(),
       title: ticket.title,
-      ticketId: ticket.external_id,
+      ticketId: ticket.external_id || null,
       projectId: null,
       workspaceId: activeWsId === 'all' ? null : activeWsId,
       status: 'todo',
@@ -757,6 +816,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [allTasks, activeWsId]);
 
@@ -773,6 +833,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [allTasks]);
 
@@ -787,6 +848,7 @@ export function App() {
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
   }, [activeWsId]);
 
@@ -805,6 +867,7 @@ export function App() {
       ...(truncated ? { description: text } : {}),
     };
     await db.tasks.put(newTask);
+    triggerSync();
     setSelectedTask(newTask);
     clearSelection();
   }, [activeWsId, clearSelection]);
@@ -934,7 +997,7 @@ export function App() {
       <HomeState
         timerState={timerState}
         timerSettings={timerSettings}
-        detectedTicket={detectedTicket}
+        detectedTicket={activeTicket}
         detectedExistingTasks={detectedExistingTasks}
         linkedTasks={linkedTasks}
         onSelectLinkedTask={setSelectedTask}

@@ -122,12 +122,13 @@ function Hero({ authed }: { authed: boolean }) {
         {/* Browser strip */}
         <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
           {[
-            { name: 'Chrome', available: true },
-            { name: 'Edge', available: true },
-            { name: 'Firefox', available: false },
-            { name: 'Safari', available: false },
+            { name: 'Chrome', icon: 'ti-brand-chrome', available: true },
+            { name: 'Edge', icon: 'ti-brand-edge', available: true },
+            { name: 'Firefox', icon: 'ti-brand-firefox', available: false },
+            { name: 'Safari', icon: 'ti-brand-safari', available: false },
           ].map(b => (
             <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: b.available ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.2)' }}>
+              <i className={`ti ${b.icon}`} style={{ fontSize: 16 }} aria-hidden="true" />
               {b.name}{!b.available && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}> soon</span>}
             </div>
           ))}

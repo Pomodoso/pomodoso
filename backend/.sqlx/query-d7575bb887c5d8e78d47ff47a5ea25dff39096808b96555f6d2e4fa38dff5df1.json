@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO device (id, user_id, kind, name, browser, version, last_seen_at, last_sync_at)\n        VALUES ($1, $2, $3, $4, $5, $6, NOW(), CASE WHEN $7 THEN NOW() ELSE NULL END)\n        ON CONFLICT (id) DO UPDATE SET\n          kind         = EXCLUDED.kind,\n          name         = EXCLUDED.name,\n          browser      = EXCLUDED.browser,\n          version      = EXCLUDED.version,\n          last_seen_at = NOW(),\n          last_sync_at = CASE WHEN $7 THEN NOW() ELSE device.last_sync_at END\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7575bb887c5d8e78d47ff47a5ea25dff39096808b96555f6d2e4fa38dff5df1"
+}

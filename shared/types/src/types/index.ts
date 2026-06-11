@@ -396,7 +396,8 @@ export type ExtensionMessage =
   | { type: 'timer.startNextPomo' }
   | { type: 'ticket.detected'; payload: TicketRef | null }
   | { type: 'ticket.getDetected' }
-  | { type: 'calendar.connect'; wsId: string };
+  | { type: 'calendar.connect'; wsId: string }
+  | { type: 'sync.request' };
 
 export interface TimerStartPayload {
   mode: TimerMode;

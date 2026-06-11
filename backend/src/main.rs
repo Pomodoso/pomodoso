@@ -70,13 +70,38 @@ async fn main() -> anyhow::Result<()> {
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
         // Protected routes — auth applied per-route to avoid affecting public routes after merge
         .route("/me", get(routes::me::get_me).route_layer(auth.clone()))
-        .route("/me/entitlements", get(routes::me::get_entitlements).route_layer(auth.clone()))
-        .route("/sync/push", post(routes::sync::push).route_layer(auth.clone()))
-        .route("/sync/pull", get(routes::sync::pull).route_layer(auth.clone()))
-        .route("/workspaces", get(routes::today::get_workspaces).route_layer(auth.clone()))
-        .route("/today", get(routes::today::get_today).route_layer(auth.clone()))
-        .route("/billing/checkout", post(routes::billing::create_checkout).route_layer(auth.clone()))
-        .route("/billing/portal", post(routes::billing::create_portal).route_layer(auth.clone()))
+        .route(
+            "/me/entitlements",
+            get(routes::me::get_entitlements).route_layer(auth.clone()),
+        )
+        .route(
+            "/devices",
+            get(routes::me::get_devices).route_layer(auth.clone()),
+        )
+        .route(
+            "/sync/push",
+            post(routes::sync::push).route_layer(auth.clone()),
+        )
+        .route(
+            "/sync/pull",
+            get(routes::sync::pull).route_layer(auth.clone()),
+        )
+        .route(
+            "/workspaces",
+            get(routes::today::get_workspaces).route_layer(auth.clone()),
+        )
+        .route(
+            "/today",
+            get(routes::today::get_today).route_layer(auth.clone()),
+        )
+        .route(
+            "/billing/checkout",
+            post(routes::billing::create_checkout).route_layer(auth.clone()),
+        )
+        .route(
+            "/billing/portal",
+            post(routes::billing::create_portal).route_layer(auth.clone()),
+        )
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http());

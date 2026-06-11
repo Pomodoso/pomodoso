@@ -8,11 +8,31 @@ import type {
   TicketRef,
 } from '@pomodoso/types';
 import { IDLE_TIMER_STATE, DEFAULT_TIMER_SETTINGS } from '@pomodoso/types';
-import { getTimerSettingsFromDb, getTimezoneFromDb } from './db';
+import { db, getTimerSettingsFromDb, getTimezoneFromDb } from './db';
 import { connectCalendar, syncTodayMeetings } from './calendarSync';
+import { performBackgroundSync } from './syncEngine';
+import { providerRuleAllows } from './ticketRules';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
+
+// ─── Background sync ──────────────────────────────────────────────────────────
+// The popup's debounced sync dies the moment the popup closes (click-away), so
+// the service worker owns the durable copy: popup mutations send 'sync.request'
+// and a periodic alarm pulls remote changes so other devices' edits land even
+// with the popup closed (Dexie liveQuery propagates them to an open UI).
+
+chrome.alarms.create('periodic-sync', { periodInMinutes: 1 });
+
+let syncDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleBackgroundSync(delayMs = 2500): void {
+  if (syncDebounce) clearTimeout(syncDebounce);
+  syncDebounce = setTimeout(() => {
+    syncDebounce = null;
+    void performBackgroundSync().catch((err: unknown) => console.warn('[bg-sync]', err));
+  }, delayMs);
+}
 
 // ─── Tab messaging ───────────────────────────────────────────────────────────
 
@@ -142,6 +162,11 @@ async function closeMiniWindow(): Promise<void> {
 // ─── Alarm handler ────────────────────────────────────────────────────────────
 
 async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
+  if (alarm.name === 'periodic-sync') {
+    void performBackgroundSync().catch(() => { /* offline / signed out — retry next tick */ });
+    return;
+  }
+
   if (alarm.name === 'pomo-countdown') {
     const state = await getTimerState();
     if (state.status !== 'active' || state.mode !== 'pomodoro') return;
@@ -332,12 +357,25 @@ async function handleMessageAsync(message: ExtensionMessage): Promise<unknown> {
       return startNextPomo();
 
     case 'ticket.detected': {
-      await chrome.storage.local.set({ detectedTicket: message.payload });
+      let ticket = message.payload;
+      // Respect the user's detection rules: a disabled (or pattern-edited)
+      // preset rule silences its native content script.
+      if (ticket) {
+        try {
+          const rules = await db.detectionRules.toArray();
+          if (!providerRuleAllows(rules, ticket)) ticket = null;
+        } catch { /* Dexie unavailable — fail open */ }
+      }
+      await chrome.storage.local.set({ detectedTicket: ticket });
       return null;
     }
 
     case 'ticket.getDetected':
       return getDetectedTicket();
+
+    case 'sync.request':
+      scheduleBackgroundSync();
+      return null;
 
     case 'calendar.connect': {
       try {

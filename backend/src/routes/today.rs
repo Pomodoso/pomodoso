@@ -2,7 +2,7 @@ use axum::{
     extract::{Query, State},
     Extension, Json,
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -17,8 +17,11 @@ use crate::{
 
 #[derive(Deserialize)]
 pub struct TodayQuery {
-    pub workspace_id: Uuid,
+    /// Omitted (or unparseable, e.g. "all") → aggregate across every workspace.
+    pub workspace_id: Option<Uuid>,
     pub date: NaiveDate,
+    /// IANA timezone for day boundaries (e.g. America/Argentina/Buenos_Aires).
+    pub tz: Option<String>,
 }
 
 // ─── Response types ───────────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ pub struct TodayTask {
     pub project_id: Option<Uuid>,
     pub project_name: Option<String>,
     pub project_color: Option<String>,
+    pub ticket_id: Option<String>,
     pub position: i32,
 }
 
@@ -47,6 +51,7 @@ pub struct TodayTask {
 pub struct WorkLogTask {
     pub task_id: Option<Uuid>,
     pub task_title: String,
+    pub ticket_id: Option<String>,
     pub pomos: i64,
     pub duration_seconds: i64,
     pub is_active: bool,
@@ -84,6 +89,8 @@ pub struct ActiveSession {
     pub task_id: Option<Uuid>,
     pub task_title: Option<String>,
     pub project_name: Option<String>,
+    pub ticket_id: Option<String>,
+    pub mode: String,
     pub started_at: DateTime<Utc>,
     pub planned_duration_seconds: Option<i32>,
     pub actual_duration_seconds: i32,
@@ -95,6 +102,7 @@ pub struct TodayStats {
     pub pomos_today: i64,
     pub seconds_today: i64,
     pub pomos_this_week: i64,
+    pub tickets_this_week: i64,
     pub tasks_done_today: i64,
 }
 
@@ -137,7 +145,11 @@ pub async fn get_workspaces(
 
     let workspaces = rows
         .into_iter()
-        .map(|r| WorkspaceInfo { id: r.id, name: r.name, color: r.color })
+        .map(|r| WorkspaceInfo {
+            id: r.id,
+            name: r.name,
+            color: r.color,
+        })
         .collect();
 
     Ok(Json(workspaces))
@@ -148,47 +160,163 @@ pub async fn get_today(
     Extension(auth): Extension<AuthUser>,
     Query(q): Query<TodayQuery>,
 ) -> Result<Json<TodayResponse>> {
-    require_workspace_access(&state, auth.id, q.workspace_id).await?;
+    // Resolve the workspace scope: one workspace, or all of the user's ("All" view).
+    let ws_ids: Vec<Uuid> = match q.workspace_id {
+        Some(id) => {
+            require_workspace_access(&state, auth.id, id).await?;
+            vec![id]
+        }
+        None => {
+            sqlx::query_scalar!(
+                r#"SELECT w.id FROM workspace w
+                   JOIN workspace_member m ON m.workspace_id = w.id
+                   WHERE m.user_id = $1 AND w.deleted_at IS NULL"#,
+                auth.id,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
 
-    let ws = sqlx::query!(
-        "SELECT id, name, color FROM workspace WHERE id = $1",
-        q.workspace_id,
-    )
-    .fetch_one(&state.pool)
-    .await?;
-    let workspace = WorkspaceInfo { id: ws.id, name: ws.name, color: ws.color };
+    // Sanitize tz: IANA names only contain alphanumerics, '/', '_', '+', '-'.
+    let tz =
+        q.tz.as_deref()
+            .filter(|t| {
+                !t.is_empty()
+                    && t.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '+' | '-'))
+            })
+            .unwrap_or("UTC")
+            .to_owned();
 
-    // ── Tasks ───────────────────────────────────────────────────────────────────
-    // Show tasks that are active OR were completed/scheduled today.
-    // Use "?" alias suffix so sqlx treats LEFT JOIN columns as nullable.
+    let workspace = match q.workspace_id {
+        Some(id) => {
+            let ws = sqlx::query!("SELECT id, name, color FROM workspace WHERE id = $1", id)
+                .fetch_one(&state.pool)
+                .await?;
+            WorkspaceInfo {
+                id: ws.id,
+                name: ws.name,
+                color: ws.color,
+            }
+        }
+        None => WorkspaceInfo {
+            id: Uuid::nil(),
+            name: "All".to_owned(),
+            color: "#C8553D".to_owned(),
+        },
+    };
+
+    // ── All in-scope tasks (small per-user dataset; membership logic in Rust) ──
     let task_rows = sqlx::query!(
         r#"
-        SELECT t.id, t.title, t.status, t.is_priority, t.completed_at, t.position,
+        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,
                t.project_id,
                p.name  as "project_name?",
                p.color as "project_color?"
         FROM task t
         LEFT JOIN project p ON p.id = t.project_id
-        WHERE t.workspace_id = $1
+        WHERE t.workspace_id = ANY($1)
           AND t.deleted_at IS NULL
-          AND (
-            t.status IN ('todo', 'in_progress')
-            OR t.scheduled_for = $2
-            OR (t.completed_at IS NOT NULL AND DATE(t.completed_at AT TIME ZONE 'UTC') = $2)
-          )
-        ORDER BY t.is_priority DESC, t.position, t.created_at
         "#,
-        q.workspace_id,
-        q.date,
+        &ws_ids,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    // ── Pomodoro sessions for today ─────────────────────────────────────────────
+    // ── Today/Priorities membership comes from the synced task_order rows ──────
+    let orders = sqlx::query!(
+        "SELECT priority_ids, today_ids FROM task_order WHERE workspace_id = ANY($1)",
+        &ws_ids,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut priority_ids: Vec<Uuid> = Vec::new();
+    let mut today_ids: Vec<Uuid> = Vec::new();
+    for o in orders {
+        for id in json_uuid_list(&o.priority_ids) {
+            if !priority_ids.contains(&id) {
+                priority_ids.push(id);
+            }
+        }
+        for id in json_uuid_list(&o.today_ids) {
+            if !today_ids.contains(&id) {
+                today_ids.push(id);
+            }
+        }
+    }
+
+    struct TaskInfo {
+        title: String,
+        status: String,
+        completed_at: Option<DateTime<Utc>>,
+        ticket_id: Option<String>,
+        project_id: Option<Uuid>,
+        project_name: Option<String>,
+        project_color: Option<String>,
+        completed_dates: Vec<String>,
+    }
+
+    let mut task_map: HashMap<Uuid, TaskInfo> = HashMap::new();
+    for row in task_rows {
+        let completed_dates = row
+            .extra
+            .get("completedDates")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|d| d.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        task_map.insert(
+            row.id,
+            TaskInfo {
+                title: row.title,
+                status: row.status,
+                completed_at: row.completed_at,
+                ticket_id: row.ticket_id,
+                project_id: row.project_id,
+                project_name: row.project_name,
+                project_color: row.project_color,
+                completed_dates,
+            },
+        );
+    }
+
+    let build_list = |ids: &[Uuid], is_priority: bool| -> Vec<TodayTask> {
+        ids.iter()
+            .enumerate()
+            .filter_map(|(i, id)| {
+                task_map.get(id).map(|t| TodayTask {
+                    id: *id,
+                    title: t.title.clone(),
+                    status: t.status.clone(),
+                    is_priority,
+                    completed_at: t.completed_at,
+                    project_id: t.project_id,
+                    project_name: t.project_name.clone(),
+                    project_color: t.project_color.clone(),
+                    ticket_id: t.ticket_id.clone(),
+                    position: i as i32,
+                })
+            })
+            .collect()
+    };
+
+    let mut priorities = build_list(&priority_ids, true);
+    let mut tasks = build_list(&today_ids, false);
+
+    // Completed tasks sink to the bottom, preserving relative order
+    priorities.sort_by_key(|t| t.status == "done");
+    tasks.sort_by_key(|t| t.status == "done");
+
+    // ── Pomodoro sessions for today (day boundary in the user's timezone) ──────
     let session_rows = sqlx::query!(
         r#"
         SELECT s.id, s.task_id, s.status, s.actual_duration_seconds,
-               s.planned_duration_seconds, s.started_at,
+               s.planned_duration_seconds, s.started_at, s.ticket_id,
                t.title        as "task_title?",
                t.project_id   as "session_project_id?",
                p.name         as "project_name?",
@@ -196,34 +324,29 @@ pub async fn get_today(
         FROM pomodoro_session s
         LEFT JOIN task t ON t.id = s.task_id
         LEFT JOIN project p ON p.id = t.project_id
-        WHERE s.workspace_id = $1
+        WHERE s.workspace_id = ANY($1)
           AND s.kind = 'focus'
           AND s.status IN ('completed', 'active', 'interrupted')
-          AND DATE(s.started_at AT TIME ZONE 'UTC') = $2
+          AND DATE(s.started_at AT TIME ZONE $3) = $2
         ORDER BY s.started_at
         "#,
-        q.workspace_id,
+        &ws_ids,
         q.date,
+        tz,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    // ── Active session ──────────────────────────────────────────────────────────
-    let active_session = session_rows.iter().find(|s| s.status == "active").map(|s| {
-        let pomo_index = session_rows.iter().filter(|x| x.status == "completed").count() as i64 + 1;
-        ActiveSession {
-            id: s.id,
-            task_id: s.task_id,
-            task_title: s.task_title.clone(),
-            project_name: s.project_name.clone(),
-            started_at: s.started_at,
-            planned_duration_seconds: s.planned_duration_seconds,
-            actual_duration_seconds: s.actual_duration_seconds,
-            pomo_index,
-        }
-    });
+    // ── Active session from the user_setting beacon ────────────────────────────
+    let pomos_completed_today = session_rows
+        .iter()
+        .filter(|s| s.status == "completed")
+        .count() as i64;
+    let active_session = active_session_from_beacon(&state, auth.id, pomos_completed_today).await?;
 
     // ── Work log: aggregate sessions by project → task ─────────────────────────
+    let active_task_id = active_session.as_ref().and_then(|s| s.task_id);
+
     let mut project_map: HashMap<String, WorkLogProject> = HashMap::new();
     let mut task_agg: HashMap<(String, String), WorkLogTask> = HashMap::new();
 
@@ -232,28 +355,39 @@ pub async fn get_today(
             .session_project_id
             .map(|id| id.to_string())
             .unwrap_or_else(|| "none".into());
-        let task_key = s.task_id.map(|id| id.to_string()).unwrap_or_else(|| "none".into());
+        let task_key = s
+            .task_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "none".into());
 
-        let task_entry = task_agg.entry((project_key.clone(), task_key)).or_insert(WorkLogTask {
-            task_id: s.task_id,
-            task_title: s.task_title.clone().unwrap_or_else(|| "No task".into()),
-            pomos: 0,
-            duration_seconds: 0,
-            is_active: false,
-        });
+        let task_entry = task_agg
+            .entry((project_key.clone(), task_key))
+            .or_insert(WorkLogTask {
+                task_id: s.task_id,
+                task_title: s.task_title.clone().unwrap_or_else(|| "No task".into()),
+                ticket_id: s.ticket_id.clone(),
+                pomos: 0,
+                duration_seconds: 0,
+                is_active: false,
+            });
         task_entry.pomos += 1;
         task_entry.duration_seconds += s.actual_duration_seconds as i64;
-        if s.status == "active" {
+        if s.status == "active" || (s.task_id.is_some() && s.task_id == active_task_id) {
             task_entry.is_active = true;
         }
 
-        let proj_entry = project_map.entry(project_key.clone()).or_insert(WorkLogProject {
-            project_id: s.session_project_id,
-            project_name: s.project_name.clone().unwrap_or_else(|| "No project".into()),
-            project_color: s.project_color.clone().unwrap_or_else(|| "#6366f1".into()),
-            total_seconds: 0,
-            tasks: Vec::new(),
-        });
+        let proj_entry = project_map
+            .entry(project_key.clone())
+            .or_insert(WorkLogProject {
+                project_id: s.session_project_id,
+                project_name: s
+                    .project_name
+                    .clone()
+                    .unwrap_or_else(|| "No project".into()),
+                project_color: s.project_color.clone().unwrap_or_else(|| "#6366f1".into()),
+                total_seconds: 0,
+                tasks: Vec::new(),
+            });
         proj_entry.total_seconds += s.actual_duration_seconds as i64;
     }
 
@@ -264,44 +398,27 @@ pub async fn get_today(
     }
 
     let mut work_log: Vec<WorkLogProject> = project_map.into_values().collect();
-    work_log.sort_by(|a, b| b.total_seconds.cmp(&a.total_seconds));
+    work_log.sort_by_key(|p| std::cmp::Reverse(p.total_seconds));
     for p in &mut work_log {
-        p.tasks.sort_by(|a, b| b.duration_seconds.cmp(&a.duration_seconds));
+        p.tasks
+            .sort_by_key(|t| std::cmp::Reverse(t.duration_seconds));
     }
 
-    // ── Split tasks into priorities and regular ────────────────────────────────
-    let (mut priorities, mut tasks): (Vec<TodayTask>, Vec<TodayTask>) = task_rows
-        .into_iter()
-        .map(|row| TodayTask {
-            id: row.id,
-            title: row.title,
-            status: row.status,
-            is_priority: row.is_priority,
-            completed_at: row.completed_at,
-            project_id: row.project_id,
-            project_name: row.project_name,
-            project_color: row.project_color,
-            position: row.position,
-        })
-        .partition(|t| t.is_priority);
+    // ── Habits scheduled for this date (0=Mon…6=Sun, extension convention) ─────
+    let dow = q.date.weekday().num_days_from_monday() as i64;
 
-    // Sort completed tasks to the bottom
-    priorities.sort_by_key(|t| t.status == "done");
-    tasks.sort_by_key(|t| t.status == "done");
-
-    // ── Habits ─────────────────────────────────────────────────────────────────
     let habit_rows = sqlx::query!(
         r#"
-        SELECT h.id, h.name, h.icon, h.kind, h.target_count,
+        SELECT h.id, h.name, h.icon, h.kind, h.target_count, h.frequency, h.frequency_days,
                hl.value        as "log_value?",
                hl.completed_at as "log_completed_at?"
         FROM habit h
         LEFT JOIN habit_log hl ON hl.habit_id = h.id AND hl.date = $2
-        WHERE h.workspace_id = $1
+        WHERE h.workspace_id = ANY($1)
           AND h.deleted_at IS NULL
         ORDER BY h.position, h.created_at
         "#,
-        q.workspace_id,
+        &ws_ids,
         q.date,
     )
     .fetch_all(&state.pool)
@@ -309,6 +426,16 @@ pub async fn get_today(
 
     let habits: Vec<TodayHabit> = habit_rows
         .into_iter()
+        .filter(|r| match r.frequency.as_str() {
+            "weekdays" => dow <= 4,
+            "custom" => r
+                .frequency_days
+                .as_deref()
+                .and_then(|d| serde_json::from_str::<Vec<i64>>(d).ok())
+                .map(|days| days.contains(&dow))
+                .unwrap_or(true),
+            _ => true, // daily
+        })
         .map(|r| {
             let log = r.log_value.map(|v| HabitLog {
                 value: v,
@@ -327,58 +454,59 @@ pub async fn get_today(
         .collect();
 
     // ── Stats ──────────────────────────────────────────────────────────────────
-    let stats_today = sqlx::query!(
+    let seconds_today: i64 = session_rows
+        .iter()
+        .filter(|s| s.status == "completed" || s.status == "interrupted")
+        .map(|s| s.actual_duration_seconds as i64)
+        .sum();
+
+    let week_stats = sqlx::query!(
         r#"
-        SELECT
-          COUNT(*)::bigint                                             as "count!",
-          COALESCE(SUM(actual_duration_seconds), 0)::bigint           as "seconds!"
+        SELECT COUNT(*)::bigint as "pomos!",
+               COUNT(DISTINCT COALESCE(ticket_id, task_id::text))
+                 FILTER (WHERE ticket_id IS NOT NULL OR task_id IS NOT NULL)::bigint as "tickets!"
         FROM pomodoro_session
-        WHERE workspace_id = $1
+        WHERE workspace_id = ANY($1)
           AND kind = 'focus'
           AND status IN ('completed', 'interrupted')
-          AND DATE(started_at AT TIME ZONE 'UTC') = $2
+          AND DATE(started_at AT TIME ZONE $3) >= date_trunc('week', $2::date)::date
+          AND DATE(started_at AT TIME ZONE $3) <= $2
         "#,
-        q.workspace_id,
+        &ws_ids,
         q.date,
+        tz,
     )
     .fetch_one(&state.pool)
     .await?;
 
-    let pomos_this_week = sqlx::query_scalar!(
-        r#"
-        SELECT COUNT(*)::bigint as "count!"
-        FROM pomodoro_session
-        WHERE workspace_id = $1
-          AND kind = 'focus'
-          AND status IN ('completed', 'interrupted')
-          AND started_at >= date_trunc('week', $2::date::timestamptz)
-        "#,
-        q.workspace_id,
-        q.date,
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    let tasks_done_today = sqlx::query_scalar!(
-        r#"
-        SELECT COUNT(*)::bigint as "count!"
-        FROM task
-        WHERE workspace_id = $1
-          AND status = 'done'
-          AND completed_at IS NOT NULL
-          AND DATE(completed_at AT TIME ZONE 'UTC') = $2
-        "#,
-        q.workspace_id,
-        q.date,
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    // Tasks done today: done tasks still in the Today lists + recurring tasks
+    // completed today (they track completion via extra.completedDates).
+    let date_str = q.date.to_string();
+    let listed: std::collections::HashSet<Uuid> = priority_ids
+        .iter()
+        .chain(today_ids.iter())
+        .copied()
+        .collect();
+    let done_in_lists = listed
+        .iter()
+        .filter(|id| {
+            task_map
+                .get(id)
+                .map(|t| t.status == "done")
+                .unwrap_or(false)
+        })
+        .count() as i64;
+    let recurring_done = task_map
+        .values()
+        .filter(|t| t.completed_dates.contains(&date_str))
+        .count() as i64;
 
     let stats = TodayStats {
-        pomos_today: stats_today.count,
-        seconds_today: stats_today.seconds,
-        pomos_this_week,
-        tasks_done_today,
+        pomos_today: pomos_completed_today,
+        seconds_today,
+        pomos_this_week: week_stats.pomos,
+        tickets_this_week: week_stats.tickets,
+        tasks_done_today: done_in_lists + recurring_done,
     };
 
     Ok(Json(TodayResponse {
@@ -393,9 +521,126 @@ pub async fn get_today(
     }))
 }
 
+// ─── Active timer beacon ──────────────────────────────────────────────────────
+
+async fn active_session_from_beacon(
+    state: &AppState,
+    user_id: Uuid,
+    pomos_completed_today: i64,
+) -> Result<Option<ActiveSession>> {
+    let row = sqlx::query!(
+        r#"SELECT value, updated_at FROM user_setting
+           WHERE user_id = $1 AND key = 'active_timer' AND deleted_at IS NULL"#,
+        user_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else { return Ok(None) };
+    let v = row.value;
+    if v.is_null() {
+        return Ok(None);
+    }
+
+    let started_at = match v
+        .get("started_at")
+        .and_then(|s| s.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+    {
+        Some(ts) => ts.with_timezone(&Utc),
+        None => return Ok(None),
+    };
+
+    // Stale beacon guard: ignore timers that started more than 12h ago
+    // (the extension clears the beacon on stop, but it can miss e.g. on crash).
+    if Utc::now().signed_duration_since(started_at).num_hours() >= 12 {
+        return Ok(None);
+    }
+
+    let mode = v
+        .get("mode")
+        .and_then(|m| m.as_str())
+        .unwrap_or("pomodoro")
+        .to_owned();
+    let planned = v
+        .get("duration_seconds")
+        .and_then(|d| d.as_i64())
+        .map(|d| d as i32);
+
+    // A pomodoro that ran past its planned duration (+ grace) finished without
+    // the extension clearing the beacon (popup closed) — don't show it as active.
+    if let Some(planned) = planned {
+        let elapsed = Utc::now().signed_duration_since(started_at).num_seconds();
+        if elapsed > i64::from(planned) + 300 {
+            return Ok(None);
+        }
+    }
+    let task_id = v
+        .get("task_id")
+        .and_then(|t| t.as_str())
+        .and_then(|t| Uuid::parse_str(t).ok());
+
+    let mut task_title = None;
+    let mut project_name = None;
+    let mut ticket_id = None;
+    if let Some(tid) = task_id {
+        let task = sqlx::query!(
+            r#"SELECT t.title, t.ticket_id, p.name as "project_name?"
+               FROM task t
+               LEFT JOIN project p ON p.id = t.project_id
+               JOIN workspace_member m ON m.workspace_id = t.workspace_id AND m.user_id = $2
+               WHERE t.id = $1"#,
+            tid,
+            user_id,
+        )
+        .fetch_optional(&state.pool)
+        .await?;
+        if let Some(t) = task {
+            task_title = Some(t.title);
+            project_name = t.project_name;
+            ticket_id = t.ticket_id;
+        }
+    }
+
+    let elapsed = Utc::now()
+        .signed_duration_since(started_at)
+        .num_seconds()
+        .max(0) as i32;
+
+    Ok(Some(ActiveSession {
+        id: Uuid::new_v5(
+            &Uuid::NAMESPACE_OID,
+            format!("{user_id}:active_timer").as_bytes(),
+        ),
+        task_id,
+        task_title,
+        project_name,
+        ticket_id,
+        mode,
+        started_at,
+        planned_duration_seconds: planned,
+        actual_duration_seconds: elapsed,
+        pomo_index: pomos_completed_today + 1,
+    }))
+}
+
 // ─── Guards ───────────────────────────────────────────────────────────────────
 
-async fn require_workspace_access(state: &AppState, user_id: Uuid, workspace_id: Uuid) -> Result<()> {
+fn json_uuid_list(v: &serde_json::Value) -> Vec<Uuid> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().and_then(|s| Uuid::parse_str(s).ok()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn require_workspace_access(
+    state: &AppState,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> Result<()> {
     let exists = sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 FROM workspace_member WHERE workspace_id = $1 AND user_id = $2)",
         workspace_id,
