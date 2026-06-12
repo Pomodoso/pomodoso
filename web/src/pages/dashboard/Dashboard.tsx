@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
-import type { MeResponse } from '@pomodoso/api';
 import { api } from '../../lib/api.ts';
 import { Sidebar } from '../../components/Sidebar.tsx';
 import TodayPage from './TodayPage.tsx';
+
+const ACTIVE_WS_KEY = 'pomodoso:active_ws';
 
 interface WorkspaceInfo {
   id: string;
@@ -15,14 +16,21 @@ interface WorkspaceInfo {
 }
 
 export default function Dashboard() {
-  const { session, entitlements } = useAuth();
+  const { session, user, entitlements } = useAuth();
   const navigate = useNavigate();
-  const [me, setMe] = useState<MeResponse | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [wsLoaded, setWsLoaded] = useState(false);
-  const [activeWsId, setActiveWsId] = useState<string | null>(null);
+  const [activeWsId, setActiveWsId] = useState<string | null>(
+    () => localStorage.getItem(ACTIVE_WS_KEY),
+  );
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const wsMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleSetActiveWs = (id: string | null) => {
+    setActiveWsId(id);
+    if (id) localStorage.setItem(ACTIVE_WS_KEY, id);
+    else localStorage.removeItem(ACTIVE_WS_KEY);
+  };
 
   const refreshWorkspaces = () => {
     if (!session) return;
@@ -33,10 +41,14 @@ export default function Dashboard() {
         setWsLoaded(true);
         // If the current active workspace was deleted, fall back to the first one
         setActiveWsId(prev => {
-          if (ws.length === 0) return null;
-          if (prev === 'all' && ws.length > 1) return prev;
-          if (prev && prev !== 'all' && ws.some(w => w.id === prev)) return prev;
-          return ws[0].id;
+          let next: string | null;
+          if (ws.length === 0) next = null;
+          else if (prev === 'all' && ws.length > 1) next = prev;
+          else if (prev && prev !== 'all' && ws.some(w => w.id === prev)) next = prev;
+          else next = ws[0].id;
+          if (next) localStorage.setItem(ACTIVE_WS_KEY, next);
+          else localStorage.removeItem(ACTIVE_WS_KEY);
+          return next;
         });
       })
       .catch(console.error);
@@ -44,7 +56,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!session) return;
-    api.get<MeResponse>('/me').then(setMe).catch(console.error);
     refreshWorkspaces();
 
     // Refresh workspace list when the user switches back to this tab
@@ -72,8 +83,8 @@ export default function Dashboard() {
   const ALL_WS: WorkspaceInfo = { id: 'all', name: 'All workspaces', color: 'var(--accent)' };
   const switcherOptions = workspaces.length > 1 ? [ALL_WS, ...workspaces] : workspaces;
   const activeWs = activeWsId === 'all' ? ALL_WS : workspaces.find(w => w.id === activeWsId);
-  const userEmail = me?.user.email ?? session?.user.email ?? '';
-  const userName = me?.user.name ?? userEmail;
+  const userEmail = user?.email ?? session?.user.email ?? '';
+  const userName = user?.name ?? userEmail;
   const isPro = entitlements.features.dashboard;
 
   const switcher = activeWs && (
@@ -114,7 +125,7 @@ export default function Dashboard() {
           {switcherOptions.map(ws => (
             <div
               key={ws.id}
-              onClick={() => { setActiveWsId(ws.id); setWsMenuOpen(false); }}
+              onClick={() => { handleSetActiveWs(ws.id); setWsMenuOpen(false); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',

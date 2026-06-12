@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import type { Entitlements } from '@pomodoso/types';
+import type { Entitlements, User } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { getMe, onAuthStateChange } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from './supabase.ts';
@@ -8,18 +8,21 @@ import { api, setAuthToken } from './api.ts';
 
 interface AuthContextValue {
   session: Session | null;
+  user: User | null;
   entitlements: Entitlements;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   session: null,
+  user: null,
   entitlements: FREE_ENTITLEMENTS,
   loading: true,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements>(FREE_ENTITLEMENTS);
   const [loading, setLoading] = useState(true);
 
@@ -47,20 +50,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  // Fetch entitlements when session changes
+  // Fetch user + entitlements when session changes (single /me call for the whole app)
   useEffect(() => {
     if (!session) {
+      setUser(null);
       setEntitlements(FREE_ENTITLEMENTS);
       return;
     }
 
     getMe(api)
-      .then(({ entitlements: fresh }) => setEntitlements(fresh))
+      .then(({ user: freshUser, entitlements: fresh }) => {
+        setUser(freshUser);
+        setEntitlements(fresh);
+      })
       .catch(() => setEntitlements(FREE_ENTITLEMENTS));
   }, [session?.access_token]);
 
   return (
-    <AuthContext.Provider value={{ session, entitlements, loading }}>
+    <AuthContext.Provider value={{ session, user, entitlements, loading }}>
       {children}
     </AuthContext.Provider>
   );
