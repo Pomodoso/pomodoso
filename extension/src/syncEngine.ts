@@ -1,9 +1,10 @@
 import { TokenApiClient, pushEntities, pullEntities } from '@pomodoso/api';
 import type { SyncEntity } from '@pomodoso/api';
-import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces } from './db';
+import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, habitLogId } from './db';
+import { ensureFreshSession } from './supabaseClient';
 import type {
   TaskRow, ProjectRow, WorkspaceRow,
-  HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry,
+  HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow,
 } from './db';
 import type { TimerMode } from '@pomodoso/types';
 
@@ -106,19 +107,17 @@ export async function syncAll(
   }
 }
 
-/** Self-configuring sync for the background service worker. Reads the session
- *  token and entitlements straight from IndexedDB so it works with the popup
- *  closed. Returns false when sync isn't possible (signed out, no entitlement,
- *  expired token — the popup refreshes it on next open). */
+/** Self-configuring sync for the background service worker. Refreshes the
+ *  session if it's near expiry (keeping the extension signed in even with the
+ *  popup closed) and reads entitlements from IndexedDB. Returns false when sync
+ *  isn't possible (signed out, no entitlement) — the token is still refreshed in
+ *  that case, which is what keeps Free users logged in. */
 export async function performBackgroundSync(): Promise<boolean> {
   const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
   if (!apiUrl) return false;
 
-  const session = (await db.settings.get('auth_session'))?.value as
-    | { access_token?: string; expires_at?: number }
-    | undefined;
+  const session = await ensureFreshSession();
   if (!session?.access_token) return false;
-  if (session.expires_at && session.expires_at * 1000 < Date.now() + 30_000) return false;
 
   const ent = (await db.settings.get('entitlements'))?.value as
     | { features?: { sync?: boolean } }
@@ -207,6 +206,7 @@ async function push(client: TokenApiClient): Promise<void> {
   for (const p of projects) {
     entities.push(toEntity('project', p.id, p.updatedAt, p.deletedAt ?? null, {
       name: p.name, color: p.color, workspace_id: wsOf(p.workspaceId),
+      end_date: p.endDate ?? null,
     }));
   }
 
@@ -245,29 +245,30 @@ async function push(client: TokenApiClient): Promise<void> {
   const habits = await db.habits
     .filter(h => !h.syncedAt || h.syncedAt < h.updatedAt)
     .toArray();
+  // Habits are user-global — not pinned to a workspace.
   for (const h of habits) {
     entities.push(toEntity('habit', h.id, h.updatedAt, h.deletedAt ?? null, {
       name: h.name, icon: h.icon, kind: h.kind,
       target_count: h.goal ?? null,
-      workspace_id: wsOf(h.workspaceId),
+      workspace_id: h.workspaceId ?? null,
+      extra: habitExtra(h),
       ...habitFrequency(h.days),
     }));
   }
 
-  // Habit history — workspace comes from the owning habit
-  const habitWs = new Map<string, string>();
-  for (const h of await db.habits.toArray()) habitWs.set(h.id, wsOf(h.workspaceId));
+  // Habit history (user-global)
   const history = await db.habitHistory
     .filter(r => !r.syncedAt || r.syncedAt < r.updatedAt)
     .toArray();
   for (const r of history) {
-    const id = r.id ?? habitLogId(r.habitId, r.date);
-    if (!r.id) await db.habitHistory.put({ ...r, id });
+    // Always recompute the id from (habit, date) — heals any stored id that
+    // predates the collision fix so it can't keep colliding on the server PK.
+    const id = habitLogId(r.habitId, r.date);
+    if (r.id !== id) await db.habitHistory.put({ ...r, id });
     entities.push(toEntity('habit_log', id, r.updatedAt, null, {
       habit_id: r.habitId, date: r.date,
       value: r.count ?? (r.done ? 1 : 0),
       completed_at: r.completedAt ?? null,
-      workspace_id: habitWs.get(r.habitId) ?? fallbackWsId,
     }));
   }
 
@@ -280,6 +281,17 @@ async function push(client: TokenApiClient): Promise<void> {
       workspace_id: o.wsId,
       priority_ids: o.priorityIds,
       today_ids: o.todayIds,
+    }));
+  }
+
+  // Detection rules (user-global) — string ids, never gated through UUID_RE
+  const rules = await db.detectionRules
+    .filter(r => !r.syncedAt || r.syncedAt < r.updatedAt)
+    .toArray();
+  for (const r of rules) {
+    entities.push(toEntity('detection_rule', r.id, r.updatedAt, r.deletedAt ?? null, {
+      name: r.name, url_pattern: r.urlPattern, active: r.active,
+      kind: r.kind, preset_id: r.presetId ?? null,
     }));
   }
 
@@ -318,6 +330,7 @@ async function push(client: TokenApiClient): Promise<void> {
     if (projects.length)   await db.projects.where('id').anyOf(projects.map(p => p.id)).modify({ syncedAt: ts });
     if (tasks.length)      await db.tasks.where('id').anyOf(tasks.map(t => t.id)).modify({ syncedAt: ts });
     if (habits.length)     await db.habits.where('id').anyOf(habits.map(h => h.id)).modify({ syncedAt: ts });
+    if (rules.length)      await db.detectionRules.where('id').anyOf(rules.map(r => r.id)).modify({ syncedAt: ts });
     for (const r of history) {
       await db.habitHistory.where('[habitId+date]').equals([r.habitId, r.date]).modify({ syncedAt: ts });
     }
@@ -340,6 +353,13 @@ function taskExtra(t: TaskRow): Record<string, unknown> {
   if (t.preferredMode) extra['preferredMode'] = t.preferredMode;
   if (t.recurrence) extra['recurrence'] = t.recurrence;
   if (t.completedDates?.length) extra['completedDates'] = t.completedDates;
+  return extra;
+}
+
+function habitExtra(h: HabitRow): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  if (h.unit !== undefined) extra['unit'] = h.unit;
+  if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
   return extra;
 }
 
@@ -397,11 +417,13 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
     case 'project': {
       const existing = await db.projects.get(id);
       if (existing && existing.updatedAt >= updated_at) return;
+      const endDate = (data['end_date'] as string | null) ?? null;
       const row: ProjectRow = {
         id,
         name: String(data['name'] ?? ''),
         color: String(data['color'] ?? '#6366f1'),
         workspaceId: (data['workspace_id'] as string | null) ?? null,
+        ...(endDate ? { endDate } : {}),
         updatedAt: updated_at, syncedAt,
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
@@ -485,6 +507,9 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         data['frequency_days'] as string | null | undefined,
       );
       const goal = (data['target_count'] as number | null) ?? existing?.goal;
+      const hExtra = (data['extra'] ?? {}) as Record<string, unknown>;
+      const unit = (hExtra['unit'] as string | undefined) ?? existing?.unit;
+      const unitAmount = (hExtra['unitAmount'] as number | undefined) ?? existing?.unitAmount;
       const row: HabitRow = {
         ...(existing ?? {}),
         id,
@@ -492,6 +517,8 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         icon: (data['icon'] as HabitRow['icon']) ?? 'water',
         kind: (data['kind'] as HabitRow['kind']) ?? 'boolean',
         ...(goal !== undefined ? { goal } : {}),
+        ...(unit !== undefined ? { unit } : {}),
+        ...(unitAmount !== undefined ? { unitAmount } : {}),
         days,
         streakLabel: existing?.streakLabel ?? '',
         workspaceId: (data['workspace_id'] as string | null) ?? null,
@@ -519,6 +546,23 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         updatedAt: updated_at, syncedAt,
       };
       await db.habitHistory.put(row);
+      break;
+    }
+
+    case 'detection_rule': {
+      const existing = await db.detectionRules.get(id);
+      if (existing && existing.updatedAt >= updated_at) return;
+      const row: DetectionRuleRow = {
+        id,
+        name: String(data['name'] ?? ''),
+        urlPattern: String(data['url_pattern'] ?? ''),
+        active: Boolean(data['active'] ?? true),
+        kind: (data['kind'] as DetectionRuleRow['kind']) ?? 'custom',
+        ...(data['preset_id'] ? { presetId: String(data['preset_id']) } : {}),
+        updatedAt: updated_at, syncedAt,
+        ...(deleted_at ? { deletedAt: deleted_at } : {}),
+      };
+      await db.detectionRules.put(row);
       break;
     }
 
@@ -584,12 +628,6 @@ function habitDaysFromServer(frequency: string, frequencyDays?: string | null): 
     try { return JSON.parse(frequencyDays) as number[]; } catch { return []; }
   }
   return [];
-}
-
-function habitLogId(habitId: string, date: string): string {
-  const clean = (habitId + date.replace(/-/g, '')).replace(/-/g, '');
-  const padded = clean.padEnd(32, '0').substring(0, 32);
-  return `${padded.substring(0,8)}-${padded.substring(8,12)}-5${padded.substring(13,16)}-8${padded.substring(17,20)}-${padded.substring(20,32)}`;
 }
 
 function settingId(key: string): string {

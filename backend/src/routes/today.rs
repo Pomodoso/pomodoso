@@ -80,6 +80,8 @@ pub struct TodayHabit {
     pub icon: String,
     pub kind: String,
     pub target_count: Option<i32>,
+    pub unit: Option<String>,
+    pub unit_amount: Option<i32>,
     pub log: Option<HabitLog>,
 }
 
@@ -407,18 +409,20 @@ pub async fn get_today(
     // ── Habits scheduled for this date (0=Mon…6=Sun, extension convention) ─────
     let dow = q.date.weekday().num_days_from_monday() as i64;
 
+    // Habits are user-global — not filtered by the selected workspace.
     let habit_rows = sqlx::query!(
         r#"
         SELECT h.id, h.name, h.icon, h.kind, h.target_count, h.frequency, h.frequency_days,
+               h.extra,
                hl.value        as "log_value?",
                hl.completed_at as "log_completed_at?"
         FROM habit h
         LEFT JOIN habit_log hl ON hl.habit_id = h.id AND hl.date = $2
-        WHERE h.workspace_id = ANY($1)
+        WHERE h.user_id = $1
           AND h.deleted_at IS NULL
         ORDER BY h.position, h.created_at
         "#,
-        &ws_ids,
+        auth.id,
         q.date,
     )
     .fetch_all(&state.pool)
@@ -442,12 +446,25 @@ pub async fn get_today(
                 done: v > 0,
                 completed_at: r.log_completed_at,
             });
+            // unit / unitAmount ride along in habit.extra (mirrors task.extra).
+            let unit = r
+                .extra
+                .get("unit")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let unit_amount = r
+                .extra
+                .get("unitAmount")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32);
             TodayHabit {
                 id: r.id,
                 name: r.name,
                 icon: r.icon,
                 kind: r.kind,
                 target_count: r.target_count,
+                unit,
+                unit_amount,
                 log,
             }
         })

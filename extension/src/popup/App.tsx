@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
@@ -18,6 +18,7 @@ import {
 import { syncAllConnectedWorkspaces } from '../calendarSync';
 import { detectTicketFromRules } from '../ticketRules';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
+import { importDb } from '../backup';
 import { shouldBeInTodayNow } from '../recurrence';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
@@ -129,55 +130,60 @@ export function App() {
     if (first) setActiveWsId(first.id);
   }, [dbLoading, activeWsId, workspacesArr, setActiveWsId]);
 
-  // ── First-launch: seed sample data ────────────────────────────────────────
+  // ── First-launch onboarding ────────────────────────────────────────────────
+  // Signed-in users (and anyone who already has local data, e.g. an imported
+  // backup) skip the welcome choice entirely — their data arrives via sync, so
+  // seeding would duplicate samples. Signed-out first-timers pick template vs
+  // empty in the WelcomeScreen below.
   useEffect(() => {
     if (onboarded || dbLoading || onboardedLoading || auth.loading) return;
-    const seed = async () => {
-      // A signed-in account gets its data via sync (and restored backups bring
-      // their own) — seeding here would duplicate samples across devices.
-      if (auth.session || (await db.tasks.count()) > 0) {
-        setOnboarded(true);
-        return;
-      }
-      const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
-      const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
-      const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
-      const ts = now();
-      await db.transaction('rw', [db.tasks, db.taskOrders, db.habits], async () => {
-        await db.tasks.bulkPut([
-          {
-            id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
-            description: '- Open **Settings → Workspaces** (gear icon in the header)\n- Rename "Personal" to your main context (e.g. Work, Study…)\n- Add extra workspaces if you juggle multiple contexts\n- Switch between them from the header — each has its own tasks, habits, and calendar',
-          },
-          {
-            id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
-            description: '- Click ▶ next to any task in the Today tab\n- Choose **Pomodoro** (25 min focus) or **Log time** (stopwatch)\n- When the session ends you\'ll be prompted to take a break\n- Your time is logged automatically on the task — check it in the task detail',
-          },
-          {
-            id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
-            description: '- Open **Settings → Calendar**\n- Click **Connect Google Calendar** and sign in\n- Select which calendars to sync\n- Today\'s meetings will appear in the **Schedule** tab and in the Today view\n- Click ▶ on a meeting to log time against it',
-          },
-          {
-            id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
-            description: '- Go to the **Habits** tab\n- Edit the sample habits (Drink Water, Read, Exercise) or delete them\n- Add your own with **+ Add** — choose between counter (e.g. glasses of water) or checkbox habits\n- Set which days each habit should appear so it only shows when relevant',
-          },
-          {
-            id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
-            description: '- Go to **Tasks → Backlog**\n- Create tasks with the **+ Add task** button or the **+** in the header\n- Press **★** to pin a task as a priority for today (max 3)\n- Press **+ Today** to add it to your regular task list\n- Open any page on Linear, GitHub, Jira or arXiv — Pomodoso will detect the ticket automatically',
-          },
-        ]);
-        await db.taskOrders.put({ wsId: 'default', priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
-        await db.habits.bulkPut([
-          { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
-          { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
-          { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
-        ]);
-      });
-      setOnboarded(true);
-    };
-    void seed();
+    if (auth.session) { setOnboarded(true); return; }
+    void (async () => {
+      if ((await db.tasks.count()) > 0) setOnboarded(true);
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarded, dbLoading, onboardedLoading, auth.loading, auth.session]);
+
+  // Seed the sample tasks/habits + preset detection rules when the user picks
+  // "Use template" on first launch.
+  const seedTemplate = useCallback(async () => {
+    const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
+    const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
+    const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
+    const ts = now();
+    await db.transaction('rw', [db.tasks, db.taskOrders, db.habits, db.detectionRules], async () => {
+      await db.tasks.bulkPut([
+        {
+          id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          description: '- Open **Settings → Workspaces** (gear icon in the header)\n- Rename "Personal" to your main context (e.g. Work, Study…)\n- Add extra workspaces if you juggle multiple contexts\n- Switch between them from the header — each has its own tasks, habits, and calendar',
+        },
+        {
+          id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          description: '- Click ▶ next to any task in the Today tab\n- Choose **Pomodoro** (25 min focus) or **Log time** (stopwatch)\n- When the session ends you\'ll be prompted to take a break\n- Your time is logged automatically on the task — check it in the task detail',
+        },
+        {
+          id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          description: '- Open **Settings → Calendar**\n- Click **Connect Google Calendar** and sign in\n- Select which calendars to sync\n- Today\'s meetings will appear in the **Schedule** tab and in the Today view\n- Click ▶ on a meeting to log time against it',
+        },
+        {
+          id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          description: '- Go to the **Habits** tab\n- Edit the sample habits (Drink Water, Read, Exercise) or delete them\n- Add your own with **+ Add** — choose between counter (e.g. glasses of water) or checkbox habits\n- Set which days each habit should appear so it only shows when relevant',
+        },
+        {
+          id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          description: '- Go to **Tasks → Backlog**\n- Create tasks with the **+ Add task** button or the **+** in the header\n- Press **★** to pin a task as a priority for today (max 3)\n- Press **+ Today** to add it to your regular task list\n- Open any page on Linear, GitHub, Jira or arXiv — Pomodoso will detect the ticket automatically',
+        },
+      ]);
+      await db.taskOrders.put({ wsId: 'default', priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
+      await db.habits.bulkPut([
+        { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+        { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+        { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+      ]);
+      await db.detectionRules.bulkPut(INITIAL_RULES.map(r => ({ ...r, updatedAt: ts })));
+    });
+    setOnboarded(true);
+  }, [setOnboarded]);
 
   // ── Calendar sync on popup open ───────────────────────────────────────────
   useEffect(() => {
@@ -892,10 +898,16 @@ export function App() {
     );
   }
 
-  if (!onboarded) {
+  // Signed-out first-timers choose template vs empty. Signed-in users skip this
+  // (the effect above marks them onboarded — their data arrives via sync).
+  if (!onboarded && !auth.session) {
     return (
       <PopupShell center>
-        <WelcomeScreen onDismiss={() => setOnboarded(true)} />
+        <WelcomeScreen
+          onUseTemplate={() => void seedTemplate()}
+          onStartEmpty={() => setOnboarded(true)}
+          onSignIn={() => { setSettingsInitialPage('account'); setShowSettings(true); setOnboarded(true); }}
+        />
       </PopupShell>
     );
   }
@@ -1054,14 +1066,43 @@ export function App() {
   );
 }
 
-function WelcomeScreen({ onDismiss }: { onDismiss: () => void }) {
+function WelcomeScreen({ onUseTemplate, onStartEmpty, onSignIn }: { onUseTemplate: () => void; onStartEmpty: () => void; onSignIn: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const logoUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+    ? chrome.runtime.getURL('icons/icon-128.png')
+    : '';
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      void (async () => {
+        try {
+          await importDb(ev.target?.result as string);
+          window.location.reload();
+        } catch (err) {
+          setImportError(err instanceof Error ? err.message : 'Import failed');
+          setImporting(false);
+        }
+      })();
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, maxWidth: 320 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🍅</div>
+        {logoUrl
+          ? <img src={logoUrl} alt="Pomodoso" width={40} height={40} style={{ marginBottom: 8 }} />
+          : <div style={{ fontSize: 28, marginBottom: 8 }}>⏱️</div>}
         <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text)', marginBottom: 6 }}>Welcome to Pomodoso!</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-          We've added a few things to help you get started.
+          Start with a few sample tasks &amp; habits, or a clean slate.
         </div>
       </div>
 
@@ -1088,19 +1129,70 @@ function WelcomeScreen({ onDismiss }: { onDismiss: () => void }) {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
-        Edit, add, or delete anything — these are just examples.
+        With the template you can edit, add, or delete anything — these are just examples.
       </div>
 
-      <button
-        onClick={onDismiss}
-        style={{
-          width: '100%', padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          background: 'var(--color-accent)', color: '#fff', border: 'none',
-          borderRadius: 'var(--radius-md)',
-        }}
-      >
-        Get started →
-      </button>
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button
+          onClick={onUseTemplate}
+          style={{
+            width: '100%', padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            background: 'var(--color-accent)', color: '#fff', border: 'none',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          Use template →
+        </button>
+        <button
+          onClick={onStartEmpty}
+          style={{
+            width: '100%', padding: '9px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            background: 'transparent', color: 'var(--color-text-muted)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+          }}
+        >
+          Start empty
+        </button>
+      </div>
+
+      {/* Returning users: sync down or restore a backup instead of starting fresh */}
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+        <span style={{ fontSize: 10, color: 'var(--color-text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          already using Pomodoso?
+        </span>
+        <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+      </div>
+
+      <div style={{ width: '100%', display: 'flex', gap: 8 }}>
+        <button
+          onClick={onSignIn}
+          style={{
+            flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            background: 'transparent', color: 'var(--color-text)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+          }}
+        >
+          Sign in to sync
+        </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+          style={{
+            flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
+            cursor: importing ? 'default' : 'pointer',
+            background: 'transparent', color: 'var(--color-text)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+            opacity: importing ? 0.6 : 1,
+          }}
+        >
+          {importing ? 'Importing…' : 'Import backup'}
+        </button>
+      </div>
+      {importError && (
+        <div style={{ fontSize: 11, color: 'var(--color-danger, #C8553D)', textAlign: 'center' }}>{importError}</div>
+      )}
+      <input ref={fileRef} type="file" accept=".json" onChange={handleFile} style={{ display: 'none' }} />
     </div>
   );
 }

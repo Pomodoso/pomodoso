@@ -218,6 +218,51 @@ export class PomoDB extends Dexie {
       const keys = (await settings.toCollection().primaryKeys()) as string[];
       await settings.bulkDelete(keys.filter(k => k === 'sync_last_pull' || k.endsWith('_synced_at')));
     });
+    // v11: habits are user-global now. Sanitize (drop workspace binding, fix
+    // non-UUID ids + orphan history) and clear syncedAt so every habit — including
+    // ones stuck "synced" but never accepted server-side, or with legacy ids —
+    // re-pushes under the user-scoped path and converges into one global list.
+    this.version(11).stores({}).upgrade(async tx => {
+      const habits = await tx.table('habits').toArray();
+      const history = await tx.table('habitHistory').toArray();
+      const clean = sanitizeHabitData(habits as HabitRow[], history as HabitHistoryRow[]);
+      for (const h of clean.habits) delete (h as { syncedAt?: string }).syncedAt;
+      for (const r of clean.history) delete (r as { syncedAt?: string }).syncedAt;
+      await tx.table('habits').clear();
+      await tx.table('habits').bulkPut(clean.habits);
+      await tx.table('habitHistory').clear();
+      await tx.table('habitHistory').bulkPut(clean.history);
+    });
+    // v12: converge habit logs across devices. v11 re-pushed habits/logs (cleared
+    // syncedAt) but kept the pull cursor, so a device that had already pulled never
+    // RECEIVED logs the source device pushed with an older updatedAt — today's
+    // counts diverged per device (e.g. Water/Pull-ups showed 0 on one device, the
+    // real value on another). Clearing sync_last_pull forces a full pull so every
+    // device receives the server's logs; re-clearing syncedAt re-pushes local ones.
+    // LWW (the latest real edit) then resolves any genuine conflict.
+    this.version(12).stores({}).upgrade(async tx => {
+      await tx.table('habits').toCollection().modify(h => { delete (h as { syncedAt?: string }).syncedAt; });
+      await tx.table('habitHistory').toCollection().modify(r => { delete (r as { syncedAt?: string }).syncedAt; });
+      const settings = tx.table('settings');
+      const keys = (await settings.toCollection().primaryKeys()) as string[];
+      await settings.bulkDelete(keys.filter(k => k === 'sync_last_pull'));
+    });
+    // v13: fix colliding habit_log ids. The id was derived only from the habit
+    // (the date got truncated off), so every day of a habit shared one id and
+    // collided on the server's habit_log PRIMARY KEY — only one day per habit
+    // could ever sync. Recompute each id from (habit, date), re-push (clear
+    // syncedAt) and force a full pull (clear sync_last_pull) so they converge.
+    this.version(13).stores({}).upgrade(async tx => {
+      await tx.table('habitHistory').toCollection().modify(r => {
+        const row = r as HabitHistoryRow & { syncedAt?: string };
+        row.id = habitLogId(row.habitId, row.date);
+        delete row.syncedAt;
+      });
+      await tx.table('habits').toCollection().modify(h => { delete (h as { syncedAt?: string }).syncedAt; });
+      const settings = tx.table('settings');
+      const keys = (await settings.toCollection().primaryKeys()) as string[];
+      await settings.bulkDelete(keys.filter(k => k === 'sync_last_pull'));
+    });
   }
 }
 
@@ -344,6 +389,52 @@ export async function normalizeWorkspaces(): Promise<boolean> {
   }
 
   return changed;
+}
+
+// Deterministic UUID for a habit log, unique per (habit, date). The server's
+// habit_log PK is `id`, so each (habit, date) MUST get a distinct id — the old
+// generator truncated the date off, giving every day of a habit the same id,
+// which collided on insert so only one day per habit could ever sync.
+export function habitLogId(habitId: string, date: string): string {
+  const h = habitId.replace(/-/g, '');   // 32 hex chars of the habit UUID
+  const dd = date.replace(/-/g, '');     // 8 digits, e.g. 20260619
+  // 24 chars of the habit + the date → the date lands in the last segment.
+  const p = (h.substring(0, 24) + dd).padEnd(32, '0').substring(0, 32);
+  return `${p.substring(0, 8)}-${p.substring(8, 12)}-5${p.substring(13, 16)}-8${p.substring(17, 20)}-${p.substring(20, 32)}`;
+}
+
+// ─── Habit sanitation ──────────────────────────────────────────────────────────
+// Used by both the v11 upgrade (existing local data) and backup import. Brings
+// habits in line with the user-global model and the backend's hard requirements:
+//   - habits are user-global → drop the workspace binding
+//   - the server silently drops rows whose id isn't a UUID → reassign non-UUID
+//     habit ids (e.g. legacy 'h2') and remap their history
+//   - drop orphan history (points at a habit that no longer exists)
+//   - history ids must be UUIDs too (dedup is by habit_id+date on the server)
+export function sanitizeHabitData(
+  habits: HabitRow[],
+  history: HabitHistoryRow[],
+): { habits: HabitRow[]; history: HabitHistoryRow[] } {
+  const remap = new Map<string, string>();
+  const cleanHabits = habits.map(h => {
+    let id = h.id;
+    if (!WS_UUID_RE.test(id)) {
+      id = crypto.randomUUID();
+      remap.set(h.id, id);
+    }
+    return { ...h, id, workspaceId: null };
+  });
+  const validIds = new Set(cleanHabits.map(h => h.id));
+  const cleanHistory = history
+    .map(r => {
+      const habitId = remap.get(r.habitId) ?? r.habitId;
+      // Always recompute the id from (habit, date) — the stored ids were valid
+      // UUIDs but collided across dates (same id for every day of a habit), so
+      // trusting them would keep the bug.
+      return { ...r, habitId, id: habitLogId(habitId, r.date) };
+    })
+    .filter(r => validIds.has(r.habitId));
+  return { habits: cleanHabits, history: cleanHistory };
 }
 
 // ─── Device identity ───────────────────────────────────────────────────────────

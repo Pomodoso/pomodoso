@@ -45,6 +45,8 @@ interface TodayHabit {
   icon: string;
   kind: string;
   target_count: number | null;
+  unit: string | null;
+  unit_amount: number | null;
   log: HabitLog | null;
 }
 
@@ -419,16 +421,24 @@ function HabitsCard({ habits, date }: { habits: TodayHabit[]; date: string }) {
             {habit.name}
           </span>
 
-          {habit.kind === 'counter' && habit.target_count ? (
-            <div className="pomo-counter">
-              {Array.from({ length: habit.target_count }).map((_, i) => (
-                <span
-                  key={i}
-                  className={`pomo-counter-dot ${i < (habit.log?.value ?? 0) ? 'filled' : ''}`}
-                />
-              ))}
-            </div>
-          ) : (
+          {habit.kind === 'counter' && habit.target_count ? (() => {
+            // Match the extension: show value/target (+ unit) instead of one dot
+            // per unit — a goal of 20 rendered 20 dots, which is the "wrong
+            // quantity" the dots showed.
+            const value = habit.log?.value ?? 0;
+            const target = habit.target_count;
+            const done = value >= target;
+            const display = habit.unit && habit.unit_amount
+              ? `${value * habit.unit_amount}/${target * habit.unit_amount} ${habit.unit}`
+              : habit.unit
+                ? `${value}/${target} ${habit.unit}`
+                : `${value}/${target}`;
+            return (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: done ? 'var(--success)' : 'var(--text-sec)' }}>
+                {display}
+              </span>
+            );
+          })() : (
             <div
               className={`pomo-switch ${habit.log?.done ? 'on' : ''}`}
               title={date}

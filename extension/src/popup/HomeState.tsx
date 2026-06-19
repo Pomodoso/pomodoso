@@ -242,7 +242,8 @@ export function HomeState({
   const wsPickerRef = useRef<HTMLDivElement>(null);
 
   // Workspace-filtered habits and meetings (meetings: only today's occurrences)
-  const visibleHabits = habits.filter(h => activeWsId === 'all' || h.workspaceId === activeWsId || h.workspaceId == null);
+  // Habits are user-global — shown in every workspace (and the All view).
+  const visibleHabits = habits;
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
   const todayHabits = visibleHabits.filter(h => h.days.length === 0 || h.days.includes(todayDow));
@@ -1203,7 +1204,8 @@ export function HomeState({
           isAddingHabit ? (
             <HabitForm
               onSave={(habit) => {
-                void db.habits.put({ ...habit, workspaceId: activeWsId === 'all' ? null : activeWsId, updatedAt: now() });
+                // Habits are user-global — never pinned to the active workspace.
+                void db.habits.put({ ...habit, workspaceId: null, updatedAt: now() });
                 triggerSync();
                 setIsAddingHabit(false);
               }}
@@ -4111,7 +4113,7 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
-      workspaceId: initialHabit?.workspaceId,
+      workspaceId: null, // habits are user-global
     });
   };
 
