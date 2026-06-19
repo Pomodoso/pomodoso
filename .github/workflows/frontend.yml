@@ -1,0 +1,39 @@
+name: Frontend
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Build-time placeholders — real values are injected at deploy time.
+      VITE_API_URL: https://api.pomodoso.com
+      VITE_SUPABASE_URL: https://placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check shared API package
+        run: pnpm --filter @pomodoso/api typecheck
+
+      - name: Build web (tsc -b + vite)
+        run: pnpm --filter web build
+
+      - name: Build extension
+        run: pnpm --filter extension build

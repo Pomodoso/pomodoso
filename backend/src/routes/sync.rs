@@ -106,21 +106,12 @@ pub async fn push(
     // task/project/habit into their own workspace).
     let allowed_vec: Vec<uuid::Uuid> = allowed.iter().copied().collect();
 
-    for entity in body
-        .entities
-        .iter()
-        .filter(|e| {
-            !matches!(
-                e.table.as_str(),
-                "workspace"
-                    | "user_setting"
-                    | "device"
-                    | "detection_rule"
-                    | "habit"
-                    | "habit_log"
-            )
-        })
-    {
+    for entity in body.entities.iter().filter(|e| {
+        !matches!(
+            e.table.as_str(),
+            "workspace" | "user_setting" | "device" | "detection_rule" | "habit" | "habit_log"
+        )
+    }) {
         let ws = entity_workspace_id(entity, body.workspace_id);
         let ws = match ws {
             Some(ws) if allowed.contains(&ws) => ws,
