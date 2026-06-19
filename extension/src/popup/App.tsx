@@ -1088,6 +1088,8 @@ function WelcomeScreen({ onUseTemplate, onStartEmpty, onSignIn }: { onUseTemplat
         } catch (err) {
           setImportError(err instanceof Error ? err.message : 'Import failed');
           setImporting(false);
+          // Clear the input so re-selecting the same file fires onChange again.
+          if (fileRef.current) fileRef.current.value = '';
         }
       })();
     };

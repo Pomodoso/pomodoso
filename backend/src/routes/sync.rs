@@ -942,5 +942,6 @@ fn parse_date_field(data: &Value, key: &str) -> Option<NaiveDate> {
     data[key]
         .as_str()
         // Accept both "YYYY-MM-DD" and full ISO timestamps (take the date part).
-        .and_then(|s| NaiveDate::parse_from_str(&s[..s.len().min(10)], "%Y-%m-%d").ok())
+        // str::get avoids a byte-boundary panic on multi-byte input (e.g. emoji).
+        .and_then(|s| NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d").ok())
 }
