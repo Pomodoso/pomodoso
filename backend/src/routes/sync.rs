@@ -78,6 +78,23 @@ pub async fn push(
             accepted += 1;
         }
     }
+    for entity in body.entities.iter().filter(|e| e.table == "detection_rule") {
+        if push_detection_rule(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
+    // Habits are user-global (not workspace-scoped) — handled here, never in the
+    // workspace loop below.
+    for entity in body.entities.iter().filter(|e| e.table == "habit") {
+        if push_habit(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
+    for entity in body.entities.iter().filter(|e| e.table == "habit_log") {
+        if push_habit_log(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
 
     // Pass 2: workspace-scoped entities. Each entity syncs into the workspace it
     // carries in data.workspace_id (falling back to the legacy body field); the
@@ -89,11 +106,12 @@ pub async fn push(
     // task/project/habit into their own workspace).
     let allowed_vec: Vec<uuid::Uuid> = allowed.iter().copied().collect();
 
-    for entity in body
-        .entities
-        .iter()
-        .filter(|e| !matches!(e.table.as_str(), "workspace" | "user_setting" | "device"))
-    {
+    for entity in body.entities.iter().filter(|e| {
+        !matches!(
+            e.table.as_str(),
+            "workspace" | "user_setting" | "device" | "detection_rule" | "habit" | "habit_log"
+        )
+    }) {
         let ws = entity_workspace_id(entity, body.workspace_id);
         let ws = match ws {
             Some(ws) if allowed.contains(&ws) => ws,
@@ -102,10 +120,6 @@ pub async fn push(
         let ok = match entity.table.as_str() {
             "project" => push_project(&state, ws, &allowed_vec, entity).await.is_ok(),
             "task" => push_task(&state, ws, &allowed_vec, entity).await.is_ok(),
-            "habit" => push_habit(&state, ws, &allowed_vec, entity).await.is_ok(),
-            "habit_log" => push_habit_log(&state, ws, &allowed_vec, entity)
-                .await
-                .is_ok(),
             "pomodoro_session" => push_pomodoro_session(&state, ws, &allowed_vec, entity)
                 .await
                 .is_ok(),
@@ -205,25 +219,28 @@ async fn push_project(
     };
     let name = e.data["name"].as_str().unwrap_or("").to_owned();
     let color = e.data["color"].as_str().unwrap_or("#6366f1").to_owned();
+    let end_date = parse_date_field(&e.data, "end_date");
 
     sqlx::query!(
         r#"
-        INSERT INTO project (id, workspace_id, name, color, updated_at, deleted_at, synced_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        INSERT INTO project (id, workspace_id, name, color, end_date, updated_at, deleted_at, synced_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (id) DO UPDATE SET
           name         = EXCLUDED.name,
           color        = EXCLUDED.color,
+          end_date     = EXCLUDED.end_date,
           workspace_id = EXCLUDED.workspace_id,
           updated_at   = EXCLUDED.updated_at,
           deleted_at   = EXCLUDED.deleted_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= project.updated_at
-          AND project.workspace_id = ANY($7)
+          AND project.workspace_id = ANY($8)
         "#,
         id,
         workspace_id,
         name,
         color,
+        end_date,
         e.updated_at,
         e.deleted_at,
         allowed,
@@ -298,12 +315,9 @@ async fn push_task(
     Ok(())
 }
 
-async fn push_habit(
-    state: &AppState,
-    workspace_id: uuid::Uuid,
-    allowed: &[uuid::Uuid],
-    e: &SyncEntity,
-) -> Result<()> {
+// Habits are user-global. workspace_id is kept nullable for back-compat but is
+// no longer used for scoping; the owner guard is `habit.user_id = $user`.
+async fn push_habit(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -314,13 +328,19 @@ async fn push_habit(
     let target_count = e.data["target_count"].as_i64().map(|v| v as i32);
     let frequency = e.data["frequency"].as_str().unwrap_or("daily").to_owned();
     let freq_days = e.data["frequency_days"].as_str().map(|s| s.to_owned());
+    let workspace_id = parse_uuid_field(&e.data, "workspace_id");
+    let extra = if e.data["extra"].is_object() {
+        e.data["extra"].clone()
+    } else {
+        serde_json::json!({})
+    };
 
     sqlx::query!(
         r#"
         INSERT INTO habit (
-          id, workspace_id, name, icon, kind, target_count,
-          frequency, frequency_days, updated_at, deleted_at, synced_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+          id, user_id, workspace_id, name, icon, kind, target_count,
+          frequency, frequency_days, extra, updated_at, deleted_at, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
         ON CONFLICT (id) DO UPDATE SET
           name           = EXCLUDED.name,
           icon           = EXCLUDED.icon,
@@ -328,14 +348,16 @@ async fn push_habit(
           target_count   = EXCLUDED.target_count,
           frequency      = EXCLUDED.frequency,
           frequency_days = EXCLUDED.frequency_days,
+          extra          = EXCLUDED.extra,
           workspace_id   = EXCLUDED.workspace_id,
           updated_at     = EXCLUDED.updated_at,
           deleted_at     = EXCLUDED.deleted_at,
           synced_at      = NOW()
         WHERE EXCLUDED.updated_at >= habit.updated_at
-          AND habit.workspace_id = ANY($11)
+          AND habit.user_id = $2
         "#,
         id,
+        user_id,
         workspace_id,
         name,
         icon,
@@ -343,21 +365,16 @@ async fn push_habit(
         target_count,
         frequency,
         freq_days,
+        extra,
         e.updated_at,
         e.deleted_at,
-        allowed,
     )
     .execute(&state.pool)
     .await?;
     Ok(())
 }
 
-async fn push_habit_log(
-    state: &AppState,
-    workspace_id: uuid::Uuid,
-    allowed: &[uuid::Uuid],
-    e: &SyncEntity,
-) -> Result<()> {
+async fn push_habit_log(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -378,25 +395,23 @@ async fn push_habit_log(
     sqlx::query!(
         r#"
         INSERT INTO habit_log (
-          id, habit_id, workspace_id, date, value, completed_at, updated_at, synced_at
+          id, habit_id, user_id, date, value, completed_at, updated_at, synced_at
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
         ON CONFLICT (habit_id, date) DO UPDATE SET
-          workspace_id = EXCLUDED.workspace_id,
           value        = EXCLUDED.value,
           completed_at = EXCLUDED.completed_at,
           updated_at   = EXCLUDED.updated_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= habit_log.updated_at
-          AND habit_log.workspace_id = ANY($8)
+          AND habit_log.user_id = $3
         "#,
         id,
         habit_id,
-        workspace_id,
+        user_id,
         date,
         value,
         completed_at,
         e.updated_at,
-        allowed,
     )
     .execute(&state.pool)
     .await?;
@@ -554,6 +569,55 @@ async fn push_device(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> R
     Ok(())
 }
 
+async fn push_detection_rule(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+    // Detection-rule ids are stable string keys (e.g. "r-linear"), not UUIDs, so
+    // identical presets seeded on every install converge to one row.
+    if e.id.is_empty() {
+        return Ok(());
+    }
+    let name = e.data["name"].as_str().unwrap_or("").to_owned();
+    let url_pattern = e.data["url_pattern"].as_str().unwrap_or("").to_owned();
+    let active = e.data["active"].as_bool().unwrap_or(true);
+    let kind = e.data["kind"].as_str().unwrap_or("custom").to_owned();
+    let kind = if matches!(kind.as_str(), "preset" | "custom") {
+        kind
+    } else {
+        "custom".to_owned()
+    };
+    let preset_id = e.data["preset_id"].as_str().map(|s| s.to_owned());
+
+    sqlx::query!(
+        r#"
+        INSERT INTO detection_rule (
+          id, user_id, name, url_pattern, active, kind, preset_id,
+          updated_at, deleted_at, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        ON CONFLICT (user_id, id) DO UPDATE SET
+          name        = EXCLUDED.name,
+          url_pattern = EXCLUDED.url_pattern,
+          active      = EXCLUDED.active,
+          kind        = EXCLUDED.kind,
+          preset_id   = EXCLUDED.preset_id,
+          updated_at  = EXCLUDED.updated_at,
+          deleted_at  = EXCLUDED.deleted_at,
+          synced_at   = NOW()
+        WHERE EXCLUDED.updated_at >= detection_rule.updated_at
+        "#,
+        e.id,
+        user_id,
+        name,
+        url_pattern,
+        active,
+        kind,
+        preset_id,
+        e.updated_at,
+        e.deleted_at,
+    )
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
 async fn push_user_setting(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     let key = e.data["key"].as_str().unwrap_or("").to_owned();
     if key.is_empty() {
@@ -641,6 +705,79 @@ pub async fn pull(
         });
     }
 
+    // Detection rules (user-global task-detection config — not workspace-scoped)
+    for row in sqlx::query!(
+        r#"SELECT id, name, url_pattern, active, kind, preset_id, updated_at, deleted_at
+           FROM detection_rule
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "detection_rule".into(),
+            id: row.id,
+            data: serde_json::json!({
+                "name": row.name, "url_pattern": row.url_pattern,
+                "active": row.active, "kind": row.kind, "preset_id": row.preset_id,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+
+    // Habits (user-global — not workspace-scoped)
+    for row in sqlx::query!(
+        r#"SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,
+                  extra, updated_at, deleted_at
+           FROM habit
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "habit".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "name": row.name, "icon": row.icon, "kind": row.kind,
+                "target_count": row.target_count,
+                "frequency": row.frequency, "frequency_days": row.frequency_days,
+                "extra": row.extra,
+                "workspace_id": row.workspace_id,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+
+    // Habit logs (user-global)
+    for row in sqlx::query!(
+        r#"SELECT id, habit_id, date::text as "date!", value, completed_at, updated_at
+           FROM habit_log
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "habit_log".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "habit_id": row.habit_id, "date": row.date,
+                "value": row.value, "completed_at": row.completed_at,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: None,
+        });
+    }
+
     // Workspace-scoped entities across ALL of the user's workspaces
     let ws_ids: Vec<uuid::Uuid> = user_workspace_ids(&state, auth.id)
         .await?
@@ -655,7 +792,7 @@ pub async fn pull(
 
     // Projects
     for row in sqlx::query!(
-        r#"SELECT id, workspace_id, name, color, updated_at, deleted_at FROM project
+        r#"SELECT id, workspace_id, name, color, end_date, updated_at, deleted_at FROM project
            WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
         &ws_ids,
         q.since,
@@ -668,6 +805,7 @@ pub async fn pull(
             id: row.id.to_string(),
             data: serde_json::json!({
                 "name": row.name, "color": row.color,
+                "end_date": row.end_date,
                 "workspace_id": row.workspace_id,
             }),
             updated_at: row.updated_at,
@@ -700,56 +838,6 @@ pub async fn pull(
             }),
             updated_at: row.updated_at,
             deleted_at: row.deleted_at,
-        });
-    }
-
-    // Habits
-    for row in sqlx::query!(
-        r#"SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,
-                  updated_at, deleted_at
-           FROM habit
-           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
-        &ws_ids,
-        q.since,
-    )
-    .fetch_all(&state.pool)
-    .await?
-    {
-        entities.push(SyncEntity {
-            table: "habit".into(),
-            id: row.id.to_string(),
-            data: serde_json::json!({
-                "name": row.name, "icon": row.icon, "kind": row.kind,
-                "target_count": row.target_count,
-                "frequency": row.frequency, "frequency_days": row.frequency_days,
-                "workspace_id": row.workspace_id,
-            }),
-            updated_at: row.updated_at,
-            deleted_at: row.deleted_at,
-        });
-    }
-
-    // Habit logs
-    for row in sqlx::query!(
-        r#"SELECT id, habit_id, workspace_id, date::text as "date!", value, completed_at, updated_at
-           FROM habit_log
-           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
-        &ws_ids,
-        q.since,
-    )
-    .fetch_all(&state.pool)
-    .await?
-    {
-        entities.push(SyncEntity {
-            table: "habit_log".into(),
-            id: row.id.to_string(),
-            data: serde_json::json!({
-                "habit_id": row.habit_id, "date": row.date,
-                "value": row.value, "completed_at": row.completed_at,
-                "workspace_id": row.workspace_id,
-            }),
-            updated_at: row.updated_at,
-            deleted_at: None,
         });
     }
 
@@ -848,4 +936,12 @@ fn parse_ts_field(data: &Value, key: &str) -> Option<DateTime<Utc>> {
         .as_str()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn parse_date_field(data: &Value, key: &str) -> Option<NaiveDate> {
+    data[key]
+        .as_str()
+        // Accept both "YYYY-MM-DD" and full ISO timestamps (take the date part).
+        // str::get avoids a byte-boundary panic on multi-byte input (e.g. emoji).
+        .and_then(|s| NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d").ok())
 }

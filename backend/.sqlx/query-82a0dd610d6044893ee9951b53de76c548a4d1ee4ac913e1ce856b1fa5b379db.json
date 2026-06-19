@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,\n                  updated_at, deleted_at\n           FROM habit\n           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
+  "query": "SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,\n                  extra, updated_at, deleted_at\n           FROM habit\n           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)",
   "describe": {
     "columns": [
       {
@@ -45,33 +45,39 @@
       },
       {
         "ordinal": 8,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "UuidArray",
+        "Uuid",
         "Timestamptz"
       ]
     },
     "nullable": [
       false,
-      false,
+      true,
       false,
       false,
       false,
       true,
       false,
       true,
+      false,
       false,
       true
     ]
   },
-  "hash": "8f4f3b91cac02ca40e1d962ca35acd4eaef2a14d90901f7be3f1ba7c9110718c"
+  "hash": "82a0dd610d6044893ee9951b53de76c548a4d1ee4ac913e1ce856b1fa5b379db"
 }

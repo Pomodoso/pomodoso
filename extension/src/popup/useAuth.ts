@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getSupabaseClient, TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail } from '@pomodoso/api';
+import { TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail } from '@pomodoso/api';
 import type { Entitlements } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { db } from '../db';
+import { getExtensionSupabase } from '../supabaseClient';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -27,12 +28,10 @@ export interface AuthState {
 
 async function oauthFlow(
   provider: 'google' | 'azure',
-  supabaseUrl: string,
-  supabaseAnonKey: string,
   persistSession: (s: Session) => Promise<void>,
   setSession: (s: Session) => void,
 ) {
-  const supabase = getSupabaseClient(supabaseUrl, supabaseAnonKey);
+  const supabase = getExtensionSupabase();
   const redirectTo = chrome.identity.getRedirectURL('callback');
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -95,7 +94,7 @@ export function useAuth(): AuthState {
         const storedSession = stored?.value as Session | undefined;
 
         if (storedSession) {
-          const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+          const supabase = getExtensionSupabase();
           const { data, error } = await supabase.auth.setSession({
             access_token: storedSession.access_token,
             refresh_token: storedSession.refresh_token,
@@ -121,6 +120,19 @@ export function useAuth(): AuthState {
     })();
   }, [isConfigured]);
 
+  // Follow token refreshes (and sign-outs) that happen in the background so the
+  // popup never shows a stale/expired session. The client also mirrors these to
+  // IndexedDB; here we just keep React state in step.
+  useEffect(() => {
+    if (!isConfigured) return;
+    const supabase = getExtensionSupabase();
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      if (!newSession) setEntitlements(FREE_ENTITLEMENTS);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [isConfigured]);
+
   // Refresh entitlements whenever session changes (only when API is configured)
   useEffect(() => {
     if (!isConfigured || !session || !API_URL) return;
@@ -143,7 +155,7 @@ export function useAuth(): AuthState {
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!isConfigured) throw new Error('Auth not configured');
-    const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+    const supabase = getExtensionSupabase();
     const { session: newSession } = await signInWithEmail(supabase, email, password);
     setSession(newSession);
     await db.settings.put({ key: SESSION_KEY, value: newSession });
@@ -151,17 +163,17 @@ export function useAuth(): AuthState {
 
   const signInWithGoogle = useCallback(async () => {
     if (!isConfigured) throw new Error('Auth not configured');
-    await oauthFlow('google', SUPABASE_URL!, SUPABASE_ANON_KEY!, persistSession, setSession);
+    await oauthFlow('google', persistSession, setSession);
   }, [isConfigured, persistSession]);
 
   const signInWithMicrosoft = useCallback(async () => {
     if (!isConfigured) throw new Error('Auth not configured');
-    await oauthFlow('azure', SUPABASE_URL!, SUPABASE_ANON_KEY!, persistSession, setSession);
+    await oauthFlow('azure', persistSession, setSession);
   }, [isConfigured, persistSession]);
 
   const resetPassword = useCallback(async (email: string) => {
     if (!isConfigured) throw new Error('Auth not configured');
-    const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+    const supabase = getExtensionSupabase();
     // The email link lands on the web app, which has a proper page to set
     // a new password (popups can't receive Supabase redirects).
     await resetPasswordForEmail(supabase, email, `${WEB_URL}/reset-password`);
@@ -169,7 +181,7 @@ export function useAuth(): AuthState {
 
   const signOut = useCallback(async () => {
     if (!isConfigured) return;
-    const supabase = getSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+    const supabase = getExtensionSupabase();
     await supabaseSignOut(supabase);
     setSession(null);
     setEntitlements(FREE_ENTITLEMENTS);

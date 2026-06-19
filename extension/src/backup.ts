@@ -1,4 +1,5 @@
-import { db, normalizeWorkspaces } from './db';
+import { db, normalizeWorkspaces, now, sanitizeHabitData } from './db';
+import type { HabitRow, HabitHistoryRow, ProjectRow, WorkspaceRow } from './db';
 
 // auth_session contains JWT tokens — never export.
 // device_id identifies this install — importing it would clone another device's identity.
@@ -26,11 +27,20 @@ export interface BackupEnvelope {
   data: Record<string, unknown[]>;
 }
 
-// Imported rows must look "dirty" to the sync engine so everything is pushed
-// to the server again on the next sync.
-function stripSyncMeta<T extends { syncedAt?: string }>(rows: T[]): T[] {
+// Imported rows must look "dirty" AND be the newest write so the sync engine
+// re-pushes them and *other* devices actually receive them:
+//   - drop syncedAt        → the row is dirty and gets pushed
+//   - bump updatedAt = now → (1) LWW makes the restored data win on the server
+//                            (2) other devices' incremental pull (`updated_at >
+//                                since`) catches it. Keeping the backup's old
+//                                updatedAt is why imported habits/tasks never
+//                                reached a second extension — their timestamp
+//                                predated the other device's pull cursor.
+function refreshSyncMeta<T extends { syncedAt?: string; updatedAt?: string }>(rows: T[]): T[] {
+  const ts = now();
   return rows.map(r => {
     const { syncedAt: _ignored, ...rest } = r;
+    if ('updatedAt' in rest) (rest as { updatedAt?: string }).updatedAt = ts;
     return rest as T;
   });
 }
@@ -96,15 +106,30 @@ export async function importDb(json: string): Promise<void> {
       .filter(k => !isExcludedSetting(k) || k.endsWith('_synced_at') || k === 'sync_last_pull');
     await db.settings.bulkDelete(keysToDelete);
 
+    // Projects: drop dangling workspace refs (e.g. legacy 'default' or a
+    // workspace not present in this backup) → null, so sync re-homes them to a
+    // valid workspace instead of orphaning them.
+    const validWsIds = new Set((rows('workspaces') as WorkspaceRow[]).map(w => w.id));
+    const cleanProjects = (refreshSyncMeta(rows('projects') as never[]) as ProjectRow[]).map(p => ({
+      ...p,
+      workspaceId: p.workspaceId && validWsIds.has(p.workspaceId) ? p.workspaceId : null,
+    }));
+
+    // Habits: globalize + fix non-UUID ids / orphan history (see sanitizeHabitData).
+    const sane = sanitizeHabitData(
+      refreshSyncMeta(rows('habits') as never[]) as HabitRow[],
+      refreshSyncMeta(rows('habitHistory') as never[]) as HabitHistoryRow[],
+    );
+
     await Promise.all([
-      db.tasks.bulkPut(stripSyncMeta(rows('tasks') as never[])),
-      db.taskOrders.bulkPut(stripSyncMeta(rows('taskOrders') as never[])),
-      db.projects.bulkPut(stripSyncMeta(rows('projects') as never[])),
-      db.workspaces.bulkPut(stripSyncMeta(rows('workspaces') as never[])),
-      db.habits.bulkPut(stripSyncMeta(rows('habits') as never[])),
-      db.habitHistory.bulkPut(stripSyncMeta(rows('habitHistory') as never[])),
+      db.tasks.bulkPut(refreshSyncMeta(rows('tasks') as never[])),
+      db.taskOrders.bulkPut(refreshSyncMeta(rows('taskOrders') as never[])),
+      db.projects.bulkPut(cleanProjects as never[]),
+      db.workspaces.bulkPut(refreshSyncMeta(rows('workspaces') as never[])),
+      db.habits.bulkPut(sane.habits as never[]),
+      db.habitHistory.bulkPut(sane.history as never[]),
       db.meetings.bulkPut(rows('meetings') as never[]),
-      db.detectionRules.bulkPut(rows('detectionRules') as never[]),
+      db.detectionRules.bulkPut(refreshSyncMeta(rows('detectionRules') as never[])),
       db.settings.bulkPut((rows('settings') as { key: string }[]).filter(s => !isExcludedSetting(s.key)) as never[]),
     ]);
   });

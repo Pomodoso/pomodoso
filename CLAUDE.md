@@ -73,7 +73,7 @@ pomodoso/
 
 5. **Every syncable entity has `created_at`, `updated_at`, `deleted_at` (nullable), `synced_at` (nullable).**
 
-6. **Workspaces own everything user-data.** Every entity (except `user`, `workspace`, `workspace_member`, `subscription`) has a `workspace_id` FK.
+6. **Workspaces own work-context data.** Tasks, projects, pomodoro sessions and task orders carry a `workspace_id` FK. The exceptions are: `user`, `workspace`, `workspace_member`, `subscription`, and the **user-scoped** entities `user_setting`, `device`, `detection_rule`, `habit`, `habit_log` — these are keyed by `user_id` and sync globally (habits are personal, not per-work-context; see spec v0.10). User-scoped entities are pushed/pulled outside the workspace loop in `sync.rs`.
 
 7. **Last-Write-Wins (LWW) at the record level.** Conflicts resolve by comparing `updated_at`. No field-level merging.
 

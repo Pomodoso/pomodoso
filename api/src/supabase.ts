@@ -2,12 +2,33 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 let _client: SupabaseClient | null = null;
 
-export function getSupabaseClient(url: string, anonKey: string): SupabaseClient {
+/** Minimal async storage contract Supabase accepts. The extension supplies a
+ *  chrome.storage.local-backed adapter so the session survives MV3 service
+ *  worker restarts (localStorage doesn't exist there); the web app omits it and
+ *  Supabase falls back to localStorage. */
+export interface SupabaseAuthStorage {
+  getItem(key: string): string | null | Promise<string | null>;
+  setItem(key: string, value: string): void | Promise<void>;
+  removeItem(key: string): void | Promise<void>;
+}
+
+export interface SupabaseClientOptions {
+  storage?: SupabaseAuthStorage;
+  storageKey?: string;
+}
+
+export function getSupabaseClient(
+  url: string,
+  anonKey: string,
+  opts: SupabaseClientOptions = {},
+): SupabaseClient {
   if (!_client) {
     _client = createClient(url, anonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        ...(opts.storage ? { storage: opts.storage } : {}),
+        ...(opts.storageKey ? { storageKey: opts.storageKey } : {}),
       },
     });
   }

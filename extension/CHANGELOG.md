@@ -1,7 +1,34 @@
 # Changelog
 
+## v1.1.0 (In progress)
 
-## v1.1.0 (2026-06-11)
+### Sync
+
+- **Reglas de detección sincronizan** — Las reglas de "Task detection" (presets + custom) ahora viajan por sync como entidad propia (`detection_rule`, scoped al usuario). Los presets comparten id estable (`r-linear`, `r-github`, `r-arxiv`), así que convergen entre instalaciones en vez de duplicarse. Antes solo existían en el IndexedDB de cada dispositivo. Requiere migración backend `009`.
+- **Fix: campos que se perdían en sync** — `project.endDate` y `unit`/`unitAmount` de los hábitos no se sincronizaban, así que en un segundo dispositivo los proyectos perdían la fecha y los hábitos contador su unidad. Ahora `end_date` viaja en `project` y los extras del hábito en `habit.extra` (JSONB), igual que `task.extra`.
+
+- **Import robusto / auto-corrección** — Al importar (o al actualizar la extensión vía migración Dexie v11) los datos se sanean para no romper el sync: hábitos con id no-UUID (ej. `h2`) reciben un UUID nuevo y su historial se re-mapea; el historial huérfano (apunta a un hábito inexistente) se descarta; los hábitos pierden el workspace (son globales por usuario); y los proyectos con `workspaceId` colgado (`'default'` o un workspace ausente) pasan a `null` para que el sync los re-asigne en vez de orfanarlos. Verificado contra un dump real de prod: 21 hábitos / 41 logs / 107 tareas / 14 proyectos quedan 100% aceptables por el backend.
+- **Fix: import no llegaba a otros dispositivos** — Al importar un backup, las filas conservaban su `updatedAt` original (viejo). Se pusheaban al server con esa fecha vieja, así que el pull incremental de una segunda extensión (`updated_at > since`) las salteaba — por eso los hábitos importados no aparecían en la otra extensión, pero uno nuevo (con `updatedAt` = ahora) sí. Ahora el import re-estampa `updatedAt = now()` en cada fila restaurada: se propaga a todos los dispositivos y, por LWW, el restore gana en el server.
+
+- **Hábitos globales por usuario** — Los hábitos ya no están atados a un workspace (eran personales pero el modelo los scopeaba por workspace, así que se dispersaban: distintos hábitos quedaban en distintos workspaces y alguno no sincronizaba si caía en uno que el server no aceptaba). Ahora `habit`/`habit_log` son user-scoped (como settings y reglas de detección): se ven en todos los workspaces y en la vista "All", y convergen en una sola lista global entre dispositivos. Migración backend `010`; migración Dexie v11 re-pushea todos los hábitos locales (desatasca los que quedaron marcados como "synced" sin estar en el server) y les saca el workspace. Tareas y proyectos siguen siendo por workspace.
+- **Fix (raíz): ids de habit_log colisionaban → solo sincronizaba 1 día por hábito** — El generador de id del log derivaba el UUID solo del hábito (truncaba la fecha), así que TODOS los días de un hábito compartían el mismo id. En local no molesta (la clave es `[habitId+date]`), pero en el server `habit_log.id` es PRIMARY KEY: el primer día insertaba y el resto chocaba contra el PK → se rechazaba. Por eso "Parallel Bar Dips" (hábito nuevo, un solo log) sincronizaba y los demás no. Ahora el id se calcula por `(hábito, fecha)` (único por día), el push lo recomputa siempre (se auto-corrige), y la migración Dexie **v13** regenera los ids existentes + fuerza re-push y pull completo. Verificado contra un export real: 43 logs → 43 ids únicos, 0 colisiones.
+- **Fix: los conteos de hoy de los hábitos no convergían** — Las definiciones de hábitos ya sincronizaban, pero el valor de hoy (ej. Water 1, Pull-ups 2) no llegaba a los otros dispositivos: v11 limpiaba `syncedAt` (re-push) pero no el cursor de pull, así que un dispositivo que ya había pulleado nunca recibía los logs re-pusheados con `updatedAt` viejo (por eso uno mostraba el valor real y otro 0). Migración Dexie **v12**: limpia `sync_last_pull` para forzar un pull completo en cada dispositivo (recibe todos los logs del server) y re-pushea los locales; LWW (la última edición real) resuelve los conflictos.
+
+### Web
+
+- **Hábitos contador: cantidad correcta** — La web dibujaba un punto por unidad del objetivo (`target_count`), así que un hábito con meta 20 mostraba 20 puntos. Ahora muestra `valor/meta` (+ unidad) como la extensión. `/today` devuelve `unit`/`unit_amount` (desde `habit.extra`).
+
+### Extension
+
+- **Sesión persistente (no más logout)** — El cliente de Supabase ahora usa un storage adapter sobre `chrome.storage.local` (en vez de `localStorage`, que no existe en el service worker MV3), con `onAuthStateChange` que espeja la sesión a IndexedDB y refresh proactivo del token desde el service worker (en cada alarm, antes de que expire). La extensión deja de desloguearse sola al cabo de un rato.
+- **Onboarding: template, vacío, sync o import** — En la primera instalación sin sesión, la pantalla de bienvenida ofrece **Use template** (crea tareas/hábitos de ejemplo + reglas de detección preset) o **Start empty** (arranca limpio, solo el workspace por defecto), y además, para quien ya usa Pomodoso, **Sign in to sync** (abre el login y baja sus datos) e **Import backup** (restaura un .json directo desde el welcome). Los usuarios con sesión iniciada se saltan la elección: sus datos llegan por sync. El logo de la pantalla ahora es el de la marca (icono de la extensión), no el emoji 🍅.
+
+### Backend
+
+- **Migración `009_detection_rules_and_extra`** — Nueva tabla `detection_rule` (id TEXT, scoped al usuario), columna `project.end_date` y columna `habit.extra` (JSONB).
+
+
+## v1.0.0 (2026-06-11)
 
 ### Sync v2 (extensión + backend)
 

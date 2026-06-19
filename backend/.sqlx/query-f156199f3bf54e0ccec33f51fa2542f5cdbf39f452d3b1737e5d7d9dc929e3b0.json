@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT h.id, h.name, h.icon, h.kind, h.target_count, h.frequency, h.frequency_days,\n               hl.value        as \"log_value?\",\n               hl.completed_at as \"log_completed_at?\"\n        FROM habit h\n        LEFT JOIN habit_log hl ON hl.habit_id = h.id AND hl.date = $2\n        WHERE h.workspace_id = ANY($1)\n          AND h.deleted_at IS NULL\n        ORDER BY h.position, h.created_at\n        ",
+  "query": "\n        SELECT h.id, h.name, h.icon, h.kind, h.target_count, h.frequency, h.frequency_days,\n               h.extra,\n               hl.value        as \"log_value?\",\n               hl.completed_at as \"log_completed_at?\"\n        FROM habit h\n        LEFT JOIN habit_log hl ON hl.habit_id = h.id AND hl.date = $2\n        WHERE h.user_id = $1\n          AND h.deleted_at IS NULL\n        ORDER BY h.position, h.created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -40,18 +40,23 @@
       },
       {
         "ordinal": 7,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
         "name": "log_value?",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "log_completed_at?",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "UuidArray",
+        "Uuid",
         "Date"
       ]
     },
@@ -64,8 +69,9 @@
       false,
       true,
       false,
+      false,
       true
     ]
   },
-  "hash": "ad7d9f8effe9bf7f1a918157a0ab92dede738b5547cde991ebc0bbc9473f70d9"
+  "hash": "f156199f3bf54e0ccec33f51fa2542f5cdbf39f452d3b1737e5d7d9dc929e3b0"
 }
