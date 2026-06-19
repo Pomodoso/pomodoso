@@ -47,6 +47,7 @@ interface TodayHabit {
   target_count: number | null;
   unit: string | null;
   unit_amount: number | null;
+  time_unit: boolean;
   log: HabitLog | null;
 }
 
@@ -97,6 +98,15 @@ function fmtTimer(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Time-unit habits store value/goal in seconds; show mm:ss (h:mm:ss for >= 1h).
+function fmtHabitTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 function todayDate(): string {
@@ -428,11 +438,13 @@ function HabitsCard({ habits, date }: { habits: TodayHabit[]; date: string }) {
             const value = habit.log?.value ?? 0;
             const target = habit.target_count;
             const done = value >= target;
-            const display = habit.unit && habit.unit_amount
-              ? `${value * habit.unit_amount}/${target * habit.unit_amount} ${habit.unit}`
-              : habit.unit
-                ? `${value}/${target} ${habit.unit}`
-                : `${value}/${target}`;
+            const display = habit.time_unit
+              ? `${fmtHabitTime(value)}/${fmtHabitTime(target)}`
+              : habit.unit && habit.unit_amount
+                ? `${value * habit.unit_amount}/${target * habit.unit_amount} ${habit.unit}`
+                : habit.unit
+                  ? `${value}/${target} ${habit.unit}`
+                  : `${value}/${target}`;
             return (
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: done ? 'var(--success)' : 'var(--text-sec)' }}>
                 {display}

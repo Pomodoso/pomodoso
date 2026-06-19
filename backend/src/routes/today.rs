@@ -82,6 +82,7 @@ pub struct TodayHabit {
     pub target_count: Option<i32>,
     pub unit: Option<String>,
     pub unit_amount: Option<i32>,
+    pub time_unit: bool,
     pub log: Option<HabitLog>,
 }
 
@@ -428,8 +429,18 @@ pub async fn get_today(
     .fetch_all(&state.pool)
     .await?;
 
+    let date_str = q.date.to_string();
     let habits: Vec<TodayHabit> = habit_rows
         .into_iter()
+        // Hide habits whose end date has passed (still kept in history).
+        .filter(|r| {
+            r.extra
+                .get("endDate")
+                .and_then(|v| v.as_str())
+                .filter(|e| !e.is_empty())
+                .map(|e| e >= date_str.as_str())
+                .unwrap_or(true)
+        })
         .filter(|r| match r.frequency.as_str() {
             "weekdays" => dow <= 4,
             "custom" => r
@@ -446,7 +457,7 @@ pub async fn get_today(
                 done: v > 0,
                 completed_at: r.log_completed_at,
             });
-            // unit / unitAmount ride along in habit.extra (mirrors task.extra).
+            // unit / unitAmount / timeUnit ride along in habit.extra (mirrors task.extra).
             let unit = r
                 .extra
                 .get("unit")
@@ -457,6 +468,11 @@ pub async fn get_today(
                 .get("unitAmount")
                 .and_then(|v| v.as_i64())
                 .map(|v| v as i32);
+            let time_unit = r
+                .extra
+                .get("timeUnit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             TodayHabit {
                 id: r.id,
                 name: r.name,
@@ -465,6 +481,7 @@ pub async fn get_today(
                 target_count: r.target_count,
                 unit,
                 unit_amount,
+                time_unit,
                 log,
             }
         })

@@ -360,6 +360,8 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
   if (h.unit !== undefined) extra['unit'] = h.unit;
   if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
+  if (h.timeUnit) extra['timeUnit'] = true;
+  if (h.endDate) extra['endDate'] = h.endDate;
   return extra;
 }
 
@@ -506,23 +508,25 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         String(data['frequency'] ?? 'daily'),
         data['frequency_days'] as string | null | undefined,
       );
-      const goal = (data['target_count'] as number | null) ?? existing?.goal;
+      // Extra fields come straight from the (always-complete) incoming payload —
+      // no fallback to `existing`, so turning a field OFF (time unit, end date,
+      // unit) propagates instead of sticking to the old value. streakLabel is
+      // UI-only (never synced), so it's the one thing kept from existing.
       const hExtra = (data['extra'] ?? {}) as Record<string, unknown>;
-      const unit = (hExtra['unit'] as string | undefined) ?? existing?.unit;
-      const unitAmount = (hExtra['unitAmount'] as number | undefined) ?? existing?.unitAmount;
       const row: HabitRow = {
-        ...(existing ?? {}),
         id,
         name: String(data['name'] ?? ''),
         icon: (data['icon'] as HabitRow['icon']) ?? 'water',
         kind: (data['kind'] as HabitRow['kind']) ?? 'boolean',
-        ...(goal !== undefined ? { goal } : {}),
-        ...(unit !== undefined ? { unit } : {}),
-        ...(unitAmount !== undefined ? { unitAmount } : {}),
         days,
         streakLabel: existing?.streakLabel ?? '',
         workspaceId: (data['workspace_id'] as string | null) ?? null,
         updatedAt: updated_at, syncedAt,
+        ...(data['target_count'] != null ? { goal: data['target_count'] as number } : {}),
+        ...(hExtra['unit'] !== undefined ? { unit: hExtra['unit'] as string } : {}),
+        ...(hExtra['unitAmount'] !== undefined ? { unitAmount: hExtra['unitAmount'] as number } : {}),
+        ...(hExtra['timeUnit'] ? { timeUnit: true } : {}),
+        ...(hExtra['endDate'] ? { endDate: hExtra['endDate'] as string } : {}),
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
       await db.habits.put(row);

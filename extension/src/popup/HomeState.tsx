@@ -246,7 +246,10 @@ export function HomeState({
   const visibleHabits = habits;
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
-  const todayHabits = visibleHabits.filter(h => h.days.length === 0 || h.days.includes(todayDow));
+  const todayHabits = visibleHabits.filter(h =>
+    (h.days.length === 0 || h.days.includes(todayDow)) &&
+    (!h.endDate || today <= h.endDate),
+  );
   const visibleMeetings = meetings.filter(m => {
     if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
     return m.time.slice(0, 10) === today;
@@ -1215,7 +1218,10 @@ export function HomeState({
             <HabitForm
               initialHabit={editingHabit}
               onSave={(updated) => {
-                void db.habits.update(editingHabit.id, { ...updated, updatedAt: now() });
+                // put (full replace), not update (merge) — so turning a field OFF
+                // (time unit, end date, unit) actually clears it instead of
+                // leaving the stale value behind.
+                void db.habits.put({ ...updated, updatedAt: now() });
                 triggerSync();
                 setEditingHabit(null);
               }}
@@ -1571,18 +1577,20 @@ function TodayHabits({
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <button
-                      onClick={() => onCounterChange(habit.id, -1)}
+                      onClick={() => onCounterChange(habit.id, -(habit.timeUnit ? (habit.unitAmount || 60) : 1))}
                       style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >−</button>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>
-                      {count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, minWidth: habit.timeUnit ? 52 : 28, textAlign: 'center' }}>
+                      {habit.timeUnit
+                        ? <>{fmtHabitTime(count)}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{fmtHabitTime(habit.goal ?? 0)}</span></>
+                        : <>{count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span></>}
                     </span>
                     <button
-                      onClick={() => onCounterChange(habit.id, 1)}
+                      onClick={() => onCounterChange(habit.id, habit.timeUnit ? (habit.unitAmount || 60) : 1)}
                       style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >+</button>
                   </div>
-                  {habit.unit && habit.unitAmount && (
+                  {!habit.timeUnit && habit.unit && habit.unitAmount && (
                     <span style={{ fontSize: 10, color: isDone ? 'var(--color-success)' : 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
                       {count * habit.unitAmount}/{(habit.goal ?? 1) * habit.unitAmount}{habit.unit}
                     </span>
@@ -3614,7 +3622,9 @@ function HabitHistoryView({ habits, timezone, weekStart }: {
                     <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)' }}>{habit.name}</span>
                     {habit.kind === 'counter' && (
                       <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                        {count}{goalUsed != null ? ` / ${goalUsed}` : ''}{habit.unit ? ` ${habit.unit}` : ''}
+                        {habit.timeUnit
+                          ? `${fmtHabitTime(count)}${goalUsed != null ? ` / ${fmtHabitTime(goalUsed)}` : ''}`
+                          : `${count}${goalUsed != null ? ` / ${goalUsed}` : ''}${habit.unit ? ` ${habit.unit}` : ''}`}
                       </span>
                     )}
                     <span style={{ fontSize: 13, fontWeight: 700, color: isDone ? 'var(--color-success)' : 'var(--color-accent)', flexShrink: 0 }}>
@@ -3853,13 +3863,15 @@ function HabitRow({ habit, count, checked, isDone, onCounterChange, onToggle, on
         {habit.kind === 'counter' ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <button onClick={() => onCounterChange(-1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>−</button>
-              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14, minWidth: 32, textAlign: 'center' }}>
-                {count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span>
+              <button onClick={() => onCounterChange(-(habit.timeUnit ? (habit.unitAmount || 60) : 1))} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>−</button>
+              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14, minWidth: habit.timeUnit ? 60 : 32, textAlign: 'center' }}>
+                {habit.timeUnit
+                  ? <>{fmtHabitTime(count)}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{fmtHabitTime(habit.goal ?? 0)}</span></>
+                  : <>{count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span></>}
               </div>
-              <button onClick={() => onCounterChange(1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>+</button>
+              <button onClick={() => onCounterChange(habit.timeUnit ? (habit.unitAmount || 60) : 1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>+</button>
             </div>
-            {habit.unit && habit.unitAmount && (
+            {!habit.timeUnit && habit.unit && habit.unitAmount && (
               <span style={{ fontSize: 10, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
                 {count * habit.unitAmount}/{(habit.goal ?? 1) * habit.unitAmount}{habit.unit}
               </span>
@@ -4062,6 +4074,27 @@ function WeekStrip({ habits, weekStart, timezone }: { habits: HabitDef[]; weekSt
   );
 }
 
+// ── Habit time helpers ──────────────────────────────────────────────────────
+// Time-unit habits store their goal/value in seconds and render as mm:ss (or
+// h:mm:ss for >= 1h).
+function fmtHabitTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+// Accepts "mm:ss", "h:mm:ss", or a plain number (interpreted as minutes).
+function parseHabitTime(str: string): number {
+  const parts = str.split(':').map(p => parseInt(p, 10) || 0);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return (parts[0] || 0) * 60;
+}
+
+const PRESET_UNITS = ['ml', 'min', 'pages', 'km', 'steps', 'cal', 'glasses', 'reps'];
+
 // ── Habit form ────────────────────────────────────────────────────────────────
 
 const FORM_INPUT_STYLE: React.CSSProperties = {
@@ -4085,12 +4118,26 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
   const [name, setName] = useState(initialHabit?.name ?? '');
   const [kind, setKind] = useState<HabitKind>(initialHabit?.kind ?? 'boolean');
   const [icon, setIcon] = useState<HabitIconKind>(initialHabit?.icon ?? 'water');
-  const [goal, setGoal] = useState(initialHabit?.goal?.toString() ?? '');
+  const [unitMode, setUnitMode] = useState<'none' | 'preset' | 'time' | 'custom'>(
+    initialHabit?.timeUnit ? 'time'
+      : initialHabit?.unit ? (PRESET_UNITS.includes(initialHabit.unit) ? 'preset' : 'custom')
+        : 'none',
+  );
   const [unit, setUnit] = useState(initialHabit?.unit ?? '');
   const [unitAmount, setUnitAmount] = useState(initialHabit?.unitAmount?.toString() ?? '');
+  // Time habits keep goal/step as mm:ss strings; everything else as plain numbers.
+  const [goal, setGoal] = useState(
+    initialHabit?.timeUnit ? fmtHabitTime(initialHabit.goal ?? 0) : (initialHabit?.goal?.toString() ?? ''),
+  );
+  const [timeStep, setTimeStep] = useState(
+    initialHabit?.timeUnit ? fmtHabitTime(initialHabit.unitAmount || 60) : '1:00',
+  );
+  const [endDate, setEndDate] = useState(initialHabit?.endDate ?? '');
   const [selectedDays, setSelectedDays] = useState<number[]>(
     initialHabit ? (initialHabit.days.length === 0 ? [0,1,2,3,4,5,6] : initialHabit.days) : [0,1,2,3,4,5,6]
   );
+
+  const isTime = kind === 'counter' && unitMode === 'time';
 
   const toggleDay = (day: number) => {
     setSelectedDays(prev =>
@@ -4100,17 +4147,22 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
 
   const handleSave = () => {
     if (!name.trim()) return;
+    const effUnit = (unitMode === 'preset' || unitMode === 'custom') ? unit.trim() : '';
+    const hasUnit = effUnit.length > 0;
     const parsedUnitAmount = parseInt(unitAmount, 10);
-    const hasUnit = unit.trim().length > 0;
-    const hasUnitAmount = hasUnit && !isNaN(parsedUnitAmount) && parsedUnitAmount > 0;
+    const hasUnitAmount = !isTime && hasUnit && !isNaN(parsedUnitAmount) && parsedUnitAmount > 0;
     onSave({
       id: initialHabit?.id ?? crypto.randomUUID(),
       name: name.trim(),
       kind,
       icon,
-      ...(kind === 'counter' ? { goal: parseInt(goal, 10) || 1 } : {}),
-      ...(hasUnit ? { unit: unit.trim() } : {}),
+      ...(kind === 'counter'
+        ? { goal: (isTime ? parseHabitTime(goal) : parseInt(goal, 10)) || 1 }
+        : {}),
+      ...(isTime ? { timeUnit: true, unitAmount: parseHabitTime(timeStep) || 60 } : {}),
+      ...(hasUnit ? { unit: effUnit } : {}),
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
+      ...(endDate ? { endDate } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global
@@ -4171,60 +4223,82 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
 
       {kind === 'counter' && (
         <div style={{ marginBottom: 12 }}>
+          <FormLabel>Unit</FormLabel>
+          <select
+            value={unitMode === 'preset' ? unit : unitMode === 'time' ? '__time__' : unitMode === 'custom' ? '__custom__' : ''}
+            onChange={e => {
+              const v = e.target.value;
+              if (v === '') { setUnitMode('none'); setUnit(''); }
+              else if (v === '__time__') setUnitMode('time');
+              else if (v === '__custom__') { setUnitMode('custom'); setUnit(''); }
+              else { setUnitMode('preset'); setUnit(v); }
+            }}
+            style={{ ...FORM_INPUT_STYLE, cursor: 'pointer' }}
+          >
+            <option value="">None (just a count)</option>
+            {PRESET_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+            <option value="__time__">Time (min:seg)</option>
+            <option value="__custom__">Custom…</option>
+          </select>
+          {unitMode === 'custom' && (
+            <input
+              value={unit}
+              onChange={e => setUnit(e.target.value)}
+              placeholder="custom unit (e.g. laps)"
+              style={{ ...FORM_INPUT_STYLE, marginTop: 6 }}
+            />
+          )}
+        </div>
+      )}
+
+      {kind === 'counter' && (
+        <div style={{ marginBottom: 12 }}>
           <FormLabel>Daily goal</FormLabel>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
-              type="number"
               value={goal}
               onChange={e => setGoal(e.target.value)}
-              placeholder="8"
-              min={1}
-              style={{ ...FORM_INPUT_STYLE, width: 70 }}
+              placeholder={isTime ? '10:00' : '8'}
+              inputMode={isTime ? 'text' : 'numeric'}
+              style={{ ...FORM_INPUT_STYLE, width: isTime ? 90 : 70 }}
             />
-            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>per day</span>
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+              {isTime ? 'mm:ss per day' : 'per day'}
+            </span>
           </div>
         </div>
       )}
 
-      {kind === 'counter' && <div style={{ marginBottom: 12 }}>
-        <FormLabel>Unit <span style={{ fontWeight: 400, color: 'var(--color-text-faint)' }}>(optional)</span></FormLabel>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <input
-              list="habit-unit-options"
-              value={unit}
-              onChange={e => setUnit(e.target.value)}
-              placeholder="ml, min, pages…"
-              style={FORM_INPUT_STYLE}
-            />
-            <datalist id="habit-unit-options">
-              <option value="ml" />
-              <option value="min" />
-              <option value="pages" />
-              <option value="km" />
-              <option value="steps" />
-              <option value="cal" />
-              <option value="glasses" />
-              <option value="reps" />
-            </datalist>
-          </div>
-          {unit.trim() && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <input
-                type="number"
-                value={unitAmount}
-                onChange={e => setUnitAmount(e.target.value)}
-                placeholder="250"
-                min={1}
-                style={{ ...FORM_INPUT_STYLE, width: 70 }}
-              />
-              <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                {unit.trim()} / {kind === 'counter' ? 'step' : 'session'}
-              </span>
-            </div>
-          )}
+      {isTime && (
+        <div style={{ marginBottom: 12 }}>
+          <FormLabel>+/- step <span style={{ fontWeight: 400, color: 'var(--color-text-faint)' }}>(mm:ss)</span></FormLabel>
+          <input
+            value={timeStep}
+            onChange={e => setTimeStep(e.target.value)}
+            placeholder="1:00"
+            style={{ ...FORM_INPUT_STYLE, width: 90 }}
+          />
         </div>
-      </div>}
+      )}
+
+      {kind === 'counter' && !isTime && (unitMode === 'preset' || unitMode === 'custom') && unit.trim() && (
+        <div style={{ marginBottom: 12 }}>
+          <FormLabel>Amount per step <span style={{ fontWeight: 400, color: 'var(--color-text-faint)' }}>(optional)</span></FormLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="number"
+              value={unitAmount}
+              onChange={e => setUnitAmount(e.target.value)}
+              placeholder="250"
+              min={1}
+              style={{ ...FORM_INPUT_STYLE, width: 70 }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+              {unit.trim()} / step
+            </span>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -4261,6 +4335,26 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
         {selectedDays.length === 7 && (
           <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
             Every day. Tap a day to customize.
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <FormLabel>End date <span style={{ fontWeight: 400, color: 'var(--color-text-faint)' }}>(optional)</span></FormLabel>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="date"
+            value={endDate}
+            onChange={e => setEndDate(e.target.value)}
+            style={{ ...FORM_INPUT_STYLE, width: 'auto' }}
+          />
+          {endDate
+            ? <button onClick={() => setEndDate('')} style={{ fontSize: 11, color: 'var(--color-text-faint)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+            : <button onClick={() => setEndDate(new Date().toLocaleDateString('en-CA'))} style={{ fontSize: 11, color: 'var(--color-text-faint)', background: 'none', border: 'none', cursor: 'pointer' }}>End today</button>}
+        </div>
+        {endDate && (
+          <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
+            Stops appearing in Today after this date — history is kept.
           </div>
         )}
       </div>
