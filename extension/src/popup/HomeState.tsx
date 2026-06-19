@@ -1086,7 +1086,7 @@ export function HomeState({
                   <DroppableArea id="droppable-priority" />
                 </div>
                 <div style={{ padding: '12px 14px 0' }}>
-                  <SectionHeader label="Other tasks" done={completedTasks} total={todayTasks.length} />
+                  <SectionHeader label="Today's tasks" done={completedTasks} total={todayTasks.length} />
                   <SortableContext items={todayTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                     {todayTasks.map((task) => {
                       const proj = projectById(task.projectId);

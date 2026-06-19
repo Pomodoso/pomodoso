@@ -124,6 +124,7 @@ pub async fn push(
                 .await
                 .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
+            "meeting" => push_meeting(&state, ws, &allowed_vec, entity).await.is_ok(),
             _ => false,
         };
         if ok {
@@ -528,6 +529,76 @@ async fn push_task_order(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnt
     Ok(())
 }
 
+async fn push_meeting(
+    state: &AppState,
+    workspace_id: uuid::Uuid,
+    allowed: &[uuid::Uuid],
+    e: &SyncEntity,
+) -> Result<()> {
+    let id = match parse_entity_id(e) {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+    let title = e.data["title"].as_str().unwrap_or("").to_owned();
+    let time = match parse_ts_field(&e.data, "time") {
+        Some(ts) => ts,
+        None => return Ok(()),
+    };
+    let duration = e.data["duration_minutes"].as_i64().unwrap_or(0) as i32;
+    let logged_minutes = e.data["logged_minutes"].as_i64().map(|v| v as i32);
+    let logged = e.data["logged"].as_bool().unwrap_or(false);
+    let track_mode = e.data["track_mode"].as_str().unwrap_or("once").to_owned();
+    let project_id = parse_uuid_field(&e.data, "project_id");
+    let google_event_id = e.data["google_event_id"].as_str().map(|s| s.to_owned());
+    let extra = if e.data["extra"].is_object() {
+        e.data["extra"].clone()
+    } else {
+        serde_json::json!({})
+    };
+
+    sqlx::query!(
+        r#"
+        INSERT INTO meeting (
+          id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
+          track_mode, project_id, google_event_id, extra, updated_at, deleted_at, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          workspace_id     = EXCLUDED.workspace_id,
+          title            = EXCLUDED.title,
+          time             = EXCLUDED.time,
+          duration_minutes = EXCLUDED.duration_minutes,
+          logged_minutes   = EXCLUDED.logged_minutes,
+          logged           = EXCLUDED.logged,
+          track_mode       = EXCLUDED.track_mode,
+          project_id       = EXCLUDED.project_id,
+          google_event_id  = EXCLUDED.google_event_id,
+          extra            = EXCLUDED.extra,
+          updated_at       = EXCLUDED.updated_at,
+          deleted_at       = EXCLUDED.deleted_at,
+          synced_at        = NOW()
+        WHERE EXCLUDED.updated_at >= meeting.updated_at
+          AND meeting.workspace_id = ANY($14)
+        "#,
+        id,
+        workspace_id,
+        title,
+        time,
+        duration,
+        logged_minutes,
+        logged,
+        track_mode,
+        project_id,
+        google_event_id,
+        extra,
+        e.updated_at,
+        e.deleted_at,
+        allowed,
+    )
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
 async fn push_device(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
@@ -834,6 +905,35 @@ pub async fn pull(
                 "project_id": row.project_id, "parent_id": row.parent_id,
                 "ticket_id": row.ticket_id,
                 "completed_at": row.completed_at,
+                "extra": row.extra,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+
+    // Meetings
+    for row in sqlx::query!(
+        r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
+                  track_mode, project_id, google_event_id, extra, updated_at, deleted_at
+           FROM meeting
+           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        &ws_ids,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "meeting".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "workspace_id": row.workspace_id,
+                "title": row.title, "time": row.time,
+                "duration_minutes": row.duration_minutes,
+                "logged_minutes": row.logged_minutes, "logged": row.logged,
+                "track_mode": row.track_mode, "project_id": row.project_id,
+                "google_event_id": row.google_event_id,
                 "extra": row.extra,
             }),
             updated_at: row.updated_at,

@@ -65,23 +65,38 @@ export function App() {
   useEffect(() => {
     if (!migrated || workspacesArr === undefined) return;
     const defaultWs = workspacesArr.find(w => w.id === 'default');
-    if (!defaultWs) return;
+    // Target: the 'default' workspace gets a fresh UUID; if there's no 'default'
+    // workspace but stray 'default'-scoped rows exist (e.g. an older template
+    // seed that orphaned its tasks/order), re-home them to the first real
+    // workspace so they sync instead of getting stuck under a dead id.
+    const firstReal = workspacesArr.find(w => !w.deletedAt && w.id !== 'default');
+    if (!defaultWs && !firstReal) return;
     void (async () => {
-      const newId = crypto.randomUUID();
+      const targetId = defaultWs ? crypto.randomUUID() : firstReal!.id;
+      // Nothing to do if there's no 'default' ws and no stray 'default' rows.
+      if (!defaultWs) {
+        const orphans = await db.tasks.where('workspaceId').equals('default').count();
+        const orphanOrder = await db.taskOrders.get('default');
+        if (orphans === 0 && !orphanOrder) return;
+      }
       await db.transaction('rw', [db.workspaces, db.tasks, db.habits, db.meetings, db.taskOrders], async () => {
-        await db.workspaces.put({ ...defaultWs, id: newId, syncedAt: undefined });
-        await db.tasks.filter(t => t.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
-        await db.habits.filter(h => h.workspaceId === 'default').modify({ workspaceId: newId, syncedAt: undefined });
-        await db.meetings.filter(m => m.workspaceId === 'default').modify({ workspaceId: newId });
+        if (defaultWs) await db.workspaces.put({ ...defaultWs, id: targetId, syncedAt: undefined });
+        await db.tasks.filter(t => t.workspaceId === 'default').modify({ workspaceId: targetId, syncedAt: undefined });
+        await db.habits.filter(h => h.workspaceId === 'default').modify({ workspaceId: targetId, syncedAt: undefined });
+        await db.meetings.filter(m => m.workspaceId === 'default').modify({ workspaceId: targetId });
         const order = await db.taskOrders.get('default');
         if (order) {
-          await db.taskOrders.put({ ...order, wsId: newId });
+          const existing = await db.taskOrders.get(targetId);
+          await db.taskOrders.put({
+            wsId: targetId,
+            priorityIds: [...new Set([...(existing?.priorityIds ?? []), ...order.priorityIds])],
+            todayIds: [...new Set([...(existing?.todayIds ?? []), ...order.todayIds])],
+          });
           await db.taskOrders.delete('default');
         }
-        await db.workspaces.delete('default');
+        if (defaultWs) await db.workspaces.delete('default');
       });
-      // activeWsId at this point is still 'default' (migration just ran)
-      setActiveWsId(newId);
+      if (defaultWs) setActiveWsId(targetId);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated, workspacesArr]);
@@ -147,6 +162,12 @@ export function App() {
   // Seed the sample tasks/habits + preset detection rules when the user picks
   // "Use template" on first launch.
   const seedTemplate = useCallback(async () => {
+    // Use the real workspace, not the 'default' sentinel — by the time the
+    // welcome screen shows, the default workspace has already been migrated to a
+    // UUID (and 'default' deleted), so seeding under 'default' would orphan the
+    // tasks/order and they'd never sync. Fall back to the first real workspace.
+    const realWs = workspacesArr?.find(w => !w.deletedAt && w.id !== 'default');
+    const wsId = (activeWsId !== 'all' && activeWsId !== 'default') ? activeWsId : (realWs?.id ?? 'default');
     const t1 = crypto.randomUUID(), t2 = crypto.randomUUID();
     const t3 = crypto.randomUUID(), t4 = crypto.randomUUID(), t5 = crypto.randomUUID();
     const h1 = crypto.randomUUID(), h2 = crypto.randomUUID(), h3 = crypto.randomUUID();
@@ -154,36 +175,37 @@ export function App() {
     await db.transaction('rw', [db.tasks, db.taskOrders, db.habits, db.detectionRules], async () => {
       await db.tasks.bulkPut([
         {
-          id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          id: t1, title: 'Set up your workspace', status: 'todo', workspaceId: wsId, ticketId: null, projectId: null, updatedAt: ts,
           description: '- Open **Settings → Workspaces** (gear icon in the header)\n- Rename "Personal" to your main context (e.g. Work, Study…)\n- Add extra workspaces if you juggle multiple contexts\n- Switch between them from the header — each has its own tasks, habits, and calendar',
         },
         {
-          id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          id: t2, title: 'Try your first pomodoro', status: 'todo', workspaceId: wsId, ticketId: null, projectId: null, updatedAt: ts,
           description: '- Click ▶ next to any task in the Today tab\n- Choose **Pomodoro** (25 min focus) or **Log time** (stopwatch)\n- When the session ends you\'ll be prompted to take a break\n- Your time is logged automatically on the task — check it in the task detail',
         },
         {
-          id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          id: t3, title: 'Connect Google Calendar', status: 'todo', workspaceId: wsId, ticketId: null, projectId: null, updatedAt: ts,
           description: '- Open **Settings → Calendar**\n- Click **Connect Google Calendar** and sign in\n- Select which calendars to sync\n- Today\'s meetings will appear in the **Schedule** tab and in the Today view\n- Click ▶ on a meeting to log time against it',
         },
         {
-          id: t4, title: 'Customize your habits', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          id: t4, title: 'Customize your habits', status: 'todo', workspaceId: wsId, ticketId: null, projectId: null, updatedAt: ts,
           description: '- Go to the **Habits** tab\n- Edit the sample habits (Drink Water, Read, Exercise) or delete them\n- Add your own with **+ Add** — choose between counter (e.g. glasses of water) or checkbox habits\n- Set which days each habit should appear so it only shows when relevant',
         },
         {
-          id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: 'default', ticketId: null, projectId: null, updatedAt: ts,
+          id: t5, title: 'Add tasks from your backlog', status: 'todo', workspaceId: wsId, ticketId: null, projectId: null, updatedAt: ts,
           description: '- Go to **Tasks → Backlog**\n- Create tasks with the **+ Add task** button or the **+** in the header\n- Press **★** to pin a task as a priority for today (max 3)\n- Press **+ Today** to add it to your regular task list\n- Open any page on Linear, GitHub, Jira or arXiv — Pomodoso will detect the ticket automatically',
         },
       ]);
-      await db.taskOrders.put({ wsId: 'default', priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
+      await db.taskOrders.put({ wsId, priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
+      // Habits are user-global → no workspace.
       await db.habits.bulkPut([
-        { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
-        { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
-        { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: 'default', updatedAt: ts },
+        { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
+        { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
+        { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
       ]);
       await db.detectionRules.bulkPut(INITIAL_RULES.map(r => ({ ...r, updatedAt: ts })));
     });
     setOnboarded(true);
-  }, [setOnboarded]);
+  }, [setOnboarded, activeWsId, workspacesArr]);
 
   // ── Calendar sync on popup open ───────────────────────────────────────────
   useEffect(() => {

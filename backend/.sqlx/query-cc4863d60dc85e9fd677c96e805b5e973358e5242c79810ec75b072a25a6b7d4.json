@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO meeting (\n          id, workspace_id, title, time, duration_minutes, logged_minutes, logged,\n          track_mode, project_id, google_event_id, extra, updated_at, deleted_at, synced_at\n        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())\n        ON CONFLICT (id) DO UPDATE SET\n          workspace_id     = EXCLUDED.workspace_id,\n          title            = EXCLUDED.title,\n          time             = EXCLUDED.time,\n          duration_minutes = EXCLUDED.duration_minutes,\n          logged_minutes   = EXCLUDED.logged_minutes,\n          logged           = EXCLUDED.logged,\n          track_mode       = EXCLUDED.track_mode,\n          project_id       = EXCLUDED.project_id,\n          google_event_id  = EXCLUDED.google_event_id,\n          extra            = EXCLUDED.extra,\n          updated_at       = EXCLUDED.updated_at,\n          deleted_at       = EXCLUDED.deleted_at,\n          synced_at        = NOW()\n        WHERE EXCLUDED.updated_at >= meeting.updated_at\n          AND meeting.workspace_id = ANY($14)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Text",
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc4863d60dc85e9fd677c96e805b5e973358e5242c79810ec75b072a25a6b7d4"
+}

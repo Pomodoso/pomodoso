@@ -128,7 +128,7 @@ export async function importDb(json: string): Promise<void> {
       db.workspaces.bulkPut(refreshSyncMeta(rows('workspaces') as never[])),
       db.habits.bulkPut(sane.habits as never[]),
       db.habitHistory.bulkPut(sane.history as never[]),
-      db.meetings.bulkPut(rows('meetings') as never[]),
+      db.meetings.bulkPut(refreshSyncMeta(rows('meetings') as never[])),
       db.detectionRules.bulkPut(refreshSyncMeta(rows('detectionRules') as never[])),
       db.settings.bulkPut((rows('settings') as { key: string }[]).filter(s => !isExcludedSetting(s.key)) as never[]),
     ]);

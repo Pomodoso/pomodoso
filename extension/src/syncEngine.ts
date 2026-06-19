@@ -4,7 +4,7 @@ import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, habitLogI
 import { ensureFreshSession } from './supabaseClient';
 import type {
   TaskRow, ProjectRow, WorkspaceRow,
-  HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow,
+  HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
 } from './db';
 import type { TimerMode } from '@pomodoso/types';
 
@@ -241,6 +241,25 @@ async function push(client: TokenApiClient): Promise<void> {
     }
   }
 
+  // Meetings (workspace-scoped, like tasks)
+  const meetings = await db.meetings
+    .filter(m => !m.syncedAt || m.syncedAt < m.updatedAt)
+    .toArray();
+  for (const m of meetings) {
+    entities.push(toEntity('meeting', m.id, m.updatedAt, m.deletedAt ?? null, {
+      workspace_id: wsOf(m.workspaceId),
+      title: m.title,
+      time: m.time,
+      duration_minutes: m.durationMinutes,
+      logged_minutes: m.loggedMinutes ?? null,
+      logged: m.logged,
+      track_mode: m.trackMode,
+      project_id: m.projectId ?? null,
+      google_event_id: m.googleEventId ?? null,
+      extra: meetingExtra(m),
+    }));
+  }
+
   // Habits
   const habits = await db.habits
     .filter(h => !h.syncedAt || h.syncedAt < h.updatedAt)
@@ -329,6 +348,7 @@ async function push(client: TokenApiClient): Promise<void> {
     if (workspaces.length) await db.workspaces.where('id').anyOf(workspaces.map(w => w.id)).modify({ syncedAt: ts });
     if (projects.length)   await db.projects.where('id').anyOf(projects.map(p => p.id)).modify({ syncedAt: ts });
     if (tasks.length)      await db.tasks.where('id').anyOf(tasks.map(t => t.id)).modify({ syncedAt: ts });
+    if (meetings.length)   await db.meetings.where('id').anyOf(meetings.map(m => m.id)).modify({ syncedAt: ts });
     if (habits.length)     await db.habits.where('id').anyOf(habits.map(h => h.id)).modify({ syncedAt: ts });
     if (rules.length)      await db.detectionRules.where('id').anyOf(rules.map(r => r.id)).modify({ syncedAt: ts });
     for (const r of history) {
@@ -353,6 +373,15 @@ function taskExtra(t: TaskRow): Record<string, unknown> {
   if (t.preferredMode) extra['preferredMode'] = t.preferredMode;
   if (t.recurrence) extra['recurrence'] = t.recurrence;
   if (t.completedDates?.length) extra['completedDates'] = t.completedDates;
+  return extra;
+}
+
+function meetingExtra(m: MeetingRow): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  if (m.notes) extra['notes'] = m.notes;
+  if (m.description !== undefined) extra['description'] = m.description;
+  if (m.recurringEventId) extra['recurringEventId'] = m.recurringEventId;
+  if (m.recurringLabel) extra['recurringLabel'] = m.recurringLabel;
   return extra;
 }
 
@@ -550,6 +579,34 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         updatedAt: updated_at, syncedAt,
       };
       await db.habitHistory.put(row);
+      break;
+    }
+
+    case 'meeting': {
+      const existing = await db.meetings.get(id);
+      if (existing && existing.updatedAt >= updated_at) return;
+      const mExtra = (data['extra'] ?? {}) as Record<string, unknown>;
+      const time = String(data['time'] ?? updated_at);
+      const row: MeetingRow = {
+        id,
+        title: String(data['title'] ?? ''),
+        time,
+        durationMinutes: Number(data['duration_minutes'] ?? 0),
+        trackMode: (data['track_mode'] as MeetingRow['trackMode']) ?? 'once',
+        logged: Boolean(data['logged'] ?? false),
+        projectId: (data['project_id'] as string | null) ?? null,
+        notes: String(mExtra['notes'] ?? ''),
+        workspaceId: (data['workspace_id'] as string | null) ?? null,
+        past: new Date(time).getTime() < Date.now(),
+        updatedAt: updated_at, syncedAt,
+        ...(data['logged_minutes'] != null ? { loggedMinutes: Number(data['logged_minutes']) } : {}),
+        ...(data['google_event_id'] ? { googleEventId: String(data['google_event_id']) } : {}),
+        ...(mExtra['description'] !== undefined ? { description: String(mExtra['description']) } : {}),
+        ...(mExtra['recurringEventId'] ? { recurringEventId: String(mExtra['recurringEventId']) } : {}),
+        ...(mExtra['recurringLabel'] ? { recurringLabel: String(mExtra['recurringLabel']) } : {}),
+        ...(deleted_at ? { deletedAt: deleted_at } : {}),
+      };
+      await db.meetings.put(row);
       break;
     }
 

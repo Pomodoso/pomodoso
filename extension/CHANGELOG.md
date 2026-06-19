@@ -16,19 +16,36 @@
 
 ### Web
 
+- **Meetings on the dashboard** — Today's calendar meetings now show on the web (time, title, duration, and "logged Xm" when time was tracked). Meetings became a synced, workspace-scoped entity (backend migration `011`), so they also converge across devices.
+- **Tasks shown with Today** — Priorities and other tasks are now one "Today's tasks" card (priorities on top, a divider, then the rest) instead of two separate cards.
+- **Workspace badge per task** — In the "All workspaces" view, each task shows a small badge with the workspace it belongs to (hidden in single-workspace views).
 - **Counter habits: correct quantity** — The web drew one dot per unit of the goal (`target_count`), so a habit with goal 20 showed 20 dots. It now shows `value/goal` (+ unit) like the extension. `/today` returns `unit`/`unit_amount` (from `habit.extra`).
 
 ### Extension
 
+- **Meetings sync** — Calendar meetings (previously local-only) now sync like tasks/projects, including logged time, and round-trip through import/export.
+- **"Other tasks" → "Today's tasks"** — Clearer section label in the Today view (pairs with "Today's priorities").
 - **Persistent session (no more logout)** — The Supabase client now uses a storage adapter over `chrome.storage.local` (instead of `localStorage`, which doesn't exist in the MV3 service worker), with `onAuthStateChange` mirroring the session to IndexedDB and proactive token refresh from the service worker (on each alarm, before it expires). The extension stops logging itself out after a while.
 - **Habits: time unit, unit selector and end date** — The unit field goes from a freeform input to a **select** (None / common units / **Time (min:seg)** / Custom). Time habits store goal and value in seconds and render as `mm:ss` (with a configurable +/- step); they look the same in the extension and web. New **end date** field (optional, with an "End today" button): after that date the habit stops appearing in Today but the history is kept. Everything travels via `habit.extra` (no migration). Renaming a habit keeps its history (referenced by id) and shows it under the new name.
 - **Fix: turning a habit field off now syncs** — Switching a habit from time to counter, or removing its unit/end date, didn't propagate: the local save did a shallow merge (kept the stale key) and the sync apply fell back to the previous value. Now the edit replaces the whole row (`put`) and the apply rebuilds the habit purely from the incoming payload, so "field absent = cleared" reaches the other devices. Also covers `unit`/`unitAmount`/`goal`.
 - **Onboarding: template, empty, sync or import** — On a first install without a session, the welcome screen offers **Use template** (seeds sample tasks/habits + preset detection rules) or **Start empty** (clean slate, just the default workspace), plus, for existing Pomodoso users, **Sign in to sync** (opens login and pulls their data) and **Import backup** (restores a .json straight from the welcome screen). Signed-in users skip the choice: their data arrives via sync. The screen's logo is now the brand mark (the extension icon), not the 🍅 emoji.
+- **Fix: template tasks didn't sync** — "Use template" seeded its tasks and task order under the literal `'default'` workspace, but by then the default workspace had already been migrated to a real UUID (and `'default'` deleted), so the seeded tasks/order were orphaned and never reached the server (the task order's non-UUID id was skipped on push). The template now seeds into the real active workspace, sample habits are user-global (no workspace), and the startup migration also re-homes any stray `'default'`-scoped rows from older seeds so they sync.
+
+### Emails
+
+- **Generic welcome copy** — The welcome email is no longer dev-specific (dropped the "Linear & GitHub tickets" framing). It now speaks to the generic pillars: tasks & priorities, the pomodoro timer, habits, and calendar/meetings. Personalization (first name) and CTA unchanged.
+- **Brand logo** — The email header uses the Pomodoso brand mark (hosted PNG) instead of the 🍅 emoji.
+- **Fix: sender domain (Resend 403)** — Emails were sent from `hello@pomodoso.com`, an unverified Resend domain → `403 domain is not verified` (welcome/payment emails silently failed; checkout itself was unaffected). For now we send from the already-verified `otpilot.app` (`Pomodoso <noreply@otpilot.app>`), via `RESEND_FROM_EMAIL`. Switch back to a `@pomodoso.com` sender once that domain is verified in Resend.
+
+### Billing
+
+- **Fix: checkout card-only (Stripe Link `link_pay_token` error)** — Stripe's hosted Checkout + Link was throwing `Received unknown parameter: link_pay_token` on the latest API version, which could block the Pay button. The checkout session now requests `payment_method_types=[card]` (card wallets like Apple/Google Pay still work), disabling Link until Stripe fixes it. Subscription provisioning was never affected.
 
 ### Backend
 
 - **Migration `009_detection_rules_and_extra`** — New `detection_rule` table (TEXT id, user-scoped), `project.end_date` column and `habit.extra` (JSONB) column.
 - **Migration `010_habits_user_global`** — `user_id` added to `habit` and `habit_log` (backfilled from the workspace owner); `workspace_id` made nullable (kept for back-compat, no longer used for scoping).
+- **Migration `011_meetings`** — New `meeting` table (workspace-scoped, synced like task/project); `/today` returns today's meetings and tasks now carry their workspace name/color.
 
 
 ## v1.0.0 (2026-06-11)

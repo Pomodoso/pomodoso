@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,\n               t.project_id,\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n        ",
+  "query": "\n        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,\n               t.project_id, t.workspace_id,\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\",\n               w.name  as \"workspace_name!\",\n               w.color as \"workspace_color!\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        JOIN workspace w ON w.id = t.workspace_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -40,12 +40,27 @@
       },
       {
         "ordinal": 7,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
         "name": "project_name?",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "project_color?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "workspace_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "workspace_color!",
         "type_info": "Text"
       }
     ],
@@ -62,9 +77,12 @@
       true,
       false,
       true,
-      true,
-      true
+      false,
+      false,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "e38cbdcaf96ec39f438fc14bbe3653dda420dcabebb96fbfba6d77313e3c3f25"
+  "hash": "9742d12b083694f00b4652bd5c4af1d663d7cef598763fdd43b973ca48b88c45"
 }
