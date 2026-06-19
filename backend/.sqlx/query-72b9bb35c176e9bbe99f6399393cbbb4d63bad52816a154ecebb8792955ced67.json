@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO detection_rule (\n          id, user_id, name, url_pattern, active, kind, preset_id,\n          updated_at, deleted_at, synced_at\n        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())\n        ON CONFLICT (user_id, id) DO UPDATE SET\n          name        = EXCLUDED.name,\n          url_pattern = EXCLUDED.url_pattern,\n          active      = EXCLUDED.active,\n          kind        = EXCLUDED.kind,\n          preset_id   = EXCLUDED.preset_id,\n          updated_at  = EXCLUDED.updated_at,\n          deleted_at  = EXCLUDED.deleted_at,\n          synced_at   = NOW()\n        WHERE EXCLUDED.updated_at >= detection_rule.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72b9bb35c176e9bbe99f6399393cbbb4d63bad52816a154ecebb8792955ced67"
+}

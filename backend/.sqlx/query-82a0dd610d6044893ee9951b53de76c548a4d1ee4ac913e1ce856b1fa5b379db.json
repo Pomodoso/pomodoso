@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, name, icon, kind, target_count, frequency, frequency_days,\n                  extra, updated_at, deleted_at\n           FROM habit\n           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "icon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "frequency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "frequency_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "82a0dd610d6044893ee9951b53de76c548a4d1ee4ac913e1ce856b1fa5b379db"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT h.id, h.name, h.icon, h.kind, h.target_count, h.frequency, h.frequency_days,\n               h.extra,\n               hl.value        as \"log_value?\",\n               hl.completed_at as \"log_completed_at?\"\n        FROM habit h\n        LEFT JOIN habit_log hl ON hl.habit_id = h.id AND hl.date = $2\n        WHERE h.user_id = $1\n          AND h.deleted_at IS NULL\n        ORDER BY h.position, h.created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "icon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "frequency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "frequency_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "log_value?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "log_completed_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f156199f3bf54e0ccec33f51fa2542f5cdbf39f452d3b1737e5d7d9dc929e3b0"
+}
