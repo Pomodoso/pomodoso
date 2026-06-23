@@ -12,14 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <title>Pomodoso — Track your work, not your energy</title>
     <meta name="description" content="Chrome extension that auto-detects Linear and GitHub tickets, integrates a Pomodoro timer, tracks habits, and connects to Google Calendar." />
-    <!-- Google Analytics — Vite substitutes %VITE_GA_ID% at build; no-op when unset. -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_GA_ID%"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '%VITE_GA_ID%');
-    </script>
+    <!-- Google Analytics is loaded in main.tsx, guarded on VITE_GA_ID. -->
   </head>
   <body>
     <div id="root"></div>

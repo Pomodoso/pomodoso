@@ -458,7 +458,7 @@ function PageFooter() {
           <Link to="/privacy" style={s} onMouseEnter={h} onMouseLeave={l}>Privacy Policy</Link>
           <Link to="/refund" style={s} onMouseEnter={h} onMouseLeave={l}>Refund Policy</Link>
           <Link to="/gdpr" style={s} onMouseEnter={h} onMouseLeave={l}>GDPR</Link>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={s} onMouseEnter={h} onMouseLeave={l}>GitHub</a>
+          <a href="https://github.com/Pomodoso/pomodoso" target="_blank" rel="noopener noreferrer" style={s} onMouseEnter={h} onMouseLeave={l}>GitHub</a>
           <a href={`mailto:${CONTACT}`} style={s} onMouseEnter={h} onMouseLeave={l}>Contact</a>
         </div>
       </div>
