@@ -39,8 +39,12 @@ export default function Gdpr() {
               body: 'Your data may be stored on servers outside the EU (currently Railway.app infrastructure). We ensure appropriate safeguards are in place for any such transfers.',
             },
             {
-              title: 'Cookies',
-              body: 'The Pomodoso website and dashboard may use cookies for authentication sessions only. We do not use tracking or advertising cookies.',
+              title: 'Sub-processors',
+              body: 'We rely on the following third-party processors to operate the service, each handling only the data needed for its function: Supabase (authentication), Railway (backend hosting and database), Vercel (web hosting and anonymous traffic analytics), Stripe (payments), Resend (transactional email), Sentry (error monitoring and crash reporting), Crisp (support chat — your email/name when you start a conversation), and Google Analytics (anonymous usage analytics).',
+            },
+            {
+              title: 'Cookies & analytics',
+              body: 'The Pomodoso website and dashboard use cookies for authentication sessions, and analytics tools (Google Analytics and Vercel Analytics) that may set cookies or collect anonymous usage metrics to help us improve the product. We do not use advertising cookies.',
             },
             {
               title: 'Contact the supervisory authority',

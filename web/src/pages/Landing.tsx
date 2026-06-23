@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext.tsx'
+import { useCrisp } from '../lib/useCrisp.ts'
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/pomodoso/kloaflkoffpkpldhaipegeabhhkijhbj'
 const ACCENT = '#f97316'
@@ -26,6 +27,7 @@ function Logo({ size = 20 }: { size?: number }) {
 export default function Landing() {
   const { session, loading } = useAuth()
   const authed = !loading && !!session
+  useCrisp()
   return (
     <div style={{ background: 'linear-gradient(175deg, #111118 0%, #0a0a0e 60%, #08080b 100%)', color: '#f1f1f2', fontFamily: 'system-ui,-apple-system,sans-serif', minHeight: '100vh' }}>
       <Nav authed={authed} />

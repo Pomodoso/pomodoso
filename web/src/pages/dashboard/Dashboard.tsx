@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { api } from '../../lib/api.ts';
 import { Sidebar } from '../../components/Sidebar.tsx';
+import { useCrisp } from '../../lib/useCrisp.ts';
 import TodayPage from './TodayPage.tsx';
 
 const ACTIVE_WS_KEY = 'pomodoso:active_ws';
@@ -17,6 +18,7 @@ interface WorkspaceInfo {
 
 export default function Dashboard() {
   const { session, user, entitlements } = useAuth();
+  useCrisp({ email: user?.email ?? session?.user.email, name: session?.user.user_metadata?.full_name as string | undefined });
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [wsLoaded, setWsLoaded] = useState(false);

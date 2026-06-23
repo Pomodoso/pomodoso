@@ -3,6 +3,12 @@
 
 ## v1.1.1(In progress)
 
+### Integrations (web + backend)
+
+- **Crisp support chat** — Loaded on the web (landing + dashboard), identifying the signed-in user by email/name. Set `VITE_CRISP_WEBSITE_ID`.
+- **Sentry error reporting** — Web (`@sentry/react`, `VITE_SENTRY_DSN`) and backend (`sentry` crate, `SENTRY_DSN`). Both no-op when the DSN is unset.
+- **Analytics** — Google Analytics 4 (`VITE_GA_ID`) via `index.html`, plus Vercel Web Analytics (`@vercel/analytics`). All on the web app.
+
 ## v1.1.0
 
 ### Sync
