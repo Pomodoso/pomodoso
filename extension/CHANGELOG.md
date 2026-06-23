@@ -3,6 +3,10 @@
 
 ## v1.1.1(In progress)
 
+### Auth
+
+- **Magic-link / passwordless login** — Web gets an "Email me a magic link" option (clickable link → signs in and lands on the dashboard). The extension gets an "Email me a sign-in code" option (6-digit OTP entered in the popup), since a magic *link* can't return the session to an MV3 popup. Google and Microsoft OAuth were already wired in both surfaces; magic link is the new piece. New `@pomodoso/api` helpers: `sendMagicLink`, `sendEmailOtp`, `verifyEmailOtp`.
+
 ### Integrations (web + backend)
 
 - **Crisp support chat** — Loaded on the web (landing + dashboard), identifying the signed-in user by email/name. Set `VITE_CRISP_WEBSITE_ID`.

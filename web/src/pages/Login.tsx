@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { signInWithProvider, signInWithEmail, signUpWithEmail, resetPasswordForEmail } from '@pomodoso/api';
+import { signInWithProvider, signInWithEmail, signUpWithEmail, resetPasswordForEmail, sendMagicLink } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { useAuth } from '../lib/AuthContext.tsx';
 
@@ -16,6 +16,20 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [signupDone, setSignupDone] = useState(false);
   const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [magicState, setMagicState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const handleMagicLink = async () => {
+    if (!email.trim()) { setError('Enter your email first, then request a magic link'); return; }
+    setError('');
+    setMagicState('sending');
+    try {
+      await sendMagicLink(getSupabase(), email.trim(), `${window.location.origin}/dashboard`);
+      setMagicState('sent');
+    } catch (err) {
+      setMagicState('idle');
+      setError(err instanceof Error ? err.message : 'Could not send magic link');
+    }
+  };
 
   const handleForgotPassword = async () => {
     if (!email.trim()) { setError('Enter your email first, then click "Forgot password?"'); return; }
@@ -169,6 +183,23 @@ export default function Login() {
             )
           )}
         </form>
+
+        {mode === 'signin' && (
+          <div className="mt-3 text-center">
+            {magicState === 'sent' ? (
+              <p className="text-xs text-neutral-400">✉ Magic link sent — check your email to sign in.</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleMagicLink()}
+                disabled={magicState === 'sending'}
+                className="text-xs text-neutral-500 hover:text-neutral-300 underline"
+              >
+                {magicState === 'sending' ? 'Sending magic link…' : 'Email me a magic link instead'}
+              </button>
+            )}
+          </div>
+        )}
 
         <p className="text-center text-xs text-neutral-500 mt-6">
           {mode === 'signin' ? (
