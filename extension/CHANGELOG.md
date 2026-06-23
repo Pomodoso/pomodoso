@@ -1,6 +1,9 @@
 # Changelog
 
-## v1.1.0 (In progress)
+
+## v1.1.1(In progress)
+
+## v1.1.0
 
 ### Sync
 
