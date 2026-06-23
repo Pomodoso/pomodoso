@@ -4230,8 +4230,8 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
               const v = e.target.value;
               if (v === '') { setUnitMode('none'); setUnit(''); }
               else if (v === '__time__') setUnitMode('time');
-              else if (v === '__custom__') { setUnitMode('custom'); setUnit(''); }
-              else { setUnitMode('preset'); setUnit(v); }
+              else if (v === '__custom__') { setUnitMode('custom'); setUnit(''); setUnitAmount(''); }
+              else { setUnitMode('preset'); setUnit(v); setUnitAmount(''); }
             }}
             style={{ ...FORM_INPUT_STYLE, cursor: 'pointer' }}
           >
