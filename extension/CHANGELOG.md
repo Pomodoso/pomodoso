@@ -8,6 +8,8 @@
 - **Crisp support chat** — Loaded on the web (landing + dashboard), identifying the signed-in user by email/name. Set `VITE_CRISP_WEBSITE_ID`.
 - **Sentry error reporting** — Web (`@sentry/react`, `VITE_SENTRY_DSN`) and backend (`sentry` crate, `SENTRY_DSN`). Both no-op when the DSN is unset.
 - **Analytics** — Google Analytics 4 (`VITE_GA_ID`) via `index.html`, plus Vercel Web Analytics (`@vercel/analytics`). All on the web app.
+- **Error capture wiring** — Backend forwards `tracing::error!`/`warn!` to Sentry (sentry-tracing layer); web forwards uncaught errors, promise rejections, and `console.error(...)` to Sentry.
+- **Privacy/GDPR updated** — Legal pages now list the new sub-processors (Crisp, Sentry, Google Analytics, Vercel) and note analytics cookies; clarified the extension itself ships no analytics/crash/ads SDK.
 
 ## v1.1.0
 

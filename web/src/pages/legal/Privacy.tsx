@@ -3,7 +3,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#0a0a0f] px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-        <p className="text-zinc-500 text-sm mb-10">Last updated: May 2026</p>
+        <p className="text-zinc-500 text-sm mb-10">Last updated: June 2026</p>
 
         <div className="space-y-8 text-zinc-400 leading-relaxed text-sm">
           <section>
