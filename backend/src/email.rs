@@ -6,6 +6,9 @@ use serde_json::json;
 use crate::AppState;
 
 const APP_URL: &str = "https://pomodoso.com";
+// Brand mark for the email header. Must be an absolute, hosted URL (Gmail strips
+// data URIs / SVG). Served from the marketing site's public dir (email-logo.png).
+const LOGO_URL: &str = "https://pomodoso.com/email-logo.png";
 
 /// Fire-and-forget: spawns the send so the caller (a webhook / `/me`) returns
 /// immediately and email latency never blocks the user.
@@ -18,7 +21,9 @@ pub fn send_in_background(state: &AppState, to: String, subject: String, html: S
         .config
         .resend_from_email
         .clone()
-        .unwrap_or_else(|| "Pomodoso <hello@pomodoso.com>".to_owned());
+        // Until pomodoso.com is verified in Resend, send from the verified
+        // otpilot.app domain (display name still "Pomodoso").
+        .unwrap_or_else(|| "Pomodoso <noreply@otpilot.app>".to_owned());
     let http = state.http.clone();
 
     tokio::spawn(async move {
@@ -90,7 +95,7 @@ fn shell(body: &str) -> String {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFFFF;border:1px solid #E8E5DD;border-radius:14px;overflow:hidden;">
       <tr><td style="padding:28px 32px 0;">
         <div style="display:inline-flex;align-items:center;gap:8px;">
-          <span style="display:inline-block;width:26px;height:26px;background:#C8553D;border-radius:7px;text-align:center;line-height:26px;font-size:15px;">🍅</span>
+          <img src="{LOGO_URL}" width="26" height="26" alt="Pomodoso" style="display:block;border:0;outline:none;text-decoration:none;" />
           <span style="font-size:16px;font-weight:700;color:#1A1A17;">Pomodoso</span>
         </div>
       </td></tr>
@@ -119,10 +124,10 @@ fn welcome_html(first: &str) -> String {
         r#"<tr><td style="padding:20px 32px 0;">
         <h1 style="margin:0 0 12px;font-size:21px;font-weight:700;color:#1A1A17;letter-spacing:-0.3px;">Welcome, {first} 👋</h1>
         <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#5F5D55;">
-          Pomodoso pulls your day into one place — auto-detected Linear &amp; GitHub tickets, a pomodoro timer that logs real time per task, your top priorities, habits, and meetings.
+          Pomodoso brings your day into one place — your tasks and top priorities, a pomodoro timer that logs real time per task, your daily habits, and your calendar.
         </p>
         <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#5F5D55;">
-          A few good first steps: pin your 3 priorities for today, start a pomodoro on a task, and open a Linear or GitHub ticket to watch it get detected automatically.
+          A few good first steps: pin your top 3 priorities for today, start a pomodoro on a task, and add the habits you want to keep. Connect Google Calendar to see your meetings right alongside your work.
         </p>
         <p style="margin:0 0 8px;">{cta}</p>
       </td></tr>"#,

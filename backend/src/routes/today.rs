@@ -43,6 +43,9 @@ pub struct TodayTask {
     pub project_id: Option<Uuid>,
     pub project_name: Option<String>,
     pub project_color: Option<String>,
+    pub workspace_id: Uuid,
+    pub workspace_name: String,
+    pub workspace_color: String,
     pub ticket_id: Option<String>,
     pub position: i32,
 }
@@ -82,6 +85,7 @@ pub struct TodayHabit {
     pub target_count: Option<i32>,
     pub unit: Option<String>,
     pub unit_amount: Option<i32>,
+    pub time_unit: bool,
     pub log: Option<HabitLog>,
 }
 
@@ -97,6 +101,18 @@ pub struct ActiveSession {
     pub planned_duration_seconds: Option<i32>,
     pub actual_duration_seconds: i32,
     pub pomo_index: i64,
+}
+
+#[derive(Serialize)]
+pub struct TodayMeeting {
+    pub id: Uuid,
+    pub title: String,
+    pub time: DateTime<Utc>,
+    pub duration_minutes: i32,
+    pub logged_minutes: Option<i32>,
+    pub logged: bool,
+    pub project_name: Option<String>,
+    pub project_color: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -117,6 +133,7 @@ pub struct TodayResponse {
     pub tasks: Vec<TodayTask>,
     pub work_log: Vec<WorkLogProject>,
     pub habits: Vec<TodayHabit>,
+    pub meetings: Vec<TodayMeeting>,
     pub stats: TodayStats,
 }
 
@@ -213,11 +230,14 @@ pub async fn get_today(
     let task_rows = sqlx::query!(
         r#"
         SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,
-               t.project_id,
+               t.project_id, t.workspace_id,
                p.name  as "project_name?",
-               p.color as "project_color?"
+               p.color as "project_color?",
+               w.name  as "workspace_name!",
+               w.color as "workspace_color!"
         FROM task t
         LEFT JOIN project p ON p.id = t.project_id
+        JOIN workspace w ON w.id = t.workspace_id
         WHERE t.workspace_id = ANY($1)
           AND t.deleted_at IS NULL
         "#,
@@ -257,6 +277,9 @@ pub async fn get_today(
         project_id: Option<Uuid>,
         project_name: Option<String>,
         project_color: Option<String>,
+        workspace_id: Uuid,
+        workspace_name: String,
+        workspace_color: String,
         completed_dates: Vec<String>,
     }
 
@@ -282,6 +305,9 @@ pub async fn get_today(
                 project_id: row.project_id,
                 project_name: row.project_name,
                 project_color: row.project_color,
+                workspace_id: row.workspace_id,
+                workspace_name: row.workspace_name,
+                workspace_color: row.workspace_color,
                 completed_dates,
             },
         );
@@ -300,6 +326,9 @@ pub async fn get_today(
                     project_id: t.project_id,
                     project_name: t.project_name.clone(),
                     project_color: t.project_color.clone(),
+                    workspace_id: t.workspace_id,
+                    workspace_name: t.workspace_name.clone(),
+                    workspace_color: t.workspace_color.clone(),
                     ticket_id: t.ticket_id.clone(),
                     position: i as i32,
                 })
@@ -428,8 +457,18 @@ pub async fn get_today(
     .fetch_all(&state.pool)
     .await?;
 
+    let date_str = q.date.to_string();
     let habits: Vec<TodayHabit> = habit_rows
         .into_iter()
+        // Hide habits whose end date has passed (still kept in history).
+        .filter(|r| {
+            r.extra
+                .get("endDate")
+                .and_then(|v| v.as_str())
+                .filter(|e| !e.is_empty())
+                .map(|e| e >= date_str.as_str())
+                .unwrap_or(true)
+        })
         .filter(|r| match r.frequency.as_str() {
             "weekdays" => dow <= 4,
             "custom" => r
@@ -446,7 +485,7 @@ pub async fn get_today(
                 done: v > 0,
                 completed_at: r.log_completed_at,
             });
-            // unit / unitAmount ride along in habit.extra (mirrors task.extra).
+            // unit / unitAmount / timeUnit ride along in habit.extra (mirrors task.extra).
             let unit = r
                 .extra
                 .get("unit")
@@ -457,6 +496,11 @@ pub async fn get_today(
                 .get("unitAmount")
                 .and_then(|v| v.as_i64())
                 .map(|v| v as i32);
+            let time_unit = r
+                .extra
+                .get("timeUnit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             TodayHabit {
                 id: r.id,
                 name: r.name,
@@ -465,10 +509,43 @@ pub async fn get_today(
                 target_count: r.target_count,
                 unit,
                 unit_amount,
+                time_unit,
                 log,
             }
         })
         .collect();
+
+    // ── Meetings for this date (day boundary in the user's timezone) ───────────
+    let meetings: Vec<TodayMeeting> = sqlx::query!(
+        r#"
+        SELECT m.id, m.title, m.time, m.duration_minutes, m.logged_minutes, m.logged,
+               p.name  as "project_name?",
+               p.color as "project_color?"
+        FROM meeting m
+        LEFT JOIN project p ON p.id = m.project_id
+        WHERE m.workspace_id = ANY($1)
+          AND m.deleted_at IS NULL
+          AND DATE(m.time AT TIME ZONE $3) = $2
+        ORDER BY m.time
+        "#,
+        &ws_ids,
+        q.date,
+        tz,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    .into_iter()
+    .map(|m| TodayMeeting {
+        id: m.id,
+        title: m.title,
+        time: m.time,
+        duration_minutes: m.duration_minutes,
+        logged_minutes: m.logged_minutes,
+        logged: m.logged,
+        project_name: m.project_name,
+        project_color: m.project_color,
+    })
+    .collect();
 
     // ── Stats ──────────────────────────────────────────────────────────────────
     let seconds_today: i64 = session_rows
@@ -534,6 +611,7 @@ pub async fn get_today(
         tasks,
         work_log,
         habits,
+        meetings,
         stats,
     }))
 }

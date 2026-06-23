@@ -212,6 +212,11 @@ async fn stripe_create_checkout_session(
         ("success_url", success_url),
         ("cancel_url", cancel_url),
         ("allow_promotion_codes", "true"),
+        // Card-only (card wallets like Apple/Google Pay still work). This disables
+        // Stripe Link, whose hosted-checkout confirm call currently throws
+        // "unknown parameter: link_pay_token" on the latest API version. Remove
+        // this line to re-enable Link once Stripe fixes that.
+        ("payment_method_types[0]", "card"),
     ];
 
     let resp: Value = state

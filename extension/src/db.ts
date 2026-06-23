@@ -98,6 +98,8 @@ export interface HabitRow extends SyncMeta {
   goal?: number;
   unit?: string;
   unitAmount?: number;
+  timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
+  endDate?: string;         // YYYY-MM-DD — hidden from Today after this date
   streakLabel: string;
   days: number[];
   workspaceId?: string | null;

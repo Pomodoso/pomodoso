@@ -12,8 +12,22 @@ interface TodayTask {
   project_id: string | null;
   project_name: string | null;
   project_color: string | null;
+  workspace_id: string;
+  workspace_name: string;
+  workspace_color: string;
   ticket_id: string | null;
   position: number;
+}
+
+interface TodayMeeting {
+  id: string;
+  title: string;
+  time: string;
+  duration_minutes: number;
+  logged_minutes: number | null;
+  logged: boolean;
+  project_name: string | null;
+  project_color: string | null;
 }
 
 interface WorkLogTask {
@@ -47,6 +61,7 @@ interface TodayHabit {
   target_count: number | null;
   unit: string | null;
   unit_amount: number | null;
+  time_unit: boolean;
   log: HabitLog | null;
 }
 
@@ -79,6 +94,7 @@ interface TodayData {
   tasks: TodayTask[];
   work_log: WorkLogProject[];
   habits: TodayHabit[];
+  meetings: TodayMeeting[];
   stats: TodayStats;
 }
 
@@ -97,6 +113,15 @@ function fmtTimer(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Time-unit habits store value/goal in seconds; show mm:ss (h:mm:ss for >= 1h).
+function fmtHabitTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 function todayDate(): string {
@@ -184,7 +209,54 @@ function PomoBar({ session }: { session: ActiveSession }) {
   );
 }
 
-function PrioritiesCard({ priorities, tasks }: { priorities: TodayTask[]; tasks: TodayTask[] }) {
+function WorkspaceBadge({ task }: { task: TodayTask }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10, color: 'var(--text-tert)',
+      background: 'var(--bg-darker)', padding: '1px 6px',
+      borderRadius: 3, border: '1px solid var(--border)', whiteSpace: 'nowrap',
+    }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: task.workspace_color, flexShrink: 0 }} />
+      {task.workspace_name}
+    </span>
+  );
+}
+
+function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: number; showWorkspace: boolean }) {
+  return (
+    <div className="pomo-priority-item" key={task.id}>
+      <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
+        {task.status === 'done'
+          ? <i className="ti ti-check" style={{ fontSize: 12 }} />
+          : task.is_priority ? index + 1 : <i className="ti ti-point" style={{ fontSize: 10 }} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 14,
+          textDecoration: task.status === 'done' ? 'line-through' : 'none',
+          color: task.status === 'done' ? 'var(--text-tert)' : 'var(--text)',
+        }}>
+          {task.ticket_id && <span className="pomo-ticket-pill" style={{ marginRight: 6 }}>{task.ticket_id}</span>}
+          {task.title}
+        </div>
+        {task.project_name && (
+          <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>
+            {task.project_name}
+          </div>
+        )}
+      </div>
+      {showWorkspace && <WorkspaceBadge task={task} />}
+      {task.status === 'in_progress' && (
+        <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Active
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: TodayTask[]; tasks: TodayTask[]; showWorkspace: boolean }) {
   const allTasks = [...priorities, ...tasks];
   const doneCount = allTasks.filter(t => t.status === 'done').length;
 
@@ -202,47 +274,23 @@ function PrioritiesCard({ priorities, tasks }: { priorities: TodayTask[]; tasks:
     );
   }
 
-  const taskLabel = priorities.length > 0 ? "Today's priorities" : "Today's tasks";
-  const displayTasks = priorities.length > 0 ? priorities : tasks;
-
   return (
     <div className="pomo-card">
       <div className="pomo-card-header">
-        <div className="pomo-card-title"><i className="ti ti-target" /> {taskLabel}</div>
+        <div className="pomo-card-title"><i className="ti ti-target" /> Today's tasks</div>
         {doneCount > 0 && (
           <div className="pomo-card-meta">{doneCount} / {allTasks.length} done</div>
         )}
       </div>
       <div className="pomo-priority-list">
-        {displayTasks.map((task, i) => (
-          <div className="pomo-priority-item" key={task.id}>
-            <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
-              {task.status === 'done' ? (
-                <i className="ti ti-check" style={{ fontSize: 12 }} />
-              ) : (
-                i + 1
-              )}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{
-                fontSize: 14,
-                textDecoration: task.status === 'done' ? 'line-through' : 'none',
-                color: task.status === 'done' ? 'var(--text-tert)' : 'var(--text)',
-              }}>
-                {task.title}
-              </div>
-              {task.project_name && (
-                <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>
-                  {task.project_name}
-                </div>
-              )}
-            </div>
-            {task.status === 'in_progress' && (
-              <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Active
-              </span>
-            )}
-          </div>
+        {priorities.map((task, i) => (
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
+        ))}
+        {priorities.length > 0 && tasks.length > 0 && (
+          <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
+        )}
+        {tasks.map((task, i) => (
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
         ))}
       </div>
     </div>
@@ -314,44 +362,36 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
   );
 }
 
-function TasksCard({ tasks }: { tasks: TodayTask[] }) {
+function fmtMeetingTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function MeetingsCard({ meetings }: { meetings: TodayMeeting[] }) {
+  if (meetings.length === 0) return null;
   return (
     <div className="pomo-card">
       <div className="pomo-card-header">
-        <div className="pomo-card-title"><i className="ti ti-list-check" /> Tasks</div>
+        <div className="pomo-card-title"><i className="ti ti-calendar-event" /> Meetings</div>
+        <div className="pomo-card-meta">{meetings.length}</div>
       </div>
-      {tasks.length === 0 ? (
-        <div className="pomo-empty" style={{ padding: '12px 0' }}>
-          <span style={{ color: 'var(--text-tert)', fontSize: 12 }}>No tasks — looking good!</span>
-        </div>
-      ) : (
-        tasks.map((task) => (
-          <div className="pomo-task-row" key={task.id}>
-            <div className={`pomo-task-cb ${task.status === 'done' ? 'checked' : ''}`}>
-              {task.status === 'done' && <i className="ti ti-check" />}
-            </div>
-            <span style={{
-              flex: 1,
-              textDecoration: task.status === 'done' ? 'line-through' : 'none',
-              color: task.status === 'done' ? 'var(--text-tert)' : 'var(--text)',
-            }}>
-              {task.title}
-            </span>
-            {task.project_name && (
-              <span style={{
-                fontSize: 10,
-                color: 'var(--text-tert)',
-                background: 'var(--bg-darker)',
-                padding: '1px 5px',
-                borderRadius: 3,
-                border: '1px solid var(--border)',
-              }}>
-                {task.project_name}
-              </span>
+      {meetings.map((m) => (
+        <div className="pomo-task-row" key={m.id}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-sec)', minWidth: 46 }}>
+            {fmtMeetingTime(m.time)}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {m.title || 'Meeting'}
+            {m.project_name && (
+              <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
             )}
-          </div>
-        ))
-      )}
+          </span>
+          <span className="pomo-time-pill">
+            {m.logged_minutes != null
+              ? `logged ${m.logged_minutes}m`
+              : `${m.duration_minutes}m`}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -428,11 +468,13 @@ function HabitsCard({ habits, date }: { habits: TodayHabit[]; date: string }) {
             const value = habit.log?.value ?? 0;
             const target = habit.target_count;
             const done = value >= target;
-            const display = habit.unit && habit.unit_amount
-              ? `${value * habit.unit_amount}/${target * habit.unit_amount} ${habit.unit}`
-              : habit.unit
-                ? `${value}/${target} ${habit.unit}`
-                : `${value}/${target}`;
+            const display = habit.time_unit
+              ? `${fmtHabitTime(value)}/${fmtHabitTime(target)}`
+              : habit.unit && habit.unit_amount
+                ? `${value * habit.unit_amount}/${target * habit.unit_amount} ${habit.unit}`
+                : habit.unit
+                  ? `${value}/${target} ${habit.unit}`
+                  : `${value}/${target}`;
             return (
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: done ? 'var(--success)' : 'var(--text-sec)' }}>
                 {display}
@@ -666,9 +708,8 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
   const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  // All non-priority tasks go into the tasks card
-  const regularTasks = data.priorities.length > 0 ? data.tasks : [];
-  const priorityTasks = data.priorities.length > 0 ? data.priorities : data.tasks;
+  // Workspace badge only makes sense when looking across workspaces.
+  const showWorkspace = workspaceId === 'all';
 
   return (
     <>
@@ -696,14 +737,12 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
       {/* Main grid */}
       <div className="pomo-grid">
         <div className="pomo-left-col">
-          <PrioritiesCard priorities={priorityTasks} tasks={regularTasks} />
+          <TodayTasksCard priorities={data.priorities} tasks={data.tasks} showWorkspace={showWorkspace} />
           <WorkLogCard workLog={data.work_log} />
         </div>
 
         <div className="pomo-right-col">
-          {data.priorities.length > 0 && data.tasks.length > 0 && (
-            <TasksCard tasks={data.tasks} />
-          )}
+          <MeetingsCard meetings={data.meetings} />
           <TimeCard workLog={data.work_log} />
           <HabitsCard habits={data.habits} date={date} />
           <StatsCard stats={data.stats} />
