@@ -42,6 +42,10 @@
 
 - **Fix: checkout card-only (Stripe Link `link_pay_token` error)** — Stripe's hosted Checkout + Link was throwing `Received unknown parameter: link_pay_token` on the latest API version, which could block the Pay button. The checkout session now requests `payment_method_types=[card]` (card wallets like Apple/Google Pay still work), disabling Link until Stripe fixes it. Subscription provisioning was never affected.
 
+### Tooling
+
+- **Dev-default builds + `zip` for prod** — Every extension build now defaults to development mode (`.env.development` → `localhost:8080`, dev Supabase), so you can't accidentally load a prod-pointing build locally. A new `pnpm --filter extension zip` produces the Web Store zip from `.env.production` and then restores the dev build (`dist/` always ends on dev). Added a project README documenting local setup and this flow.
+
 ### Backend
 
 - **Migration `009_detection_rules_and_extra`** — New `detection_rule` table (TEXT id, user-scoped), `project.end_date` column and `habit.extra` (JSONB) column.
