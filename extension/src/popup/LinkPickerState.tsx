@@ -13,6 +13,9 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 interface LinkPickerStateProps {
   ticket: TicketRef;
   allTasks: Record<string, SelectedTask>;
+  todayPriorities: SelectedTask[];
+  todayTasks: SelectedTask[];
+  backlog: SelectedTask[];
   onLink: (task: SelectedTask) => void;
   onBack: () => void;
 }
@@ -26,16 +29,31 @@ function LinkIcon({ size = 13, color = 'currentColor' }: { size?: number; color?
   );
 }
 
-export function LinkPickerState({ ticket, allTasks, onLink, onBack }: LinkPickerStateProps) {
+export function LinkPickerState({ ticket, allTasks, todayPriorities, todayTasks, backlog, onLink, onBack }: LinkPickerStateProps) {
   const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const searching = q !== '';
 
-  const tasks = Object.values(allTasks)
-    .filter(t => t.status !== 'cancelled')
-    .filter(t =>
-      search === '' ||
-      t.title.toLowerCase().includes(search.toLowerCase()) ||
-      (t.ticketId ?? '').toLowerCase().includes(search.toLowerCase())
-    );
+  const matches = (t: SelectedTask) =>
+    t.title.toLowerCase().includes(q) || (t.ticketId ?? '').toLowerCase().includes(q);
+
+  // Default view: only today's tasks (priorities first) then the backlog — the
+  // things you're actually working on. Closed/done tasks aren't loaded here.
+  // While searching we scan every local task (incl. done) so a finished issue is
+  // still findable. TODO: once closed tasks stop syncing locally, route the
+  // search query to a backend endpoint instead of `allTasks`.
+  const today = [...todayPriorities, ...todayTasks];
+  const groups: { label: string; items: SelectedTask[] }[] = searching
+    ? [{
+        label: 'Results',
+        items: Object.values(allTasks).filter(t => t.status !== 'cancelled' && matches(t)),
+      }]
+    : [
+        { label: 'Today', items: today },
+        { label: 'Backlog', items: backlog },
+      ];
+
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -106,42 +124,52 @@ export function LinkPickerState({ ticket, allTasks, onLink, onBack }: LinkPicker
 
       {/* Task list */}
       <div className="scroll-area" style={{ padding: '8px 14px 12px' }}>
-        {tasks.length === 0 ? (
+        {total === 0 ? (
           <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12, color: 'var(--color-text-faint)' }}>
-            {search ? 'No tasks match' : 'No tasks yet'}
+            {searching ? 'No tasks match' : 'Nothing in Today or Backlog'}
           </div>
         ) : (
-          tasks.map(task => (
-            <button
-              key={task.id}
-              onClick={() => onLink(task)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                padding: '8px 10px', marginBottom: 4,
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                background: STATUS_DOT[task.status],
-              }} />
-              <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {task.title}
-              </span>
-              {task.ticketId && (
-                <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-info)', flexShrink: 0 }}>
-                  {task.ticketId}
-                </span>
-              )}
-              {(task.links?.length ?? 0) > 0 && (
-                <span style={{ fontSize: 10, color: 'var(--color-text-faint)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <LinkIcon size={10} color="var(--color-text-faint)" /> {task.links!.length}
-                </span>
-              )}
-            </button>
+          groups.map(group => group.items.length === 0 ? null : (
+            <div key={group.label}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                color: 'var(--color-text-faint)', margin: '8px 2px 4px',
+              }}>
+                {group.label}
+              </div>
+              {group.items.map(task => (
+                <button
+                  key={task.id}
+                  onClick={() => onLink(task)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 10px', marginBottom: 4,
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: STATUS_DOT[task.status],
+                  }} />
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {task.title}
+                  </span>
+                  {task.ticketId && (
+                    <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-info)', flexShrink: 0 }}>
+                      {task.ticketId}
+                    </span>
+                  )}
+                  {(task.links?.length ?? 0) > 0 && (
+                    <span style={{ fontSize: 10, color: 'var(--color-text-faint)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <LinkIcon size={10} color="var(--color-text-faint)" /> {task.links!.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           ))
         )}
       </div>

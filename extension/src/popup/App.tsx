@@ -953,6 +953,9 @@ export function App() {
         <LinkPickerState
           ticket={linkingTicket}
           allTasks={allTasks}
+          todayPriorities={todayPriorities}
+          todayTasks={todayTasks}
+          backlog={backlog}
           onLink={(task) => void linkTicketToTask(linkingTicket, task)}
           onBack={() => setLinkingTicket(null)}
         />
