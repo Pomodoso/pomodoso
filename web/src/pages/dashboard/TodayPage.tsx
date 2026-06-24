@@ -29,6 +29,8 @@ interface TodayMeeting {
   track_mode: string; // 'always' | 'once' | 'off'
   project_name: string | null;
   project_color: string | null;
+  calendar_name: string | null;
+  calendar_color: string | null;
 }
 
 interface WorkLogTask {
@@ -385,6 +387,19 @@ function MeetingRow({ m }: { m: TodayMeeting }) {
       </span>
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {m.title || 'Meeting'}
+        {m.calendar_name && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, color: 'var(--text-sec)', whiteSpace: 'nowrap',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            border: '1px solid var(--border)', borderRadius: 4, padding: '0 5px',
+          }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+              background: m.calendar_color || 'var(--text-tert)',
+            }} />
+            {m.calendar_name}
+          </span>
+        )}
         {m.project_name && (
           <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
         )}

@@ -1509,6 +1509,19 @@ function TodayMeetingRow({ meeting, timezone, onStart, onSelect }: {
       >
         {meeting.title}
       </button>
+      {meeting.calendarName && (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+          fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap',
+          border: '1px solid var(--color-border)', borderRadius: 4, padding: '0 5px',
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: meeting.calendarColor || 'var(--color-text-faint)',
+          }} />
+          {meeting.calendarName}
+        </span>
+      )}
       <span style={{ fontSize: 11, color: meeting.logged ? 'var(--color-success)' : 'var(--color-text-faint)', flexShrink: 0 }}>{durLabel}</span>
       {meeting.logged ? (
         <span style={{

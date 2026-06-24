@@ -399,6 +399,14 @@ export function App() {
   const priorityIds = activeWsOrder.priorityIds;
   const todayIds    = activeWsOrder.todayIds;
 
+  // The priorities cap is GLOBAL (max across all workspaces, not per-workspace).
+  // Count the union of priority ids over every real workspace order regardless
+  // of which view is active.
+  const totalPriorities = new Set(
+    Object.entries(wsOrders).filter(([k]) => k !== 'all').flatMap(([, o]) => o.priorityIds),
+  ).size;
+  const prioritiesFull = totalPriorities >= maxPriorities;
+
   const todayPriorities = priorityIds.map(id => allTasks[id]).filter((t): t is TaskRow => !!t);
   const todayTasks      = todayIds.map(id => allTasks[id]).filter((t): t is TaskRow => !!t);
 
@@ -456,13 +464,23 @@ export function App() {
 
   // ── Task mutations ─────────────────────────────────────────────────────────
 
+  // In 'all' mode a task's order lives in its own workspace. Re-read the task
+  // from the DB so we pick up a workspaceId that was just auto-assigned (the
+  // selectedTask prop can still be the stale null-workspace object a task is
+  // created with in 'all' view). Never fall back to the orphaned 'default'
+  // order — use the first real workspace, matching TaskDetailState's auto-assign.
+  const orderWsFor = useCallback((task: TaskRow, existing?: TaskRow): string => {
+    if (wsKey !== 'all') return wsKey;
+    const realWs = workspacesArr?.find(w => !w.deletedAt && w.id !== 'default');
+    return existing?.workspaceId ?? task.workspaceId ?? realWs?.id ?? 'default';
+  }, [wsKey, workspacesArr]);
+
   const addToPriorities = useCallback(async (task: TaskRow) => {
-    if (priorityIds.length >= maxPriorities || priorityIds.includes(task.id)) return;
-    // In 'all' mode, anchor the task to its own workspace order.
-    const targetWsId = wsKey === 'all' ? (task.workspaceId ?? 'default') : wsKey;
+    if (prioritiesFull || priorityIds.includes(task.id)) return;
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
+      const targetWsId = orderWsFor(task, existing);
       const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
       await db.taskOrders.put({
         wsId: targetWsId,
@@ -471,19 +489,19 @@ export function App() {
       });
     });
     triggerSync();
-  }, [priorityIds, wsKey]);
+  }, [prioritiesFull, priorityIds, orderWsFor]);
 
   const addToTasks = useCallback(async (task: TaskRow) => {
     if (isInToday(task.id)) return;
-    const targetWsId = wsKey === 'all' ? (task.workspaceId ?? 'default') : wsKey;
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
+      const targetWsId = orderWsFor(task, existing);
       const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
       await db.taskOrders.put({ wsId: targetWsId, priorityIds: cur.priorityIds, todayIds: [...cur.todayIds, task.id] });
     });
     triggerSync();
-  }, [isInToday, wsKey]);
+  }, [isInToday, orderWsFor]);
 
   const removeFromToday = useCallback(async (taskId: string) => {
     if (wsKey === 'all') {
@@ -953,6 +971,9 @@ export function App() {
         <LinkPickerState
           ticket={linkingTicket}
           allTasks={allTasks}
+          todayPriorities={todayPriorities}
+          todayTasks={todayTasks}
+          backlog={backlog}
           onLink={(task) => void linkTicketToTask(linkingTicket, task)}
           onBack={() => setLinkingTicket(null)}
         />
@@ -1008,7 +1029,7 @@ export function App() {
           timezone={timezone}
           isInToday={isInToday(selectedTask.id)}
           isInPriorities={priorityIds.includes(selectedTask.id)}
-          prioritiesFull={priorityIds.length >= maxPriorities}
+          prioritiesFull={prioritiesFull}
           onBack={() => setSelectedTask(null)}
           onDelete={() => { void deleteTask(selectedTask.id); setSelectedTask(null); }}
           onMoveToBacklog={() => { void removeFromToday(selectedTask.id); setSelectedTask(null); }}
@@ -1040,7 +1061,7 @@ export function App() {
         backlog={backlog}
         recurringTemplates={recurringTemplates}
         projects={projects}
-        prioritiesFull={priorityIds.length >= maxPriorities}
+        prioritiesFull={prioritiesFull}
         workspaces={workspaces}
         activeWsId={activeWsId}
         timezone={timezone}

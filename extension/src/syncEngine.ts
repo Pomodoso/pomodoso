@@ -382,6 +382,9 @@ function meetingExtra(m: MeetingRow): Record<string, unknown> {
   if (m.description !== undefined) extra['description'] = m.description;
   if (m.recurringEventId) extra['recurringEventId'] = m.recurringEventId;
   if (m.recurringLabel) extra['recurringLabel'] = m.recurringLabel;
+  if (m.calendarId) extra['calendarId'] = m.calendarId;
+  if (m.calendarName) extra['calendarName'] = m.calendarName;
+  if (m.calendarColor) extra['calendarColor'] = m.calendarColor;
   return extra;
 }
 
@@ -604,6 +607,9 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(mExtra['description'] !== undefined ? { description: String(mExtra['description']) } : {}),
         ...(mExtra['recurringEventId'] ? { recurringEventId: String(mExtra['recurringEventId']) } : {}),
         ...(mExtra['recurringLabel'] ? { recurringLabel: String(mExtra['recurringLabel']) } : {}),
+        ...(mExtra['calendarId'] ? { calendarId: String(mExtra['calendarId']) } : {}),
+        ...(mExtra['calendarName'] ? { calendarName: String(mExtra['calendarName']) } : {}),
+        ...(mExtra['calendarColor'] ? { calendarColor: String(mExtra['calendarColor']) } : {}),
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
       await db.meetings.put(row);
