@@ -666,7 +666,11 @@ async fn active_session_from_beacon(
     // the extension clearing the beacon (popup closed) — don't show it as active.
     // If the beacon carries no duration (old/partial), assume a standard focus
     // block for pomodoros so a ghost still expires instead of lingering up to 12h.
-    let stale_planned = planned.or(if mode == "pomodoro" { Some(25 * 60) } else { None });
+    let stale_planned = planned.or(if mode == "pomodoro" {
+        Some(25 * 60)
+    } else {
+        None
+    });
     if let Some(p) = stale_planned {
         let elapsed = Utc::now().signed_duration_since(started_at).num_seconds();
         if elapsed > i64::from(p) + 300 {
