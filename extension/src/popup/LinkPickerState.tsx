@@ -47,7 +47,10 @@ export function LinkPickerState({ ticket, allTasks, todayPriorities, todayTasks,
   // would otherwise render it twice (duplicate React key).
   const seenToday = new Set<string>();
   const today = [...todayPriorities, ...todayTasks].filter(t => {
-    if (t.status === 'cancelled' || seenToday.has(t.id)) return false;
+    // Open tasks only (matches Backlog); closed tasks are still reachable via
+    // search. Dedupe by id — the "all workspaces" merge can list a task in both
+    // priorityIds and todayIds, which would otherwise duplicate the React key.
+    if (t.status === 'done' || t.status === 'cancelled' || seenToday.has(t.id)) return false;
     seenToday.add(t.id);
     return true;
   });
