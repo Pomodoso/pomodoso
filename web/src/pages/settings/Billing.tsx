@@ -4,6 +4,7 @@ import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
+import { trackEvent } from '../../lib/analytics.ts';
 import { Sidebar } from '../../components/Sidebar.tsx';
 
 // ─── Devices ───────────────────────────────────────────────────────────────────
@@ -195,6 +196,8 @@ export default function Billing() {
         success_url: `${window.location.origin}/dashboard?upgraded=1`,
         cancel_url: `${window.location.origin}/settings/billing`,
       });
+      // Only count a checkout once the session was actually created.
+      trackEvent('checkout_started', { price });
       window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -205,6 +208,7 @@ export default function Billing() {
 
   const handlePortal = async () => {
     setLoading(true);
+    trackEvent('billing_portal_opened');
     try {
       const { url } = await api.post<{ url: string }>('/billing/portal', {
         return_url: `${window.location.origin}/settings/billing`,

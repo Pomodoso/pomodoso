@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
+import { trackEvent } from '../../lib/analytics.ts';
 import { api } from '../../lib/api.ts';
 import { Sidebar } from '../../components/Sidebar.tsx';
 import { useCrisp } from '../../lib/useCrisp.ts';
@@ -29,6 +30,8 @@ export default function Dashboard() {
   const wsMenuRef = useRef<HTMLDivElement>(null);
 
   const handleSetActiveWs = (id: string | null) => {
+    if (id === activeWsId) return;
+    trackEvent('workspace_switched', { from: activeWsId ?? 'all', to: id ?? 'all' });
     setActiveWsId(id);
     if (id) localStorage.setItem(ACTIVE_WS_KEY, id);
     else localStorage.removeItem(ACTIVE_WS_KEY);

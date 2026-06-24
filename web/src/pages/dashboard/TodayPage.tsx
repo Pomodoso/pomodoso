@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import { trackEvent } from '../../lib/analytics.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ interface WorkLogTask {
   pomos: number;
   duration_seconds: number;
   is_active: boolean;
+  task_status: string | null;
 }
 
 interface WorkLogProject {
@@ -353,9 +355,16 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
                 <span className="pomo-time-pill">
                   {task.pomos}p · {fmtDuration(task.duration_seconds)}
                 </span>
-                <span className={task.is_active ? 'pomo-status-pill pomo-status-active' : 'pomo-status-pill pomo-status-done'}>
-                  {task.is_active ? 'Active' : 'Done'}
-                </span>
+                {(() => {
+                  // Active timer wins; otherwise reflect the task's real status
+                  // (a task with logged time that isn't done is still in progress).
+                  const { cls, label } = task.is_active
+                    ? { cls: 'pomo-status-active', label: 'Active' }
+                    : task.task_status === 'done'
+                      ? { cls: 'pomo-status-done', label: 'Done' }
+                      : { cls: 'pomo-status-progress', label: 'In progress' };
+                  return <span className={`pomo-status-pill ${cls}`}>{label}</span>;
+                })()}
               </div>
             ))}
           </div>
@@ -653,6 +662,7 @@ function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: str
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
+    trackEvent('report_copied');
     void navigator.clipboard.writeText(report).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -660,6 +670,7 @@ function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: str
   };
 
   const download = () => {
+    trackEvent('report_downloaded');
     const blob = new Blob([report], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -781,7 +792,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <button className="pomo-btn">
             <i className="ti ti-calendar" /> Week view
           </button>
-          <button className="pomo-btn pomo-btn-primary" onClick={() => setShowReport(true)}>
+          <button className="pomo-btn pomo-btn-primary" onClick={() => { trackEvent('report_opened'); setShowReport(true); }}>
             <i className="ti ti-file-export" /> Generate report
           </button>
         </div>

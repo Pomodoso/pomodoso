@@ -5,6 +5,7 @@ import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { getMe, onAuthStateChange } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from './supabase.ts';
 import { api, setAuthToken } from './api.ts';
+import { identifyUser, clearUser } from './analytics.ts';
 
 interface AuthContextValue {
   session: Session | null;
@@ -55,15 +56,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setUser(null);
       setEntitlements(FREE_ENTITLEMENTS);
+      clearUser();
       return;
     }
 
+    // Guard against a stale in-flight /me resolving after this session changed
+    // (e.g. fast login→logout) and re-identifying a user that was cleared.
+    let cancelled = false;
     getMe(api)
       .then(({ user: freshUser, entitlements: fresh }) => {
+        if (cancelled) return;
         setUser(freshUser);
         setEntitlements(fresh);
+        // Identify by opaque UUID only (never email/name) + plan as a segment.
+        identifyUser(freshUser.id, { plan: fresh.plan });
       })
-      .catch(() => setEntitlements(FREE_ENTITLEMENTS));
+      .catch(() => {
+        if (!cancelled) setEntitlements(FREE_ENTITLEMENTS);
+      });
+    return () => { cancelled = true; };
   }, [session?.access_token]);
 
   return (
