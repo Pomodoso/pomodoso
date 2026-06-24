@@ -11,7 +11,8 @@ extension/.env.development
 extension/.env.production
 docs/
 releases
-screenshots
+# Only the top-level dev-screenshots dir — NOT web/public/screenshots (shipped on the landing page).
+/screenshots/
 extra_files
 design
 test-results/
