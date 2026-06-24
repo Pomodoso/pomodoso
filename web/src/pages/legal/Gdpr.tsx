@@ -40,11 +40,11 @@ export default function Gdpr() {
             },
             {
               title: 'Sub-processors',
-              body: 'We rely on the following third-party processors to operate the service, each handling only the data needed for its function: Supabase (authentication), Railway (backend hosting and database), Vercel (web hosting and anonymous traffic analytics), Stripe (payments), Resend (transactional email), Sentry (error monitoring and crash reporting), Crisp (support chat — your email/name when you start a conversation), and Google Analytics (anonymous usage analytics).',
+              body: 'We rely on the following third-party processors to operate the service, each handling only the data needed for its function: Supabase (authentication), Railway (backend hosting and database), Vercel (web hosting), Stripe (payments), Resend (transactional email), Sentry (error monitoring and crash reporting), Crisp (support chat — your email/name when you start a conversation), and Google Analytics (anonymous usage analytics).',
             },
             {
               title: 'Cookies & analytics',
-              body: 'The Pomodoso website and dashboard use cookies for authentication sessions, and analytics tools (Google Analytics and Vercel Analytics) that may set cookies or collect anonymous usage metrics to help us improve the product. We do not use advertising cookies.',
+              body: 'The Pomodoso website and dashboard use cookies for authentication sessions, and Google Analytics, which may set cookies or collect anonymous usage metrics to help us improve the product. We do not use advertising cookies.',
             },
             {
               title: 'Contact the supervisory authority',
