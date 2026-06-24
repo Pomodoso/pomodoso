@@ -302,9 +302,22 @@ function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: Toda
   );
 }
 
-function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
-  const totalSeconds = workLog.reduce((s, p) => s + p.total_seconds, 0);
+// Meetings whose attendance time was logged today — they contribute real time
+// to the work log and Today's time, separate from focus sessions.
+const MEETING_COLOR = '#64748b'; // slate — distinct from project colors
+function loggedMeetings(meetings: TodayMeeting[]): TodayMeeting[] {
+  return meetings.filter(m => m.logged && (m.logged_minutes ?? 0) > 0);
+}
+function meetingSeconds(meetings: TodayMeeting[]): number {
+  return loggedMeetings(meetings).reduce((s, m) => s + (m.logged_minutes ?? 0) * 60, 0);
+}
+
+function WorkLogCard({ workLog, meetings }: { workLog: WorkLogProject[]; meetings: TodayMeeting[] }) {
+  const taskSeconds = workLog.reduce((s, p) => s + p.total_seconds, 0);
   const totalPomos = workLog.reduce((s, p) => s + p.tasks.reduce((ts, t) => ts + t.pomos, 0), 0);
+  const logged = loggedMeetings(meetings);
+  const meetingSecs = logged.reduce((s, m) => s + (m.logged_minutes ?? 0) * 60, 0);
+  const totalSeconds = taskSeconds + meetingSecs;
 
   return (
     <div className="pomo-card">
@@ -317,13 +330,15 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
         )}
       </div>
 
-      {workLog.length === 0 ? (
+      {workLog.length === 0 && logged.length === 0 ? (
         <div className="pomo-empty">
           <i className="ti ti-clock-off" />
           No focus sessions yet today.<br />
           Start a pomodoro in the extension to track time.
         </div>
       ) : (
+        <>
+        {workLog.length > 0 && (
         workLog.map((proj) => (
           <div className="pomo-project-group" key={proj.project_id ?? 'none'}>
             <div className="pomo-project-header">
@@ -369,6 +384,40 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
             ))}
           </div>
         ))
+        )}
+        {logged.length > 0 && (
+          <div className="pomo-project-group">
+            <div className="pomo-project-header">
+              <span className="pomo-project-dot" style={{ background: MEETING_COLOR }} />
+              Meetings
+              <span style={{ fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+                {fmtDuration(meetingSecs)}
+              </span>
+            </div>
+            {logged.map((m) => (
+              <div key={m.id} className="pomo-work-row">
+                <span style={{
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}>
+                  {m.calendar_name && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 10, color: 'var(--text-sec)', whiteSpace: 'nowrap',
+                      border: '1px solid var(--border)', borderRadius: 4, padding: '0 5px',
+                    }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: m.calendar_color || 'var(--text-tert)' }} />
+                      {m.calendar_name}
+                    </span>
+                  )}
+                  {m.title || 'Meeting'}
+                </span>
+                <span className="pomo-time-pill">{m.logged_minutes}m</span>
+              </div>
+            ))}
+          </div>
+        )}
+        </>
       )}
     </div>
   );
@@ -463,8 +512,10 @@ function MeetingsCard({ meetings }: { meetings: TodayMeeting[] }) {
   );
 }
 
-function TimeCard({ workLog }: { workLog: WorkLogProject[] }) {
-  const total = workLog.reduce((s, p) => s + p.total_seconds, 0);
+function TimeCard({ workLog, meetings }: { workLog: WorkLogProject[]; meetings: TodayMeeting[] }) {
+  const taskTotal = workLog.reduce((s, p) => s + p.total_seconds, 0);
+  const meetingSecs = meetingSeconds(meetings);
+  const total = taskTotal + meetingSecs;
   if (total === 0) return null;
 
   // Assign consistent colors per project
@@ -491,6 +542,9 @@ function TimeCard({ workLog }: { workLog: WorkLogProject[] }) {
             }}
           />
         ))}
+        {meetingSecs > 0 && (
+          <div key="__meetings" style={{ flex: meetingSecs, background: MEETING_COLOR }} />
+        )}
       </div>
       <div className="pomo-time-legend">
         {workLog.map((proj, i) => (
@@ -505,6 +559,15 @@ function TimeCard({ workLog }: { workLog: WorkLogProject[] }) {
             <span className="pomo-time-legend-val">{fmtDuration(proj.total_seconds)}</span>
           </div>
         ))}
+        {meetingSecs > 0 && (
+          <div className="pomo-time-legend-row" key="__meetings">
+            <span className="pomo-time-legend-name">
+              <span className="pomo-time-legend-dot" style={{ background: MEETING_COLOR }} />
+              Meetings
+            </span>
+            <span className="pomo-time-legend-val">{fmtDuration(meetingSecs)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -625,14 +688,23 @@ function buildReport(data: TodayData, dateStr: string): string {
     lines.push('');
   }
 
-  if (data.work_log.length > 0) {
-    const total = data.work_log.reduce((s, p) => s + p.total_seconds, 0);
-    lines.push(`## Time tracked — ${fmtDuration(total)}`);
+  const reportMeetings = loggedMeetings(data.meetings);
+  const meetingSecs = reportMeetings.reduce((s, m) => s + (m.logged_minutes ?? 0) * 60, 0);
+  if (data.work_log.length > 0 || reportMeetings.length > 0) {
+    const taskTotal = data.work_log.reduce((s, p) => s + p.total_seconds, 0);
+    lines.push(`## Time tracked — ${fmtDuration(taskTotal + meetingSecs)}`);
     for (const proj of data.work_log) {
       lines.push(`- **${proj.project_name}** — ${fmtDuration(proj.total_seconds)}`);
       for (const t of proj.tasks) {
         const ticket = t.ticket_id ? `[${t.ticket_id}] ` : '';
         lines.push(`  - ${ticket}${t.task_title} — ${t.pomos}p · ${fmtDuration(t.duration_seconds)}`);
+      }
+    }
+    if (reportMeetings.length > 0) {
+      lines.push(`- **Meetings** — ${fmtDuration(meetingSecs)}`);
+      for (const m of reportMeetings) {
+        const cal = m.calendar_name ? `[${m.calendar_name}] ` : '';
+        lines.push(`  - ${cal}${m.title || 'Meeting'} — ${m.logged_minutes}m`);
       }
     }
     lines.push('');
@@ -807,12 +879,12 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
       <div className="pomo-grid">
         <div className="pomo-left-col">
           <TodayTasksCard priorities={data.priorities} tasks={data.tasks} showWorkspace={showWorkspace} />
-          <WorkLogCard workLog={data.work_log} />
+          <WorkLogCard workLog={data.work_log} meetings={data.meetings} />
         </div>
 
         <div className="pomo-right-col">
           <MeetingsCard meetings={data.meetings} />
-          <TimeCard workLog={data.work_log} />
+          <TimeCard workLog={data.work_log} meetings={data.meetings} />
           <HabitsCard habits={data.habits} date={date} />
           <StatsCard stats={data.stats} />
         </div>

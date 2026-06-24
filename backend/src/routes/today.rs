@@ -350,7 +350,7 @@ pub async fn get_today(
     // ── Pomodoro sessions for today (day boundary in the user's timezone) ──────
     let session_rows = sqlx::query!(
         r#"
-        SELECT s.id, s.task_id, s.status, s.actual_duration_seconds,
+        SELECT s.id, s.task_id, s.status, s.mode, s.actual_duration_seconds,
                s.planned_duration_seconds, s.started_at, s.ticket_id,
                t.title        as "task_title?",
                t.status       as "task_status?",
@@ -374,9 +374,11 @@ pub async fn get_today(
     .await?;
 
     // ── Active session from the user_setting beacon ────────────────────────────
+    // Only actual pomodoros count as "pomos" — stopwatch / manual sessions log
+    // time but aren't pomodoros.
     let pomos_completed_today = session_rows
         .iter()
-        .filter(|s| s.status == "completed")
+        .filter(|s| s.mode == "pomodoro" && s.status == "completed")
         .count() as i64;
     let active_session = active_session_from_beacon(&state, auth.id, pomos_completed_today).await?;
 
@@ -407,7 +409,9 @@ pub async fn get_today(
                 is_active: false,
                 task_status: s.task_status.clone(),
             });
-        task_entry.pomos += 1;
+        if s.mode == "pomodoro" {
+            task_entry.pomos += 1;
+        }
         task_entry.duration_seconds += s.actual_duration_seconds as i64;
         if s.status == "active" || (s.task_id.is_some() && s.task_id == active_task_id) {
             task_entry.is_active = true;
@@ -574,7 +578,7 @@ pub async fn get_today(
 
     let week_stats = sqlx::query!(
         r#"
-        SELECT COUNT(*)::bigint as "pomos!",
+        SELECT COUNT(*) FILTER (WHERE mode = 'pomodoro')::bigint as "pomos!",
                COUNT(DISTINCT COALESCE(ticket_id, task_id::text))
                  FILTER (WHERE ticket_id IS NOT NULL OR task_id IS NOT NULL)::bigint as "tickets!"
         FROM pomodoro_session
