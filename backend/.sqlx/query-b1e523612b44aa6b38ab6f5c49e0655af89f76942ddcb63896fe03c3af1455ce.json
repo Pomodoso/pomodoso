@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.id, m.title, m.time, m.duration_minutes, m.logged_minutes, m.logged,\n               m.track_mode,\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\"\n        FROM meeting m\n        LEFT JOIN project p ON p.id = m.project_id\n        WHERE m.workspace_id = ANY($1)\n          AND m.deleted_at IS NULL\n          AND DATE(m.time AT TIME ZONE $3) = $2\n        ORDER BY m.time\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "duration_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "logged_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "logged",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "track_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "project_color?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b1e523612b44aa6b38ab6f5c49e0655af89f76942ddcb63896fe03c3af1455ce"
+}
