@@ -5,7 +5,10 @@ import './index.css'
 import App from './App'
 
 declare global {
-  interface Window { dataLayer: unknown[] }
+  interface Window {
+    dataLayer: unknown[]
+    gtag: (...args: unknown[]) => void
+  }
 }
 
 // Error reporting — only active when VITE_SENTRY_DSN is set.
@@ -29,7 +32,15 @@ if (GA_ID) {
   s.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`
   document.head.appendChild(s)
   window.dataLayer = window.dataLayer || []
-  function gtag(...args: unknown[]) { window.dataLayer.push(args) }
+  // Must push the `arguments` object exactly like Google's snippet — gtag.js only
+  // treats Arguments objects as commands, so a plain array is silently ignored
+  // and `config` never fires the page_view. Exposed on window so events can be
+  // sent from anywhere (and tested from the console).
+  function gtag(..._args: unknown[]) {
+    // eslint-disable-next-line prefer-rest-params
+    window.dataLayer.push(arguments)
+  }
+  window.gtag = gtag
   gtag('js', new Date())
   gtag('config', GA_ID)
 }
