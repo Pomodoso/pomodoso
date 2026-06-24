@@ -250,10 +250,12 @@ export function HomeState({
     (h.days.length === 0 || h.days.includes(todayDow)) &&
     (!h.endDate || today <= h.endDate),
   );
-  const visibleMeetings = meetings.filter(m => {
-    if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
-    return m.time.slice(0, 10) === today;
-  });
+  const visibleMeetings = meetings
+    .filter(m => {
+      if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
+      return m.time.slice(0, 10) === today;
+    })
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
   const activeWs = workspaces.find(w => w.id === activeWsId);
 
