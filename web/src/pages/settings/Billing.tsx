@@ -4,6 +4,7 @@ import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
+import { trackEvent } from '../../lib/analytics.ts';
 import { Sidebar } from '../../components/Sidebar.tsx';
 
 // ─── Devices ───────────────────────────────────────────────────────────────────
@@ -189,6 +190,7 @@ export default function Billing() {
   const handleCheckout = async (price: 'annual' | 'monthly' | 'lifetime') => {
     setError('');
     setLoading(true);
+    trackEvent('checkout_started', { price });
     try {
       const { url } = await api.post<{ url: string }>('/billing/checkout', {
         price,
@@ -205,6 +207,7 @@ export default function Billing() {
 
   const handlePortal = async () => {
     setLoading(true);
+    trackEvent('billing_portal_opened');
     try {
       const { url } = await api.post<{ url: string }>('/billing/portal', {
         return_url: `${window.location.origin}/settings/billing`,

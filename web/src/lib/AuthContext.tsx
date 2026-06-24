@@ -5,6 +5,7 @@ import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { getMe, onAuthStateChange } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from './supabase.ts';
 import { api, setAuthToken } from './api.ts';
+import { identifyUser, clearUser } from './analytics.ts';
 
 interface AuthContextValue {
   session: Session | null;
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setUser(null);
       setEntitlements(FREE_ENTITLEMENTS);
+      clearUser();
       return;
     }
 
@@ -62,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(({ user: freshUser, entitlements: fresh }) => {
         setUser(freshUser);
         setEntitlements(fresh);
+        // Identify by opaque UUID only (never email/name) + plan as a segment.
+        identifyUser(freshUser.id, { plan: fresh.plan });
       })
       .catch(() => setEntitlements(FREE_ENTITLEMENTS));
   }, [session?.access_token]);

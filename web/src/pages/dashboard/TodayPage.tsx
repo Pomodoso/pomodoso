@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import { trackEvent } from '../../lib/analytics.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -653,6 +654,7 @@ function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: str
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
+    trackEvent('report_copied');
     void navigator.clipboard.writeText(report).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -660,6 +662,7 @@ function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: str
   };
 
   const download = () => {
+    trackEvent('report_downloaded');
     const blob = new Blob([report], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -781,7 +784,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <button className="pomo-btn">
             <i className="ti ti-calendar" /> Week view
           </button>
-          <button className="pomo-btn pomo-btn-primary" onClick={() => setShowReport(true)}>
+          <button className="pomo-btn pomo-btn-primary" onClick={() => { trackEvent('report_opened'); setShowReport(true); }}>
             <i className="ti ti-file-export" /> Generate report
           </button>
         </div>
