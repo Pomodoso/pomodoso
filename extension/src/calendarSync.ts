@@ -278,8 +278,10 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
           description: item.description ?? '',
           past,
           calendarId,
-          calendarName,
-          ...(calendarColor ? { calendarColor } : {}),
+          // Only overwrite the cached name/color when we actually resolved the
+          // calendar — otherwise a momentarily-missing calendar_lists entry would
+          // clobber a previously-good name with the raw id.
+          ...(cal ? { calendarName: cal.summary, ...(calendarColor ? { calendarColor } : {}) } : {}),
           ...(recurringEventId ? { recurringEventId } : {}),
           deletedAt: null,
           updatedAt: now(),
