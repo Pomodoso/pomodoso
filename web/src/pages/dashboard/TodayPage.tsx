@@ -163,7 +163,9 @@ function habitIconColor(icon: string): string {
 
 function PomoBar({ session }: { session: ActiveSession }) {
   const [elapsed, setElapsed] = useState(session.actual_duration_seconds);
-  const planned = session.planned_duration_seconds ?? 25 * 60;
+  // Stopwatch / manual sessions have no planned length: count UP and show a full
+  // ring instead of a (meaningless) countdown, and don't label them as a pomo.
+  const isPomodoro = session.mode === 'pomodoro';
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -173,7 +175,8 @@ function PomoBar({ session }: { session: ActiveSession }) {
     return () => clearInterval(interval);
   }, [session.started_at]);
 
-  const progress = Math.min(elapsed / planned, 1);
+  const planned = session.planned_duration_seconds ?? 25 * 60;
+  const progress = isPomodoro ? Math.min(elapsed / planned, 1) : 1;
   const circumference = 2 * Math.PI * 24;
   const remaining = Math.max(planned - elapsed, 0);
 
@@ -190,11 +193,11 @@ function PomoBar({ session }: { session: ActiveSession }) {
             strokeLinecap="round"
           />
         </svg>
-        <div className="pomo-mini-ring-text">{fmtTimer(remaining)}</div>
+        <div className="pomo-mini-ring-text">{fmtTimer(isPomodoro ? remaining : elapsed)}</div>
       </div>
       <div>
         <div className="pomo-bar-eyebrow">
-          Focus · pomo {session.pomo_index}
+          {isPomodoro ? `Focus · pomo ${session.pomo_index}` : 'Stopwatch'}
         </div>
         <div className="pomo-bar-task">{session.task_title ?? 'Focus session'}</div>
         <div className="pomo-bar-meta">
@@ -251,12 +254,12 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
           </div>
         )}
       </div>
-      {showWorkspace && <WorkspaceBadge task={task} />}
       {task.status === 'in_progress' && (
         <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Active
         </span>
       )}
+      {showWorkspace && <WorkspaceBadge task={task} />}
     </div>
   );
 }
@@ -443,23 +446,24 @@ function MeetingRow({ m }: { m: TodayMeeting }) {
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-sec)', minWidth: 46 }}>
         {fmtMeetingTime(m.time)}
       </span>
-      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {m.title || 'Meeting'}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {m.title || 'Meeting'}
+          {m.project_name && (
+            <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
+          )}
+        </span>
         {m.calendar_name && (
           <span style={{
-            marginLeft: 6, fontSize: 10, color: 'var(--text-sec)', whiteSpace: 'nowrap',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            border: '1px solid var(--border)', borderRadius: 4, padding: '0 5px',
+            display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0,
+            fontSize: 10, color: 'var(--text-tert)',
           }}>
             <span style={{
-              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
               background: m.calendar_color || 'var(--text-tert)',
             }} />
-            {m.calendar_name}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.calendar_name}</span>
           </span>
-        )}
-        {m.project_name && (
-          <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
         )}
       </span>
       {m.track_mode === 'always' && <span style={meetingBadge('always')}>Always</span>}
