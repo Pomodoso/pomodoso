@@ -391,9 +391,12 @@ function MeetingRow({ m }: { m: TodayMeeting }) {
       </span>
       {m.track_mode === 'always' && <span style={meetingBadge('always')}>Always</span>}
       {m.track_mode === 'once' && <span style={meetingBadge('once')}>Today</span>}
-      <span className="pomo-time-pill">
-        {m.logged_minutes != null ? `logged ${m.logged_minutes}m` : `${m.duration_minutes}m`}
-      </span>
+      {m.logged && m.logged_minutes != null && m.logged_minutes > 0 && (
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          ✓ {m.logged_minutes}m
+        </span>
+      )}
+      <span className="pomo-time-pill">{m.duration_minutes}m</span>
     </div>
   );
 }
