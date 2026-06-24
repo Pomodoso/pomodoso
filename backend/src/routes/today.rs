@@ -662,11 +662,15 @@ async fn active_session_from_beacon(
         .and_then(|d| d.as_i64())
         .map(|d| d as i32);
 
-    // A pomodoro that ran past its planned duration (+ grace) finished without
-    // the extension clearing the beacon (popup closed) — don't show it as active.
-    if let Some(planned) = planned {
+    // A session that ran past its planned duration (+ grace) finished without the
+    // extension clearing the beacon (popup closed) — don't show it as active. Only
+    // a stopwatch can legitimately run long; any other mode (pomodoro, or an
+    // old/partial beacon with no duration) is bounded to a standard focus block so
+    // a ghost still expires instead of lingering up to the 12h hard limit.
+    let stale_planned = planned.or((mode != "stopwatch").then_some(25 * 60));
+    if let Some(p) = stale_planned {
         let elapsed = Utc::now().signed_duration_since(started_at).num_seconds();
-        if elapsed > i64::from(planned) + 300 {
+        if elapsed > i64::from(p) + 300 {
             return Ok(None);
         }
     }
