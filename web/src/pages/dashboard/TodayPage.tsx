@@ -26,6 +26,7 @@ interface TodayMeeting {
   duration_minutes: number;
   logged_minutes: number | null;
   logged: boolean;
+  track_mode: string; // 'always' | 'once' | 'off'
   project_name: string | null;
   project_color: string | null;
 }
@@ -366,32 +367,74 @@ function fmtMeetingTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function meetingBadge(mode: string): React.CSSProperties {
+  const accent = mode === 'once';
+  return {
+    fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: accent ? 'var(--accent)' : 'var(--text-tert)',
+    border: `1px solid ${accent ? 'var(--accent)' : 'var(--border)'}`,
+    borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0,
+  };
+}
+
+function MeetingRow({ m }: { m: TodayMeeting }) {
+  return (
+    <div className="pomo-task-row" style={{ opacity: m.track_mode === 'off' ? 0.55 : 1 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-sec)', minWidth: 46 }}>
+        {fmtMeetingTime(m.time)}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {m.title || 'Meeting'}
+        {m.project_name && (
+          <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
+        )}
+      </span>
+      {m.track_mode === 'always' && <span style={meetingBadge('always')}>Always</span>}
+      {m.track_mode === 'once' && <span style={meetingBadge('once')}>Today</span>}
+      {m.logged && m.logged_minutes != null && m.logged_minutes > 0 && (
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          ✓ {m.logged_minutes}m
+        </span>
+      )}
+      <span className="pomo-time-pill">{m.duration_minutes}m</span>
+    </div>
+  );
+}
+
 function MeetingsCard({ meetings }: { meetings: TodayMeeting[] }) {
+  const [showAll, setShowAll] = useState(false);
   if (meetings.length === 0) return null;
+
+  // Default to the meetings you're tracking today (Always + Today); the rest of
+  // the day's calendar is behind "See all".
+  const tracked = meetings.filter(m => m.track_mode !== 'off');
+  const untracked = meetings.filter(m => m.track_mode === 'off');
+  const shown = showAll ? meetings : tracked;
+
   return (
     <div className="pomo-card">
       <div className="pomo-card-header">
         <div className="pomo-card-title"><i className="ti ti-calendar-event" /> Meetings</div>
         <div className="pomo-card-meta">{meetings.length}</div>
       </div>
-      {meetings.map((m) => (
-        <div className="pomo-task-row" key={m.id}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-sec)', minWidth: 46 }}>
-            {fmtMeetingTime(m.time)}
-          </span>
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {m.title || 'Meeting'}
-            {m.project_name && (
-              <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-tert)' }}>· {m.project_name}</span>
-            )}
-          </span>
-          <span className="pomo-time-pill">
-            {m.logged_minutes != null
-              ? `logged ${m.logged_minutes}m`
-              : `${m.duration_minutes}m`}
-          </span>
+      {shown.length === 0 ? (
+        <div className="pomo-empty" style={{ padding: '12px 0' }}>
+          <span style={{ color: 'var(--text-tert)', fontSize: 12 }}>No meetings tracked for today.</span>
         </div>
-      ))}
+      ) : (
+        shown.map(m => <MeetingRow key={m.id} m={m} />)
+      )}
+      {untracked.length > 0 && (
+        <button
+          onClick={() => setShowAll(v => !v)}
+          style={{
+            width: '100%', marginTop: 6, padding: '6px 0', background: 'none', border: 'none',
+            cursor: 'pointer', fontSize: 11, color: 'var(--text-tert)', textAlign: 'center',
+          }}
+        >
+          {showAll ? 'Show tracked only' : `See all (${untracked.length} more on your calendar)`}
+        </button>
+      )}
     </div>
   );
 }

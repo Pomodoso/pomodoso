@@ -111,6 +111,7 @@ pub struct TodayMeeting {
     pub duration_minutes: i32,
     pub logged_minutes: Option<i32>,
     pub logged: bool,
+    pub track_mode: String,
     pub project_name: Option<String>,
     pub project_color: Option<String>,
 }
@@ -519,6 +520,7 @@ pub async fn get_today(
     let meetings: Vec<TodayMeeting> = sqlx::query!(
         r#"
         SELECT m.id, m.title, m.time, m.duration_minutes, m.logged_minutes, m.logged,
+               m.track_mode,
                p.name  as "project_name?",
                p.color as "project_color?"
         FROM meeting m
@@ -542,6 +544,7 @@ pub async fn get_today(
         duration_minutes: m.duration_minutes,
         logged_minutes: m.logged_minutes,
         logged: m.logged,
+        track_mode: m.track_mode,
         project_name: m.project_name,
         project_color: m.project_color,
     })

@@ -250,10 +250,12 @@ export function HomeState({
     (h.days.length === 0 || h.days.includes(todayDow)) &&
     (!h.endDate || today <= h.endDate),
   );
-  const visibleMeetings = meetings.filter(m => {
-    if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
-    return m.time.slice(0, 10) === today;
-  });
+  const visibleMeetings = meetings
+    .filter(m => {
+      if (activeWsId !== 'all' && m.workspaceId !== activeWsId && m.workspaceId != null) return false;
+      return m.time.slice(0, 10) === today;
+    })
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
   const activeWs = workspaces.find(w => w.id === activeWsId);
 
@@ -2490,6 +2492,22 @@ function MeetingDetailState({
   const [showNotes, setShowNotes] = useState(meeting.notes.length > 0);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const [logH, setLogH] = useState(meeting.loggedMinutes ? String(Math.floor(meeting.loggedMinutes / 60)) : '');
+  const [logM, setLogM] = useState(meeting.loggedMinutes ? String(meeting.loggedMinutes % 60) : '');
+
+  // Re-sync the inputs when loggedMinutes changes externally (e.g. the stopwatch
+  // finishes while this panel is open). Otherwise the stale empty inputs would
+  // compute total = 0 on the next "Log" click and silently wipe tracked time.
+  useEffect(() => {
+    const lm = meeting.loggedMinutes ?? 0;
+    setLogH(lm ? String(Math.floor(lm / 60)) : '');
+    setLogM(lm ? String(lm % 60) : '');
+  }, [meeting.loggedMinutes]);
+
+  const handleLogTime = () => {
+    const total = (parseInt(logH || '0', 10) || 0) * 60 + (parseInt(logM || '0', 10) || 0);
+    onUpdate(total > 0 ? { logged: true, loggedMinutes: total } : { logged: false, loggedMinutes: 0 });
+  };
 
   // Last 5 logged past occurrences of the same recurring series
   const meetingHistory = useLiveQuery(async () => {
@@ -2708,6 +2726,35 @@ function MeetingDetailState({
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Logged attendance time — manual, works for past meetings too */}
+      <div style={{ padding: '12px 14px 0' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>Logged time</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="number" min={0} value={logH} onChange={e => setLogH(e.target.value)} placeholder="0"
+            style={{ width: 48, boxSizing: 'border-box', padding: '6px 8px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-text)', outline: 'none', fontFamily: 'inherit' }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>h</span>
+          <input
+            type="number" min={0} value={logM} onChange={e => setLogM(e.target.value)} placeholder="0"
+            style={{ width: 48, boxSizing: 'border-box', padding: '6px 8px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-text)', outline: 'none', fontFamily: 'inherit' }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>m</span>
+          <button
+            onClick={handleLogTime}
+            style={{ padding: '6px 12px', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Log
+          </button>
+          {meeting.logged && (meeting.loggedMinutes ?? 0) > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--color-success)', fontWeight: 600 }}>✓ logged</span>
+          )}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
+          Record how long you actually attended — works after the meeting has passed too.
         </div>
       </div>
 
