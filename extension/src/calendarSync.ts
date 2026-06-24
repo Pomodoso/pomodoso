@@ -221,6 +221,11 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
   const conn = await getCalendarConnection(wsId);
   if (!conn || conn.selectedCalendarIds.length === 0) return;
 
+  // Map calendar id → { name, color } so each meeting can carry its source
+  // calendar for the badge. Falls back to the raw id if the list is missing.
+  const calList = await getCalendarList(wsId);
+  const calInfo = new Map(calList.map(c => [c.id, c]));
+
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
   // Append timezone offset explicitly so Date parses in the correct local time, not UTC
   const tzOffset = new Date().toLocaleString('en-CA', { timeZone: timezone, timeZoneName: 'longOffset' }).match(/GMT([+-]\d+:\d+)/)?.[1] ?? '+00:00';
@@ -260,6 +265,9 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
       const past = new Date(endStr) < new Date();
 
       const recurringEventId: string | undefined = item.recurringEventId;
+      const cal = calInfo.get(calendarId);
+      const calendarName = cal?.summary ?? calendarId;
+      const calendarColor = cal?.backgroundColor;
       const existing = await db.meetings.where('googleEventId').equals(googleEventId).first();
 
       if (existing) {
@@ -269,6 +277,9 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
           durationMinutes,
           description: item.description ?? '',
           past,
+          calendarId,
+          calendarName,
+          ...(calendarColor ? { calendarColor } : {}),
           ...(recurringEventId ? { recurringEventId } : {}),
           deletedAt: null,
           updatedAt: now(),
@@ -298,6 +309,9 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
           notes: '',
           projectId: null,
           workspaceId: wsId,
+          calendarId,
+          calendarName,
+          ...(calendarColor ? { calendarColor } : {}),
           updatedAt: now(),
         };
         await db.meetings.put(row);

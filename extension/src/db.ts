@@ -137,6 +137,11 @@ export interface MeetingRow extends SyncMeta {
   workspaceId?: string | null;
   googleEventId?: string;
   recurringEventId?: string;
+  // Source Google calendar (for the calendar badge). Cached name + color so the
+  // UI doesn't need the live calendar list, and so it round-trips through sync.
+  calendarId?: string;
+  calendarName?: string;
+  calendarColor?: string;
 }
 
 // ─── Detection rule types ──────────────────────────────────────────────────────
