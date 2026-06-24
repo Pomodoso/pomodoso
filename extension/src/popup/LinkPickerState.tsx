@@ -42,7 +42,7 @@ export function LinkPickerState({ ticket, allTasks, todayPriorities, todayTasks,
   // While searching we scan every local task (incl. done) so a finished issue is
   // still findable. TODO: once closed tasks stop syncing locally, route the
   // search query to a backend endpoint instead of `allTasks`.
-  const today = [...todayPriorities, ...todayTasks];
+  const today = [...todayPriorities, ...todayTasks].filter(t => t.status !== 'cancelled');
   const groups: { label: string; items: SelectedTask[] }[] = searching
     ? [{
         label: 'Results',
