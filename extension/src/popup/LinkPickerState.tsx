@@ -42,7 +42,15 @@ export function LinkPickerState({ ticket, allTasks, todayPriorities, todayTasks,
   // While searching we scan every local task (incl. done) so a finished issue is
   // still findable. TODO: once closed tasks stop syncing locally, route the
   // search query to a backend endpoint instead of `allTasks`.
-  const today = [...todayPriorities, ...todayTasks].filter(t => t.status !== 'cancelled');
+  // Priorities first, then the rest of today. Dedupe by id — in the "all
+  // workspaces" view a task can land in both priorityIds and todayIds, which
+  // would otherwise render it twice (duplicate React key).
+  const seenToday = new Set<string>();
+  const today = [...todayPriorities, ...todayTasks].filter(t => {
+    if (t.status === 'cancelled' || seenToday.has(t.id)) return false;
+    seenToday.add(t.id);
+    return true;
+  });
   const groups: { label: string; items: SelectedTask[] }[] = searching
     ? [{
         label: 'Results',
