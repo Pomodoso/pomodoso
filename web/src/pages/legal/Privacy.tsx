@@ -3,7 +3,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#0a0a0f] px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-        <p className="text-zinc-500 text-sm mb-10">Last updated: May 2026</p>
+        <p className="text-zinc-500 text-sm mb-10">Last updated: June 2026</p>
 
         <div className="space-y-8 text-zinc-400 leading-relaxed text-sm">
           <section>
@@ -117,8 +117,12 @@ export default function Privacy() {
                 </a>
                 .
               </li>
+              <li><strong className="text-zinc-300">Supabase</strong> — authentication for Pro (cloud sync) accounts. <strong className="text-zinc-300">Stripe</strong> — payment processing for paid plans.</li>
+              <li><strong className="text-zinc-300">Sentry</strong> — error monitoring and crash reporting on the web app.</li>
+              <li><strong className="text-zinc-300">Google Analytics</strong> &amp; <strong className="text-zinc-300">Vercel</strong> — anonymous usage and traffic analytics for the web app (Vercel also hosts it).</li>
+              <li><strong className="text-zinc-300">Crisp</strong> — support chat on the website; receives your email and name when you start a conversation.</li>
             </ul>
-            <p className="mt-3">Pomodoso has no other third-party integrations. There is no analytics, crash reporting, or advertising SDK in the extension.</p>
+            <p className="mt-3">The browser extension itself contains no analytics, crash-reporting, or advertising SDK, and transmits nothing to Pomodoso on the free tier. The services above apply to the Pomodoso web app and dashboard (and, for Supabase/Stripe, to Pro accounts).</p>
           </section>
 
           <section>

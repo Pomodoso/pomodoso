@@ -35,9 +35,30 @@ async fn main() -> anyhow::Result<()> {
     // Load .env in development
     let _ = dotenvy::dotenv();
 
+    // Error reporting — only active when SENTRY_DSN is set. The guard must live
+    // for the whole program, so keep it bound until main returns.
+    let _sentry = std::env::var("SENTRY_DSN").ok().map(|dsn| {
+        // Default 20% trace sampling; override with SENTRY_TRACES_SAMPLE_RATE.
+        let traces_sample_rate = std::env::var("SENTRY_TRACES_SAMPLE_RATE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.2);
+        sentry::init((
+            dsn,
+            sentry::ClientOptions {
+                release: sentry::release_name!(),
+                traces_sample_rate,
+                enable_logs: true,
+                ..Default::default()
+            },
+        ))
+    });
+
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .with(tracing_subscriber::fmt::layer())
+        // Forward `tracing::error!`/`warn!` to Sentry (no-op when SENTRY_DSN unset).
+        .with(sentry::integrations::tracing::layer())
         .init();
 
     let config = Config::from_env()?;

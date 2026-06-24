@@ -504,6 +504,25 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
   const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
+
+  // Wipe everything stored locally (tasks/habits/… in IndexedDB + chrome.storage
+  // flags & cached session) and reload fresh. Useful after a logout, e.g. when
+  // handing the browser to someone else or switching accounts.
+  const handleClearLocalData = async () => {
+    setClearing(true);
+    try { await db.delete(); } catch { /* ignore */ }
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        await chrome.storage.local.clear();
+      }
+    } catch { /* ignore */ }
+    window.location.reload();
+  };
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
@@ -531,6 +550,33 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
       setError(e instanceof Error ? e.message : 'Sign in failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendCode = async () => {
+    if (!email.trim()) { setError('Enter your email above first'); return; }
+    setError('');
+    setCodeBusy(true);
+    try {
+      await auth.requestEmailCode(email.trim());
+      setCodeSent(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send code');
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!code.trim()) return;
+    setError('');
+    setCodeBusy(true);
+    try {
+      await auth.verifyEmailCode(email.trim(), code.trim());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invalid or expired code');
+    } finally {
+      setCodeBusy(false);
     }
   };
 
@@ -688,10 +734,90 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                   </button>
                 )}
               </div>
+
+              {/* Passwordless: email a one-time sign-in code (extension can't use a magic link). */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0' }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+                <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>or</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+              </div>
+              {codeSent ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)' }}>
+                    Enter the 6-digit code we emailed to {email.trim()}.
+                  </p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={code}
+                    onChange={e => setCode(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') void handleVerifyCode(); }}
+                    style={{ padding: '7px 10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13, letterSpacing: '0.2em', color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none' }}
+                  />
+                  <button
+                    onClick={() => void handleVerifyCode()}
+                    disabled={codeBusy || !code.trim()}
+                    style={{ padding: '8px 0', background: 'var(--color-accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: codeBusy ? 'not-allowed' : 'pointer', opacity: codeBusy ? 0.7 : 1 }}
+                  >
+                    {codeBusy ? 'Verifying…' : 'Verify & sign in'}
+                  </button>
+                  <button
+                    onClick={() => { setCodeSent(false); setCode(''); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-text-muted)', textDecoration: 'underline', padding: 0, fontFamily: 'inherit' }}
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => void handleSendCode()}
+                  disabled={codeBusy || oauthLoading !== null}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: codeBusy ? 'default' : 'pointer', fontSize: 12, color: 'var(--color-text)', fontWeight: 600, opacity: codeBusy ? 0.7 : 1 }}
+                >
+                  {codeBusy ? 'Sending code…' : '✉ Email me a sign-in code'}
+                </button>
+              )}
+
               <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
                 No account?{' '}
                 <a href="https://pomodoso.com/login" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>Sign up at pomodoso.com</a>
               </p>
+
+              {/* Clear local data — for after a logout (switching accounts / shared browser) */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+                {clearConfirm ? (
+                  <>
+                    <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                      This permanently deletes all tasks, habits, projects and settings stored in this browser. Synced data on your account is not affected — sign back in to restore it.
+                    </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => setClearConfirm(false)}
+                        disabled={clearing}
+                        style={{ flex: 1, padding: '8px 0', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleClearLocalData()}
+                        disabled={clearing}
+                        style={{ flex: 1, padding: '8px 0', background: '#C8553D', border: 'none', borderRadius: 'var(--radius-md)', cursor: clearing ? 'default' : 'pointer', fontSize: 12, fontWeight: 600, color: '#fff', opacity: clearing ? 0.7 : 1 }}
+                      >
+                        {clearing ? 'Clearing…' : 'Delete everything'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setClearConfirm(true)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, color: 'var(--color-accent)' }}
+                  >
+                    Clear local data
+                  </button>
+                )}
+              </div>
             </>
           )}
         </div>

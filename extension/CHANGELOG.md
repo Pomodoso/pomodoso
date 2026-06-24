@@ -1,6 +1,21 @@
 # Changelog
 
-## v1.1.0 (In progress)
+
+## v1.1.1(In progress)
+
+### Auth
+
+- **Magic-link / passwordless login** — Web gets an "Email me a magic link" option (clickable link → signs in and lands on the dashboard). The extension gets an "Email me a sign-in code" option (6-digit OTP entered in the popup), since a magic *link* can't return the session to an MV3 popup. Google and Microsoft OAuth were already wired in both surfaces; magic link is the new piece. New `@pomodoso/api` helpers: `sendMagicLink`, `sendEmailOtp`, `verifyEmailOtp`.
+
+### Integrations (web + backend)
+
+- **Crisp support chat** — Loaded on the web (landing + dashboard), identifying the signed-in user by email/name. Set `VITE_CRISP_WEBSITE_ID`.
+- **Sentry error reporting** — Web (`@sentry/react`, `VITE_SENTRY_DSN`) and backend (`sentry` crate, `SENTRY_DSN`). Both no-op when the DSN is unset.
+- **Analytics** — Google Analytics 4 (`VITE_GA_ID`) via `index.html`, plus Vercel Web Analytics (`@vercel/analytics`). All on the web app.
+- **Error capture wiring** — Backend forwards `tracing::error!`/`warn!` to Sentry (sentry-tracing layer); web forwards uncaught errors, promise rejections, and `console.error(...)` to Sentry.
+- **Privacy/GDPR updated** — Legal pages now list the new sub-processors (Crisp, Sentry, Google Analytics, Vercel) and note analytics cookies; clarified the extension itself ships no analytics/crash/ads SDK.
+
+## v1.1.0
 
 ### Sync
 
@@ -25,6 +40,7 @@
 
 - **Meetings sync** — Calendar meetings (previously local-only) now sync like tasks/projects, including logged time, and round-trip through import/export.
 - **"Other tasks" → "Today's tasks"** — Clearer section label in the Today view (pairs with "Today's priorities").
+- **Clear local data (after logout)** — The signed-out Account screen now has a "Clear local data" button (with a confirm step) that wipes everything stored in this browser — tasks, habits, projects, settings — and reloads. Synced data on the account is untouched; signing back in restores it. Handy when switching accounts or on a shared browser.
 - **Persistent session (no more logout)** — The Supabase client now uses a storage adapter over `chrome.storage.local` (instead of `localStorage`, which doesn't exist in the MV3 service worker), with `onAuthStateChange` mirroring the session to IndexedDB and proactive token refresh from the service worker (on each alarm, before it expires). The extension stops logging itself out after a while.
 - **Habits: time unit, unit selector and end date** — The unit field goes from a freeform input to a **select** (None / common units / **Time (min:seg)** / Custom). Time habits store goal and value in seconds and render as `mm:ss` (with a configurable +/- step); they look the same in the extension and web. New **end date** field (optional, with an "End today" button): after that date the habit stops appearing in Today but the history is kept. Everything travels via `habit.extra` (no migration). Renaming a habit keeps its history (referenced by id) and shows it under the new name.
 - **Fix: turning a habit field off now syncs** — Switching a habit from time to counter, or removing its unit/end date, didn't propagate: the local save did a shallow merge (kept the stale key) and the sync apply fell back to the previous value. Now the edit replaces the whole row (`put`) and the apply rebuilds the habit purely from the incoming payload, so "field absent = cleared" reaches the other devices. Also covers `unit`/`unitAmount`/`goal`.
@@ -40,6 +56,10 @@
 ### Billing
 
 - **Fix: checkout card-only (Stripe Link `link_pay_token` error)** — Stripe's hosted Checkout + Link was throwing `Received unknown parameter: link_pay_token` on the latest API version, which could block the Pay button. The checkout session now requests `payment_method_types=[card]` (card wallets like Apple/Google Pay still work), disabling Link until Stripe fixes it. Subscription provisioning was never affected.
+
+### Tooling
+
+- **Dev-default builds + `zip` for prod** — Every extension build now defaults to development mode (`.env.development` → `localhost:8080`, dev Supabase), so you can't accidentally load a prod-pointing build locally. A new `pnpm --filter extension zip` produces the Web Store zip from `.env.production` and then restores the dev build (`dist/` always ends on dev). Added a project README documenting local setup and this flow.
 
 ### Backend
 

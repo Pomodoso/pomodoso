@@ -25,6 +25,38 @@ export async function signInWithEmail(
   return data;
 }
 
+/** Magic link (web): emails a clickable link that signs the user in and lands on
+ *  `redirectTo`. New users are created on first use. */
+export async function sendMagicLink(
+  supabase: SupabaseClient,
+  email: string,
+  redirectTo: string,
+): Promise<void> {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: redirectTo },
+  });
+  if (error) throw error;
+}
+
+/** Email OTP (extension): emails a 6-digit code; complete with `verifyEmailOtp`.
+ *  Used instead of a magic link in the extension, where a link redirect can't
+ *  hand the session back to the popup. */
+export async function sendEmailOtp(supabase: SupabaseClient, email: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithOtp({ email });
+  if (error) throw error;
+}
+
+export async function verifyEmailOtp(
+  supabase: SupabaseClient,
+  email: string,
+  token: string,
+): Promise<{ session: Session | null }> {
+  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+  if (error) throw error;
+  return { session: data.session };
+}
+
 export async function signUpWithEmail(
   supabase: SupabaseClient,
   email: string,

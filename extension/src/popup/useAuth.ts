@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail } from '@pomodoso/api';
+import { TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail, sendEmailOtp, verifyEmailOtp } from '@pomodoso/api';
 import type { Entitlements } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { db } from '../db';
@@ -21,6 +21,8 @@ export interface AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithMicrosoft: () => Promise<void>;
+  requestEmailCode: (email: string) => Promise<void>;
+  verifyEmailCode: (email: string, code: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   isConfigured: boolean;
@@ -171,6 +173,21 @@ export function useAuth(): AuthState {
     await oauthFlow('azure', persistSession, setSession);
   }, [isConfigured, persistSession]);
 
+  // Passwordless: email a one-time code, then verify it. (A magic *link* can't
+  // return the session to the popup, so the extension uses the OTP code.)
+  const requestEmailCode = useCallback(async (email: string) => {
+    if (!isConfigured) throw new Error('Auth not configured');
+    await sendEmailOtp(getExtensionSupabase(), email);
+  }, [isConfigured]);
+
+  const verifyEmailCode = useCallback(async (email: string, code: string) => {
+    if (!isConfigured) throw new Error('Auth not configured');
+    const { session: newSession } = await verifyEmailOtp(getExtensionSupabase(), email, code.trim());
+    if (!newSession) throw new Error('Invalid or expired code');
+    setSession(newSession);
+    await db.settings.put({ key: SESSION_KEY, value: newSession });
+  }, [isConfigured]);
+
   const resetPassword = useCallback(async (email: string) => {
     if (!isConfigured) throw new Error('Auth not configured');
     const supabase = getExtensionSupabase();
@@ -189,5 +206,5 @@ export function useAuth(): AuthState {
     await db.settings.delete(ENTITLEMENTS_KEY);
   }, [isConfigured]);
 
-  return { session, entitlements, loading, signIn, signInWithGoogle, signInWithMicrosoft, resetPassword, signOut, isConfigured };
+  return { session, entitlements, loading, signIn, signInWithGoogle, signInWithMicrosoft, requestEmailCode, verifyEmailCode, resetPassword, signOut, isConfigured };
 }

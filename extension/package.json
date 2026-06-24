@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "vite build --watch --mode development",
     "dev:popup": "vite --config vite.popup.config.ts",
-    "build": "vite build",
+    "build": "vite build --mode development",
     "build:dev": "vite build --mode development",
+    "build:prod": "vite build --mode production",
+    "zip": "bash scripts/zip.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

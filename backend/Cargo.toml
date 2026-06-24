@@ -24,6 +24,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sentry = { version = "0.48", features = ["anyhow", "tracing", "tower", "tower-axum-matched-path", "logs"] }
 
 anyhow = "1"
 thiserror = "2"
