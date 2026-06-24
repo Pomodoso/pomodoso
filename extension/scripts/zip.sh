@@ -6,16 +6,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # → extension/
 
 VERSION=$(node -p "require('./manifest.json').version")
-OUT="pomodoso-extension-v${VERSION}.zip"
+OUT="releases/pomodoso-extension-v${VERSION}.zip"
 
 echo "→ Production build (.env.production)…"
 pnpm run build:prod
 
 echo "→ Packaging ${OUT}…"
+mkdir -p releases
 rm -f "${OUT}"
 ( cd dist && zip -rq "../${OUT}" . )
 
 echo "→ Restoring dev build (.env.development)…"
-pnpm run build
+pnpm run build:dev
 
 echo "✓ ${OUT} created — dist/ is back on dev."
