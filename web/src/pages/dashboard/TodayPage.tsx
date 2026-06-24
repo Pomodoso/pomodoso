@@ -41,6 +41,7 @@ interface WorkLogTask {
   pomos: number;
   duration_seconds: number;
   is_active: boolean;
+  task_status: string | null;
 }
 
 interface WorkLogProject {
@@ -354,9 +355,16 @@ function WorkLogCard({ workLog }: { workLog: WorkLogProject[] }) {
                 <span className="pomo-time-pill">
                   {task.pomos}p · {fmtDuration(task.duration_seconds)}
                 </span>
-                <span className={task.is_active ? 'pomo-status-pill pomo-status-active' : 'pomo-status-pill pomo-status-done'}>
-                  {task.is_active ? 'Active' : 'Done'}
-                </span>
+                {(() => {
+                  // Active timer wins; otherwise reflect the task's real status
+                  // (a task with logged time that isn't done is still in progress).
+                  const { cls, label } = task.is_active
+                    ? { cls: 'pomo-status-active', label: 'Active' }
+                    : task.task_status === 'done'
+                      ? { cls: 'pomo-status-done', label: 'Done' }
+                      : { cls: 'pomo-status-progress', label: 'In progress' };
+                  return <span className={`pomo-status-pill ${cls}`}>{label}</span>;
+                })()}
               </div>
             ))}
           </div>

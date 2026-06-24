@@ -30,7 +30,8 @@ export default function Dashboard() {
   const wsMenuRef = useRef<HTMLDivElement>(null);
 
   const handleSetActiveWs = (id: string | null) => {
-    trackEvent('workspace_switched', { to: id ?? 'all' });
+    if (id === activeWsId) return;
+    trackEvent('workspace_switched', { from: activeWsId ?? 'all', to: id ?? 'all' });
     setActiveWsId(id);
     if (id) localStorage.setItem(ACTIVE_WS_KEY, id);
     else localStorage.removeItem(ACTIVE_WS_KEY);

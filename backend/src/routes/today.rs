@@ -58,6 +58,7 @@ pub struct WorkLogTask {
     pub pomos: i64,
     pub duration_seconds: i64,
     pub is_active: bool,
+    pub task_status: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -352,6 +353,7 @@ pub async fn get_today(
         SELECT s.id, s.task_id, s.status, s.actual_duration_seconds,
                s.planned_duration_seconds, s.started_at, s.ticket_id,
                t.title        as "task_title?",
+               t.status       as "task_status?",
                t.project_id   as "session_project_id?",
                p.name         as "project_name?",
                p.color        as "project_color?"
@@ -403,6 +405,7 @@ pub async fn get_today(
                 pomos: 0,
                 duration_seconds: 0,
                 is_active: false,
+                task_status: s.task_status.clone(),
             });
         task_entry.pomos += 1;
         task_entry.duration_seconds += s.actual_duration_seconds as i64;

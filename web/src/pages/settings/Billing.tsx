@@ -190,13 +190,14 @@ export default function Billing() {
   const handleCheckout = async (price: 'annual' | 'monthly' | 'lifetime') => {
     setError('');
     setLoading(true);
-    trackEvent('checkout_started', { price });
     try {
       const { url } = await api.post<{ url: string }>('/billing/checkout', {
         price,
         success_url: `${window.location.origin}/dashboard?upgraded=1`,
         cancel_url: `${window.location.origin}/settings/billing`,
       });
+      // Only count a checkout once the session was actually created.
+      trackEvent('checkout_started', { price });
       window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');

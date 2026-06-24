@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT s.id, s.task_id, s.status, s.actual_duration_seconds,\n               s.planned_duration_seconds, s.started_at, s.ticket_id,\n               t.title        as \"task_title?\",\n               t.project_id   as \"session_project_id?\",\n               p.name         as \"project_name?\",\n               p.color        as \"project_color?\"\n        FROM pomodoro_session s\n        LEFT JOIN task t ON t.id = s.task_id\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE s.workspace_id = ANY($1)\n          AND s.kind = 'focus'\n          AND s.status IN ('completed', 'active', 'interrupted')\n          AND DATE(s.started_at AT TIME ZONE $3) = $2\n        ORDER BY s.started_at\n        ",
+  "query": "\n        SELECT s.id, s.task_id, s.status, s.actual_duration_seconds,\n               s.planned_duration_seconds, s.started_at, s.ticket_id,\n               t.title        as \"task_title?\",\n               t.status       as \"task_status?\",\n               t.project_id   as \"session_project_id?\",\n               p.name         as \"project_name?\",\n               p.color        as \"project_color?\"\n        FROM pomodoro_session s\n        LEFT JOIN task t ON t.id = s.task_id\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE s.workspace_id = ANY($1)\n          AND s.kind = 'focus'\n          AND s.status IN ('completed', 'active', 'interrupted')\n          AND DATE(s.started_at AT TIME ZONE $3) = $2\n        ORDER BY s.started_at\n        ",
   "describe": {
     "columns": [
       {
@@ -45,16 +45,21 @@
       },
       {
         "ordinal": 8,
+        "name": "task_status?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
         "name": "session_project_id?",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "project_name?",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "project_color?",
         "type_info": "Text"
       }
@@ -75,10 +80,11 @@
       false,
       true,
       false,
+      false,
       true,
       false,
       false
     ]
   },
-  "hash": "f68f99c6f2c4369126c513e49e7de64a4e1ee37de44473853b08b3f18790374b"
+  "hash": "e26c0ce5a8adbd92224273a9baa5e08562c77a43522d4a1c08209660b72995f0"
 }

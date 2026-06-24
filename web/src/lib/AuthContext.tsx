@@ -60,14 +60,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Guard against a stale in-flight /me resolving after this session changed
+    // (e.g. fast login→logout) and re-identifying a user that was cleared.
+    let cancelled = false;
     getMe(api)
       .then(({ user: freshUser, entitlements: fresh }) => {
+        if (cancelled) return;
         setUser(freshUser);
         setEntitlements(fresh);
         // Identify by opaque UUID only (never email/name) + plan as a segment.
         identifyUser(freshUser.id, { plan: fresh.plan });
       })
-      .catch(() => setEntitlements(FREE_ENTITLEMENTS));
+      .catch(() => {
+        if (!cancelled) setEntitlements(FREE_ENTITLEMENTS);
+      });
+    return () => { cancelled = true; };
   }, [session?.access_token]);
 
   return (
