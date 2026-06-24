@@ -316,7 +316,7 @@ function WorkLogCard({ workLog, meetings }: { workLog: WorkLogProject[]; meeting
   const taskSeconds = workLog.reduce((s, p) => s + p.total_seconds, 0);
   const totalPomos = workLog.reduce((s, p) => s + p.tasks.reduce((ts, t) => ts + t.pomos, 0), 0);
   const logged = loggedMeetings(meetings);
-  const meetingSecs = meetingSeconds(meetings);
+  const meetingSecs = logged.reduce((s, m) => s + (m.logged_minutes ?? 0) * 60, 0);
   const totalSeconds = taskSeconds + meetingSecs;
 
   return (
@@ -688,14 +688,23 @@ function buildReport(data: TodayData, dateStr: string): string {
     lines.push('');
   }
 
-  if (data.work_log.length > 0) {
-    const total = data.work_log.reduce((s, p) => s + p.total_seconds, 0);
-    lines.push(`## Time tracked — ${fmtDuration(total)}`);
+  const reportMeetings = loggedMeetings(data.meetings);
+  const meetingSecs = reportMeetings.reduce((s, m) => s + (m.logged_minutes ?? 0) * 60, 0);
+  if (data.work_log.length > 0 || reportMeetings.length > 0) {
+    const taskTotal = data.work_log.reduce((s, p) => s + p.total_seconds, 0);
+    lines.push(`## Time tracked — ${fmtDuration(taskTotal + meetingSecs)}`);
     for (const proj of data.work_log) {
       lines.push(`- **${proj.project_name}** — ${fmtDuration(proj.total_seconds)}`);
       for (const t of proj.tasks) {
         const ticket = t.ticket_id ? `[${t.ticket_id}] ` : '';
         lines.push(`  - ${ticket}${t.task_title} — ${t.pomos}p · ${fmtDuration(t.duration_seconds)}`);
+      }
+    }
+    if (reportMeetings.length > 0) {
+      lines.push(`- **Meetings** — ${fmtDuration(meetingSecs)}`);
+      for (const m of reportMeetings) {
+        const cal = m.calendar_name ? `[${m.calendar_name}] ` : '';
+        lines.push(`  - ${cal}${m.title || 'Meeting'} — ${m.logged_minutes}m`);
       }
     }
     lines.push('');
