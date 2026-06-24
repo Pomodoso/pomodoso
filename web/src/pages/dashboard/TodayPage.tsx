@@ -415,7 +415,7 @@ function MeetingsCard({ meetings }: { meetings: TodayMeeting[] }) {
     <div className="pomo-card">
       <div className="pomo-card-header">
         <div className="pomo-card-title"><i className="ti ti-calendar-event" /> Meetings</div>
-        <div className="pomo-card-meta">{tracked.length}</div>
+        <div className="pomo-card-meta">{meetings.length}</div>
       </div>
       {shown.length === 0 ? (
         <div className="pomo-empty" style={{ padding: '12px 0' }}>

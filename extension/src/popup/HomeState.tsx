@@ -2495,6 +2495,15 @@ function MeetingDetailState({
   const [logH, setLogH] = useState(meeting.loggedMinutes ? String(Math.floor(meeting.loggedMinutes / 60)) : '');
   const [logM, setLogM] = useState(meeting.loggedMinutes ? String(meeting.loggedMinutes % 60) : '');
 
+  // Re-sync the inputs when loggedMinutes changes externally (e.g. the stopwatch
+  // finishes while this panel is open). Otherwise the stale empty inputs would
+  // compute total = 0 on the next "Log" click and silently wipe tracked time.
+  useEffect(() => {
+    const lm = meeting.loggedMinutes ?? 0;
+    setLogH(lm ? String(Math.floor(lm / 60)) : '');
+    setLogM(lm ? String(lm % 60) : '');
+  }, [meeting.loggedMinutes]);
+
   const handleLogTime = () => {
     const total = (parseInt(logH || '0', 10) || 0) * 60 + (parseInt(logM || '0', 10) || 0);
     onUpdate(total > 0 ? { logged: true, loggedMinutes: total } : { logged: false, loggedMinutes: 0 });
