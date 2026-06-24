@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /settings/
+Disallow: /login
+Disallow: /reset-password
+
+Sitemap: https://pomodoso.com/sitemap.xml
