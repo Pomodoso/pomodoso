@@ -92,6 +92,7 @@ export type HabitIconKind = 'water' | 'fitness' | 'book' | 'sleep' | 'run' | 'me
 
 export interface HabitRow extends SyncMeta {
   id: string;
+  createdAt: string;        // ISO — when the habit was created (drives History)
   name: string;
   kind: HabitKind;
   icon: HabitIconKind;
@@ -270,6 +271,19 @@ export class PomoDB extends Dexie {
       const keys = (await settings.toCollection().primaryKeys()) as string[];
       await settings.bulkDelete(keys.filter(k => k === 'sync_last_pull'));
     });
+    // v14: backfill createdAt on habits that predate the field. Derived from the
+    // earliest log date so existing history stays correct, and re-pushed (clear
+    // syncedAt) so the new field travels in habit.extra to other devices.
+    this.version(14).stores({}).upgrade(async tx => {
+      const habits = await tx.table('habits').toArray() as HabitRow[];
+      const history = await tx.table('habitHistory').toArray() as HabitHistoryRow[];
+      for (const h of habits) {
+        if (h.createdAt) continue;
+        h.createdAt = backfillHabitCreatedAt(h, history);
+        delete (h as { syncedAt?: string }).syncedAt;
+      }
+      await tx.table('habits').bulkPut(habits);
+    });
   }
 }
 
@@ -418,6 +432,19 @@ export function habitLogId(habitId: string, date: string): string {
 //     habit ids (e.g. legacy 'h2') and remap their history
 //   - drop orphan history (points at a habit that no longer exists)
 //   - history ids must be UUIDs too (dedup is by habit_id+date on the server)
+// Best-effort creation date for habits that predate the createdAt field: the
+// earliest day they were logged (start of that day), else the habit's own
+// updatedAt, else now. Keeps existing history visible (real records always show)
+// while not fabricating "missed" days before the habit existed.
+export function backfillHabitCreatedAt(habit: HabitRow, history: HabitHistoryRow[]): string {
+  let earliest: string | undefined;
+  for (const r of history) {
+    if (r.habitId === habit.id && (earliest === undefined || r.date < earliest)) earliest = r.date;
+  }
+  if (earliest) return `${earliest}T00:00:00.000Z`;
+  return habit.updatedAt || now();
+}
+
 export function sanitizeHabitData(
   habits: HabitRow[],
   history: HabitHistoryRow[],
@@ -441,6 +468,10 @@ export function sanitizeHabitData(
       return { ...r, habitId, id: habitLogId(habitId, r.date) };
     })
     .filter(r => validIds.has(r.habitId));
+  // Backfill createdAt for habits imported from an older export that lacks it.
+  for (const h of cleanHabits) {
+    if (!h.createdAt) h.createdAt = backfillHabitCreatedAt(h, cleanHistory);
+  }
   return { habits: cleanHabits, history: cleanHistory };
 }
 
@@ -512,7 +543,7 @@ export async function migrateFromChromeStorageIfNeeded(): Promise<void> {
     // ── Habits ─────────────────────────────────────────────────────────────────
     const habits = old['pom_habits'] as HabitRow[] | undefined;
     if (habits?.length) {
-      await db.habits.bulkPut(habits.map((h: any) => ({ ...h, updatedAt: h.updatedAt ?? ts })));
+      await db.habits.bulkPut(habits.map((h: any) => ({ ...h, createdAt: h.createdAt ?? h.updatedAt ?? ts, updatedAt: h.updatedAt ?? ts })));
     }
 
     // ── Habit history ──────────────────────────────────────────────────────────

@@ -3581,19 +3581,23 @@ function HabitHistoryView({ habits, timezone, weekStart }: {
     ).map(r => r.date)
   );
 
-  // For each active date, show all habits:
-  // counter habits only if count > 0; boolean habits always (synthesise if no record)
+  // For each active date, show every habit that was active and scheduled that
+  // day (counter and boolean), synthesising a "missed" row when there's no
+  // record. Closed habits (date past endDate) and off-schedule weekdays are
+  // skipped so they don't appear as missed.
   type DisplayRecord = HabitHistoryRow & { _synthetic?: boolean };
   const groups = new Map<string, DisplayRecord[]>();
   for (const date of activeDates) {
+    const dow = (new Date(date + 'T12:00:00').getDay() + 6) % 7;
     const entries: DisplayRecord[] = [];
     for (const habit of habits) {
+      if (habit.endDate && date > habit.endDate) continue;
+      if (habit.days.length > 0 && !habit.days.includes(dow)) continue;
       const record = allRecords.find(r => r.habitId === habit.id && r.date === date);
-      if (habit.kind === 'counter') {
-        if ((record?.count ?? 0) > 0) entries.push(record!);
-      } else {
-        entries.push(record ?? { habitId: habit.id, date, done: false, updatedAt: '', _synthetic: true });
-      }
+      if (record) { entries.push(record); continue; }
+      // Don't fabricate "missed" days before the habit existed.
+      if (habit.createdAt && date < habit.createdAt.slice(0, 10)) continue;
+      entries.push({ habitId: habit.id, date, done: false, count: 0, updatedAt: '', _synthetic: true });
     }
     if (entries.length > 0) groups.set(date, entries);
   }
@@ -3754,7 +3758,14 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  const doneCount = habits.filter(h =>
+  // Habits past their end date are "closed": hidden from the list (and progress)
+  // by default, revealed behind a "Show closed" link. Same filter the Today tab uses.
+  const todayStr = localDate(timezone);
+  const activeHabits = habits.filter(h => !h.endDate || todayStr <= h.endDate);
+  const closedHabits = habits.filter(h => h.endDate && todayStr > h.endDate);
+  const [showClosed, setShowClosed] = useState(false);
+
+  const doneCount = activeHabits.filter(h =>
     h.kind === 'boolean' ? (habitDone[h.id] ?? false) : (habitCounters[h.id] ?? 0) >= (h.goal ?? 1)
   ).length;
 
@@ -3773,11 +3784,11 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
             Today's progress
           </div>
           <div style={{ fontSize: 13, fontWeight: 500 }}>
-            {doneCount} of {habits.length} habits done
+            {doneCount} of {activeHabits.length} habits done
           </div>
         </div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, lineHeight: 1, color: 'var(--color-success)' }}>
-          {doneCount}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--color-text-muted)' }}>/{habits.length}</span>
+          {doneCount}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--color-text-muted)' }}>/{activeHabits.length}</span>
         </div>
       </div>
 
@@ -3806,7 +3817,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-        {habits.map(habit => {
+        {activeHabits.map(habit => {
           const isDone = habit.kind === 'boolean'
             ? (habitDone[habit.id] ?? false)
             : (habitCounters[habit.id] ?? 0) >= (habit.goal ?? 1);
@@ -3824,18 +3835,46 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
             />
           );
         })}
+
+        {closedHabits.length > 0 && (
+          <button
+            onClick={() => setShowClosed(v => !v)}
+            style={{
+              width: '100%', marginTop: -2, padding: '6px 0', background: 'none', border: 'none',
+              cursor: 'pointer', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center',
+            }}
+          >
+            {showClosed ? 'Hide closed' : `Show closed (${closedHabits.length})`}
+          </button>
+        )}
+
+        {showClosed && closedHabits.map(habit => (
+          <HabitRow
+            key={habit.id}
+            habit={habit}
+            count={0}
+            checked={false}
+            isDone={false}
+            readOnly
+            onCounterChange={() => {}}
+            onToggle={() => {}}
+            onEdit={() => onEditHabit(habit)}
+            onDelete={() => onDeleteHabit(habit.id)}
+          />
+        ))}
       </div>
 
-      <WeekStrip habits={habits} weekStart={weekStart} timezone={timezone} />
+      <WeekStrip habits={activeHabits} weekStart={weekStart} timezone={timezone} />
     </div>
   );
 }
 
-function HabitRow({ habit, count, checked, isDone, onCounterChange, onToggle, onEdit, onDelete }: {
+function HabitRow({ habit, count, checked, isDone, readOnly, onCounterChange, onToggle, onEdit, onDelete }: {
   habit: HabitDef;
   count: number;
   checked: boolean;
   isDone: boolean;
+  readOnly?: boolean;
   onCounterChange: (delta: number) => void;
   onToggle: () => void;
   onEdit: () => void;
@@ -3848,9 +3887,10 @@ function HabitRow({ habit, count, checked, isDone, onCounterChange, onToggle, on
       position: 'relative',
       display: 'grid', gridTemplateColumns: '32px 1fr auto', gap: 12,
       alignItems: 'center', padding: '10px 12px',
-      background: isDone ? 'var(--color-success-bg)' : 'var(--color-surface)',
-      border: `1px solid ${isDone ? 'var(--color-success-bg)' : 'var(--color-border)'}`,
+      background: !readOnly && isDone ? 'var(--color-success-bg)' : 'var(--color-surface)',
+      border: `1px solid ${!readOnly && isDone ? 'var(--color-success-bg)' : 'var(--color-border)'}`,
       borderRadius: 'var(--radius-md)',
+      opacity: readOnly ? 0.6 : 1,
     }}>
       {/* Context menu */}
       {showMenu && (
@@ -3904,10 +3944,15 @@ function HabitRow({ habit, count, checked, isDone, onCounterChange, onToggle, on
               · {habit.days.map(d => ['M','T','W','T','F','S','S'][d]).join(' ')}
             </span>
           )}
+          {readOnly && habit.endDate && (
+            <span style={{ marginLeft: 6, color: 'var(--color-text-faint)' }}>
+              · Closed {habit.endDate.slice(8, 10)}/{habit.endDate.slice(5, 7)}
+            </span>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {habit.kind === 'counter' ? (
+        {readOnly ? null : habit.kind === 'counter' ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <button onClick={() => onCounterChange(-(habit.timeUnit ? (habit.unitAmount || 60) : 1))} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>−</button>
@@ -4200,6 +4245,7 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
     const hasUnitAmount = !isTime && hasUnit && !isNaN(parsedUnitAmount) && parsedUnitAmount > 0;
     onSave({
       id: initialHabit?.id ?? crypto.randomUUID(),
+      createdAt: initialHabit?.createdAt ?? now(),
       name: name.trim(),
       kind,
       icon,

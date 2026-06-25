@@ -198,9 +198,9 @@ export function App() {
       await db.taskOrders.put({ wsId, priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
       // Habits are user-global → no workspace.
       await db.habits.bulkPut([
-        { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
-        { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
-        { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: null, updatedAt: ts },
+        { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, createdAt: ts, updatedAt: ts },
+        { id: h2, name: 'Read',        kind: 'counter', icon: 'book',    goal: 20, unit: 'min',     unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, createdAt: ts, updatedAt: ts },
+        { id: h3, name: 'Exercise',    kind: 'boolean', icon: 'fitness',                                           streakLabel: 'New habit', days: [], workspaceId: null, createdAt: ts, updatedAt: ts },
       ]);
       await db.detectionRules.bulkPut(INITIAL_RULES.map(r => ({ ...r, updatedAt: ts })));
     });

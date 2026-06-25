@@ -390,6 +390,7 @@ function meetingExtra(m: MeetingRow): Record<string, unknown> {
 
 function habitExtra(h: HabitRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
+  if (h.createdAt) extra['createdAt'] = h.createdAt;
   if (h.unit !== undefined) extra['unit'] = h.unit;
   if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
   if (h.timeUnit) extra['timeUnit'] = true;
@@ -547,6 +548,9 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
       const hExtra = (data['extra'] ?? {}) as Record<string, unknown>;
       const row: HabitRow = {
         id,
+        // createdAt is immutable, so unlike the other extras it falls back to
+        // the existing/local value (then updated_at) rather than dropping.
+        createdAt: (hExtra['createdAt'] as string | undefined) ?? existing?.createdAt ?? updated_at,
         name: String(data['name'] ?? ''),
         icon: (data['icon'] as HabitRow['icon']) ?? 'water',
         kind: (data['kind'] as HabitRow['kind']) ?? 'boolean',
