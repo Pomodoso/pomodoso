@@ -277,12 +277,14 @@ export class PomoDB extends Dexie {
     this.version(14).stores({}).upgrade(async tx => {
       const habits = await tx.table('habits').toArray() as HabitRow[];
       const history = await tx.table('habitHistory').toArray() as HabitHistoryRow[];
+      const modified: HabitRow[] = [];
       for (const h of habits) {
         if (h.createdAt) continue;
         h.createdAt = backfillHabitCreatedAt(h, history);
         delete (h as { syncedAt?: string }).syncedAt;
+        modified.push(h);
       }
-      await tx.table('habits').bulkPut(habits);
+      if (modified.length) await tx.table('habits').bulkPut(modified);
     });
   }
 }
@@ -441,7 +443,9 @@ export function backfillHabitCreatedAt(habit: HabitRow, history: HabitHistoryRow
   for (const r of history) {
     if (r.habitId === habit.id && (earliest === undefined || r.date < earliest)) earliest = r.date;
   }
-  if (earliest) return `${earliest}T00:00:00.000Z`;
+  // Noon UTC (not midnight) so converting the log date to a UTC− local tz stays
+  // on the same calendar day — see the createdAt comparison in the history view.
+  if (earliest) return `${earliest}T12:00:00.000Z`;
   return habit.updatedAt || now();
 }
 

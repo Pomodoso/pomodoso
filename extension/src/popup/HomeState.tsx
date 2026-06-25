@@ -3595,8 +3595,10 @@ function HabitHistoryView({ habits, timezone, weekStart }: {
       if (habit.days.length > 0 && !habit.days.includes(dow)) continue;
       const record = allRecords.find(r => r.habitId === habit.id && r.date === date);
       if (record) { entries.push(record); continue; }
-      // Don't fabricate "missed" days before the habit existed.
-      if (habit.createdAt && date < habit.createdAt.slice(0, 10)) continue;
+      // Don't fabricate "missed" days before the habit existed. createdAt is a UTC
+      // instant; compare its local calendar date (in the user's tz) against the
+      // local `date`, otherwise late-evening creations in UTC− zones skip a day.
+      if (habit.createdAt && date < new Date(habit.createdAt).toLocaleDateString('en-CA', { timeZone: timezone })) continue;
       entries.push({ habitId: habit.id, date, done: false, count: 0, updatedAt: '', _synthetic: true });
     }
     if (entries.length > 0) groups.set(date, entries);
