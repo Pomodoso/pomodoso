@@ -255,6 +255,8 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<'disconnected' | 'connected' | 'syncing' | 'offline' | 'error'>('disconnected');
 
   const canSync = Boolean(auth.session && auth.entitlements.features.sync && API_URL);
+  // Paid users (any plan with sync) don't see the Ko-fi tip jar.
+  const isPro = auth.entitlements.features.sync;
 
   useEffect(() => {
     if (!auth.session) { setSyncStatus('disconnected'); clearSync(); return; }
@@ -932,7 +934,7 @@ export function App() {
 
   if (loading) {
     return (
-      <PopupShell center>
+      <PopupShell center isPro={isPro}>
         <span style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading…</span>
       </PopupShell>
     );
@@ -942,7 +944,7 @@ export function App() {
   // (the effect above marks them onboarded — their data arrives via sync).
   if (!onboarded && !auth.session) {
     return (
-      <PopupShell center>
+      <PopupShell center isPro={isPro}>
         <WelcomeScreen
           onUseTemplate={() => void seedTemplate()}
           onStartEmpty={() => setOnboarded(true)}
@@ -954,7 +956,7 @@ export function App() {
 
   if (addingNoteText) {
     return (
-      <PopupShell>
+      <PopupShell isPro={isPro}>
         <NotePickerState
           text={addingNoteText}
           allTasks={allTasks}
@@ -967,7 +969,7 @@ export function App() {
 
   if (linkingTicket) {
     return (
-      <PopupShell>
+      <PopupShell isPro={isPro}>
         <LinkPickerState
           ticket={linkingTicket}
           allTasks={allTasks}
@@ -983,7 +985,7 @@ export function App() {
 
   if (showSettings) {
     return (
-      <PopupShell>
+      <PopupShell isPro={isPro}>
         <SettingsState
           rules={rules}
           timerSettings={timerSettings}
@@ -1019,7 +1021,7 @@ export function App() {
 
   if (selectedTask) {
     return (
-      <PopupShell>
+      <PopupShell isPro={isPro}>
         <TaskDetailState
           key={selectedTask.id}
           task={selectedTask}
@@ -1048,7 +1050,7 @@ export function App() {
   }
 
   return (
-    <PopupShell>
+    <PopupShell isPro={isPro}>
       <HomeState
         timerState={timerState}
         timerSettings={timerSettings}
@@ -1255,13 +1257,13 @@ function KofiFooter() {
   );
 }
 
-function PopupShell({ children, center }: { children: React.ReactNode; center?: boolean }) {
+function PopupShell({ children, center, isPro }: { children: React.ReactNode; center?: boolean; isPro?: boolean }) {
   return (
     <div className="popup-root">
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', ...(center ? { alignItems: 'center', justifyContent: 'center' } : {}) }}>
         {children}
       </div>
-      <KofiFooter />
+      {!isPro && <KofiFooter />}
     </div>
   );
 }

@@ -10,6 +10,7 @@
 ### Extension
 
 - **"Open web app" lands on the dashboard** — The menu's "Open web app" and the footer's "Open app" links now open `/dashboard` directly instead of the landing page.
+- **No "Buy me a coffee" for paid users** — The Ko-fi tip jar in the popup footer is hidden for users on a paid plan (gated on `entitlements.features.sync`).
 
 ### Habits
 
