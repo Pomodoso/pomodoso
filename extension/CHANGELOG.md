@@ -15,6 +15,7 @@
 - **Search & filters on the Backlog** — The Tasks → Backlog now has a search box (title/ticket) plus status chips and a project filter, mirroring the History view. A "Clear filters" shortcut appears when any filter is active.
 - **Support link** — A new "Support" entry in the popup menu opens `pomodoso.com/support` in a new tab, which auto-launches the Crisp chat (identifying the user when signed in).
 - **Sign-up link goes to sign-up (not sign-in)** — The Account screen's "create account" link pointed at `/login` (the sign-in form). It now deep-links to `/login?mode=signup` and is a prominent "Create a free account" button instead of faint footer text.
+- **Fix: priorities cap counted completed/orphaned tasks** — The global priorities limit counted every id in the priority orders, including completed (done/cancelled) and deleted/orphaned tasks left in the order. That filled the cap and blocked adding new priorities even when fewer than the max were actually shown. The cap now only counts existing, still-open tasks.
 
 ### Web
 

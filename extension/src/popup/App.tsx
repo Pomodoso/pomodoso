@@ -403,9 +403,18 @@ export function App() {
 
   // The priorities cap is GLOBAL (max across all workspaces, not per-workspace).
   // Count the union of priority ids over every real workspace order regardless
-  // of which view is active.
+  // of which view is active. Only count ids that map to an existing, still-open
+  // task: deleted/orphaned ids and completed (done/cancelled) tasks shouldn't
+  // occupy a slot, otherwise the cap fills up and blocks adding new priorities
+  // even though the user sees fewer than the max.
   const totalPriorities = new Set(
-    Object.entries(wsOrders).filter(([k]) => k !== 'all').flatMap(([, o]) => o.priorityIds),
+    Object.entries(wsOrders)
+      .filter(([k]) => k !== 'all')
+      .flatMap(([, o]) => o.priorityIds)
+      .filter(id => {
+        const t = allTasks[id];
+        return !!t && t.status !== 'done' && t.status !== 'cancelled';
+      }),
   ).size;
   const prioritiesFull = totalPriorities >= maxPriorities;
 
