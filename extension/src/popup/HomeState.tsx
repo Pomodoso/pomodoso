@@ -597,7 +597,7 @@ export function HomeState({
                     <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
                   )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
-                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com' }); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' }); }} />
                   {isSignedIn && (<>
                     <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
                     <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />

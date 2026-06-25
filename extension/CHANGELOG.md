@@ -7,6 +7,10 @@
 
 - **Selected calendars are highlighted** — In Settings → Calendar, synced calendars now get a tinted background and bold label (not just a far-right `✓`), so the selection state is obvious even with long calendar names or URLs.
 
+### Extension
+
+- **"Open web app" lands on the dashboard** — The menu's "Open web app" and the footer's "Open app" links now open `/dashboard` directly instead of the landing page.
+
 ### Habits
 
 - **Closed habits hidden from the list** — Habits past their end date drop out of the Habits list and progress count, and live behind a "Show closed (N)" link, shown dimmed with a `Closed · DD/MM` badge (edit/delete only).
