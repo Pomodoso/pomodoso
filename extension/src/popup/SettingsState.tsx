@@ -1552,27 +1552,31 @@ function WorkspaceCalendarSection({ wsId, wsName, wsColor, timezone, defaultExpa
                     Calendars to sync
                   </div>
                   <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    {calendarList.map((cal, i) => (
+                    {calendarList.map((cal, i) => {
+                      const selected = connection.selectedCalendarIds.includes(cal.id);
+                      return (
                       <button
                         key={cal.id}
                         onClick={() => void handleToggleCalendar(cal.id)}
                         style={{
                           width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 12px', background: 'none', border: 'none',
+                          padding: '8px 12px', border: 'none',
+                          background: selected ? 'var(--color-success-bg)' : 'none',
                           borderTop: i === 0 ? 'none' : '1px solid var(--color-border)',
                           cursor: 'pointer', textAlign: 'left',
                         }}
                       >
                         <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: cal.backgroundColor ?? 'var(--color-accent)' }} />
-                        <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text)' }}>
+                        <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text)', fontWeight: selected ? 600 : 400 }}>
                           {cal.summary}
                           {cal.primary && <span style={{ fontSize: 10, color: 'var(--color-text-faint)', marginLeft: 6 }}>primary</span>}
                         </span>
-                        <span style={{ fontSize: 13, color: connection.selectedCalendarIds.includes(cal.id) ? 'var(--color-success)' : 'var(--color-border-strong)' }}>
-                          {connection.selectedCalendarIds.includes(cal.id) ? '✓' : '○'}
+                        <span style={{ fontSize: 13, flexShrink: 0, color: selected ? 'var(--color-success)' : 'var(--color-border-strong)' }}>
+                          {selected ? '✓' : '○'}
                         </span>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 5 }}>
                     Selected calendars sync when you open the extension.
