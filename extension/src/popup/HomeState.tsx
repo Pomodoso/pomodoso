@@ -607,6 +607,7 @@ export function HomeState({
                   )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
                   <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' }); }} />
+                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/support' }); }} />
                   {isSignedIn && (<>
                     <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
                     <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
