@@ -38,8 +38,6 @@ marked.use({ breaks: true });
 
 export type Tab = 'today' | 'habits' | 'tasks' | 'schedule';
 
-type WeekCellKind = 'full' | 'partial' | 'empty';
-
 interface HomeStateProps {
   timerState: TimerState;
   timerSettings: TimerSettings;
@@ -212,6 +210,14 @@ export function HomeState({
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
+  const filterChipStyle = (active: boolean): React.CSSProperties => ({
+    padding: '3px 10px', fontSize: 11, fontWeight: active ? 600 : 400,
+    borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+    border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+    background: active ? 'var(--color-accent-soft)' : 'transparent',
+    color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
+    fontFamily: 'inherit',
+  });
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
@@ -233,6 +239,9 @@ export function HomeState({
   ) ?? [];
   const [tasksSubTab, setTasksSubTab] = useState<'backlog' | 'history'>('backlog');
   const [recurringCollapsed, setRecurringCollapsed] = useState(false);
+  const [backlogSearch, setBacklogSearch] = useState('');
+  const [backlogStatusFilter, setBacklogStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [backlogProjectFilter, setBacklogProjectFilter] = useState<string | null>(null);
   const [habitsSubTab, setHabitsSubTab] = useState<'today' | 'history'>('today');
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitDef | null>(null);
@@ -597,7 +606,8 @@ export function HomeState({
                     <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
                   )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
-                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com' }); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' }); }} />
+                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/support' }); }} />
                   {isSignedIn && (<>
                     <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
                     <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
@@ -1267,26 +1277,94 @@ export function HomeState({
 
             {tasksSubTab === 'backlog' && (
               <>
-                <div style={{ padding: '8px 14px 0' }}>
-                  <SectionHeader label="Backlog" done={0} total={backlog.length} />
-                  {backlog.map((task) => {
-                    const proj = projectById(task.projectId);
-                    return (
-                      <BacklogRow
-                        key={task.id}
-                        task={task}
-                        {...(proj ? { project: proj } : {})}
-                        isInPriorities={priorityIds.has(task.id)}
-                        isInTasks={taskIds.has(task.id)}
-                        prioritiesFull={prioritiesFull}
-                        onAddToPriorities={() => onAddToPriorities(task)}
-                        onAddToTasks={() => onAddToTasks(task)}
-                        onRemove={() => onRemoveFromToday(task.id)}
-                        onSelect={() => onSelectTask(task)}
-                      />
-                    );
-                  })}
-                </div>
+                {(() => {
+                  const tq = backlogSearch.trim().toLowerCase();
+                  const statuses = Array.from(new Set(backlog.map(t => t.status)));
+                  const filtered = backlog.filter(t => {
+                    if (backlogStatusFilter !== 'all' && t.status !== backlogStatusFilter) return false;
+                    if (backlogProjectFilter && t.projectId !== backlogProjectFilter) return false;
+                    if (tq && !t.title.toLowerCase().includes(tq) && !(t.ticketId ?? '').toLowerCase().includes(tq)) return false;
+                    return true;
+                  });
+                  const isFiltered = backlogSearch !== '' || backlogStatusFilter !== 'all' || backlogProjectFilter !== null;
+                  const clearFilters = () => { setBacklogSearch(''); setBacklogStatusFilter('all'); setBacklogProjectFilter(null); };
+                  return (
+                    <>
+                      {backlog.length > 0 && (
+                        <>
+                          {/* Search */}
+                          <div style={{ padding: '10px 14px 6px' }}>
+                            <input
+                              value={backlogSearch}
+                              onChange={e => setBacklogSearch(e.target.value)}
+                              placeholder="Search tasks…"
+                              style={{
+                                width: '100%', boxSizing: 'border-box', padding: '6px 10px',
+                                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--color-text)',
+                                outline: 'none', fontFamily: 'inherit',
+                              }}
+                            />
+                          </div>
+                          {/* Status chips + project select */}
+                          <div style={{ display: 'flex', gap: 5, padding: '0 14px 6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button onClick={() => setBacklogStatusFilter('all')} style={filterChipStyle(backlogStatusFilter === 'all')}>All</button>
+                            {statuses.map(s => (
+                              <button key={s} onClick={() => setBacklogStatusFilter(s)} style={filterChipStyle(backlogStatusFilter === s)}>{STATUS_LABELS[s]}</button>
+                            ))}
+                            {projects.length > 0 && (
+                              <select
+                                value={backlogProjectFilter ?? ''}
+                                onChange={e => setBacklogProjectFilter(e.target.value || null)}
+                                style={{
+                                  padding: '3px 8px', fontSize: 11,
+                                  borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                                  border: `1px solid ${backlogProjectFilter ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                                  background: backlogProjectFilter ? 'var(--color-accent-soft)' : 'transparent',
+                                  color: backlogProjectFilter ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                                  outline: 'none', fontFamily: 'inherit',
+                                }}
+                              >
+                                <option value="">All projects</option>
+                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                            )}
+                            {isFiltered && (
+                              <button onClick={clearFilters} style={{ ...filterChipStyle(false), marginLeft: 'auto', color: 'var(--color-text-faint)', fontSize: 10 }}>
+                                Clear filters
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <div style={{ padding: '8px 14px 0' }}>
+                        <SectionHeader label="Backlog" done={0} total={filtered.length} />
+                        {filtered.map((task) => {
+                          const proj = projectById(task.projectId);
+                          return (
+                            <BacklogRow
+                              key={task.id}
+                              task={task}
+                              {...(proj ? { project: proj } : {})}
+                              isInPriorities={priorityIds.has(task.id)}
+                              isInTasks={taskIds.has(task.id)}
+                              prioritiesFull={prioritiesFull}
+                              onAddToPriorities={() => onAddToPriorities(task)}
+                              onAddToTasks={() => onAddToTasks(task)}
+                              onRemove={() => onRemoveFromToday(task.id)}
+                              onSelect={() => onSelectTask(task)}
+                            />
+                          );
+                        })}
+                        {backlog.length > 0 && filtered.length === 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--color-text-faint)', textAlign: 'center', padding: '12px 0' }}>
+                            No tasks match your filters.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Recurring templates section */}
                 {recurringTemplates.length > 0 && (
@@ -4126,8 +4204,9 @@ function WeekStrip({ habits, weekStart, timezone }: { habits: HabitDef[]; weekSt
       else if (h.kind === 'counter' && (r.count ?? 0) >= (h.goal ?? 1)) completed++;
     }
     const total = habits.length;
-    const kind: WeekCellKind = isFuture ? 'empty' : total === 0 ? 'empty' : completed >= total ? 'full' : completed > 0 ? 'partial' : 'empty';
-    return { date, label: WEEK_DAYS[(weekDates.indexOf(date) + weekStart) % 7]!, completed, total, kind, isToday: date === today, isFuture };
+    // 0 = nothing done, 1 = every habit met. Drives the cell's color intensity.
+    const ratio = isFuture || total === 0 ? 0 : completed / total;
+    return { date, label: WEEK_DAYS[(weekDates.indexOf(date) + weekStart) % 7]!, completed, total, ratio, isToday: date === today, isFuture };
   });
 
   const totalCompletions = cells.reduce((s, c) => s + c.completed, 0);
@@ -4140,9 +4219,17 @@ function WeekStrip({ habits, weekStart, timezone }: { habits: HabitDef[]; weekSt
         <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>{totalCompletions} / {maxCompletions} completions</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-        {cells.map(({ date, label, completed, kind, isToday, isFuture }) => {
-          const isFull = kind === 'full';
-          const isPartial = kind === 'partial';
+        {cells.map(({ date, label, completed, ratio, isToday, isFuture }) => {
+          // Empty cells stay neutral; the more habits met, the stronger the green.
+          // pct scales 20% → 100% so even a single completion reads as a light tint.
+          const pct = Math.round(20 + ratio * 80);
+          const fill = ratio <= 0
+            ? 'var(--color-bg)'
+            : `color-mix(in srgb, var(--color-success) ${pct}%, transparent)`;
+          const border = ratio <= 0 ? 'var(--color-border)' : fill;
+          const textColor = ratio <= 0
+            ? 'var(--color-text-muted)'
+            : ratio >= 0.5 ? '#fff' : 'var(--color-success)';
           return (
             <div key={date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
               <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.3px', textTransform: 'uppercase', color: 'var(--color-text-faint)' }}>
@@ -4150,11 +4237,11 @@ function WeekStrip({ habits, weekStart, timezone }: { habits: HabitDef[]; weekSt
               </span>
               <div style={{
                 width: '100%', aspectRatio: '1', borderRadius: 4,
-                background: isFull ? 'var(--color-success)' : isPartial ? 'var(--color-success-bg)' : 'var(--color-bg)',
-                border: `1px solid ${isFull ? 'var(--color-success)' : isPartial ? 'var(--color-success-bg)' : 'var(--color-border)'}`,
+                background: fill,
+                border: `1px solid ${border}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: 600,
-                color: isFull ? '#fff' : isPartial ? 'var(--color-success)' : 'var(--color-text-muted)',
+                color: textColor,
                 boxShadow: isToday ? '0 0 0 1.5px var(--color-accent)' : 'none',
                 opacity: isFuture ? 0.35 : 1,
               }}>

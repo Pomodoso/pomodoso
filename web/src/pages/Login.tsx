@@ -9,7 +9,8 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const next = searchParams.get('next') ?? '/dashboard';
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  // Allow deep-linking straight to the sign-up form (e.g. ?mode=signup from the extension).
+  const [mode, setMode] = useState<'signin' | 'signup'>(searchParams.get('mode') === 'signup' ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

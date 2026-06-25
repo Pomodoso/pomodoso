@@ -3,8 +3,28 @@
 
 ## v1.2.0 (In progress)
 
+### Calendar
+
+- **Selected calendars are highlighted** — In Settings → Calendar, synced calendars now get a tinted background and bold label (not just a far-right `✓`), so the selection state is obvious even with long calendar names or URLs.
+
+### Extension
+
+- **"Open web app" lands on the dashboard** — The menu's "Open web app" and the footer's "Open app" links now open `/dashboard` directly instead of the landing page.
+- **No "Buy me a coffee" for paid users** — The Ko-fi tip jar in the popup footer is hidden for users on a paid plan (gated on `entitlements.features.sync`).
+- **Fix: recurring task stuck on "Done"** — Marking a recurring task Done in the detail view left the Status visibly stuck on Done even though the task is only completed-for-today and resets to todo. The reset now reaches the open detail (`markRecurringDoneToday` clears the status) and the detail's local status stays in sync with the task.
+- **Search & filters on the Backlog** — The Tasks → Backlog now has a search box (title/ticket) plus status chips and a project filter, mirroring the History view. A "Clear filters" shortcut appears when any filter is active.
+- **Support link** — A new "Support" entry in the popup menu opens `pomodoso.com/support` in a new tab, which auto-launches the Crisp chat (identifying the user when signed in).
+- **Sign-up link goes to sign-up (not sign-in)** — The Account screen's "create account" link pointed at `/login` (the sign-in form). It now deep-links to `/login?mode=signup` and is a prominent "Create a free account" button instead of faint footer text.
+- **Fix: priorities cap counted completed/orphaned tasks** — The global priorities limit counted every id in the priority orders, including completed (done/cancelled) and deleted/orphaned tasks left in the order. That filled the cap and blocked adding new priorities even when fewer than the max were actually shown. The cap now only counts existing, still-open tasks.
+
+### Web
+
+- **`/support` page** — New route that auto-opens the Crisp support chat (and identifies the signed-in user); it's the target for the extension's Support link. Falls back to a `support@pomodoso.com` mailto if the chat can't load.
+- **`?mode=signup` on /login** — The login page now opens directly on the Create-account form when linked with `?mode=signup` (used by the extension's sign-up button).
+
 ### Habits
 
+- **"This week" cells fade by completion** — Each day in the Habits "This week" strip is now shaded by how many habits were met that day (a light green tint for one, deepening to solid green when all are done) instead of a flat partial/full color.
 - **Closed habits hidden from the list** — Habits past their end date drop out of the Habits list and progress count, and live behind a "Show closed (N)" link, shown dimmed with a `Closed · DD/MM` badge (edit/delete only).
 - **History respects end date & schedule** — History no longer marks habits as missed after their end date or on off-schedule weekdays, and now lists every active habit per day (counters at 0 show as missed) so newly created habits appear.
 - **Habits track a creation date** — New `createdAt` on habits (syncs via `habit.extra`; backfilled for existing habits from their first log) so History never fabricates missed days before a habit existed.

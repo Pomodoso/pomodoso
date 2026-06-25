@@ -136,6 +136,9 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [description, setDescription] = useState(task.description ?? '');
   const [ticketId, setTicketId] = useState(task.ticketId ?? '');
   const [status, setStatus] = useState<TaskStatus>(task.status);
+  // Keep the local status in sync with the task — e.g. completing a recurring task
+  // resets it to todo, and the detail must reflect that instead of staying "Done".
+  useEffect(() => { setStatus(task.status); }, [task.status]);
   const [projectId, setProjectId] = useState<string | null>(task.projectId);
   const [noteEntries, setNoteEntries] = useState<NoteEntry[]>(() => {
     if (task.noteEntries && task.noteEntries.length > 0) return task.noteEntries;

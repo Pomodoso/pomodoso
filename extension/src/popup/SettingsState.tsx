@@ -780,10 +780,18 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                 </button>
               )}
 
-              <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', lineHeight: 1.5 }}>
-                No account?{' '}
-                <a href="https://pomodoso.com/login" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>Sign up at pomodoso.com</a>
-              </p>
+              {/* Create account — prominent CTA, deep-links straight to the sign-up form */}
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+                <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>New to Pomodoso?</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+              </div>
+              <button
+                onClick={() => void chrome.tabs.create({ url: 'https://pomodoso.com/login?mode=signup' })}
+                style={{ width: '100%', marginTop: 10, padding: '9px 0', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Create a free account
+              </button>
 
               {/* Clear local data — for after a logout (switching accounts / shared browser) */}
               <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
@@ -1552,27 +1560,31 @@ function WorkspaceCalendarSection({ wsId, wsName, wsColor, timezone, defaultExpa
                     Calendars to sync
                   </div>
                   <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    {calendarList.map((cal, i) => (
-                      <button
-                        key={cal.id}
-                        onClick={() => void handleToggleCalendar(cal.id)}
-                        style={{
-                          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 12px', background: 'none', border: 'none',
-                          borderTop: i === 0 ? 'none' : '1px solid var(--color-border)',
-                          cursor: 'pointer', textAlign: 'left',
-                        }}
-                      >
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: cal.backgroundColor ?? 'var(--color-accent)' }} />
-                        <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text)' }}>
-                          {cal.summary}
-                          {cal.primary && <span style={{ fontSize: 10, color: 'var(--color-text-faint)', marginLeft: 6 }}>primary</span>}
-                        </span>
-                        <span style={{ fontSize: 13, color: connection.selectedCalendarIds.includes(cal.id) ? 'var(--color-success)' : 'var(--color-border-strong)' }}>
-                          {connection.selectedCalendarIds.includes(cal.id) ? '✓' : '○'}
-                        </span>
-                      </button>
-                    ))}
+                    {calendarList.map((cal, i) => {
+                      const selected = connection.selectedCalendarIds.includes(cal.id);
+                      return (
+                        <button
+                          key={cal.id}
+                          onClick={() => void handleToggleCalendar(cal.id)}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 12px', border: 'none',
+                            background: selected ? 'var(--color-success-bg)' : 'none',
+                            borderTop: i === 0 ? 'none' : '1px solid var(--color-border)',
+                            cursor: 'pointer', textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: cal.backgroundColor ?? 'var(--color-accent)' }} />
+                          <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text)', fontWeight: selected ? 600 : 400 }}>
+                            {cal.summary}
+                            {cal.primary && <span style={{ fontSize: 10, color: 'var(--color-text-faint)', marginLeft: 6 }}>primary</span>}
+                          </span>
+                          <span style={{ fontSize: 13, flexShrink: 0, color: selected ? 'var(--color-success)' : 'var(--color-border-strong)' }}>
+                            {selected ? '✓' : '○'}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 5 }}>
                     Selected calendars sync when you open the extension.
