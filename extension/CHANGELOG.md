@@ -11,6 +11,7 @@
 
 - **"Open web app" lands on the dashboard** — The menu's "Open web app" and the footer's "Open app" links now open `/dashboard` directly instead of the landing page.
 - **No "Buy me a coffee" for paid users** — The Ko-fi tip jar in the popup footer is hidden for users on a paid plan (gated on `entitlements.features.sync`).
+- **Fix: recurring task stuck on "Done"** — Marking a recurring task Done in the detail view left the Status visibly stuck on Done even though the task is only completed-for-today and resets to todo. The reset now reaches the open detail (`markRecurringDoneToday` clears the status) and the detail's local status stays in sync with the task.
 
 ### Habits
 

@@ -563,7 +563,9 @@ export function App() {
     const today = localDate(timezone);
     const completedDates = [...new Set([...(allTasks[taskId]?.completedDates ?? []), today])];
     await db.tasks.update(taskId, { completedDates, status: 'todo', updatedAt: now() });
-    setSelectedTask(prev => prev?.id === taskId ? { ...prev, completedDates } : prev);
+    // Reset the open detail too: a recurring task is only "done for today", so its
+    // status goes back to todo (otherwise the detail keeps showing it as Done).
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, completedDates, status: 'todo' } : prev);
     // Remove from all workspace orders so it disappears from Today
     const orders = await db.taskOrders.toArray();
     for (const order of orders) {
