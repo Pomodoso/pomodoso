@@ -14,10 +14,12 @@
 - **Fix: recurring task stuck on "Done"** — Marking a recurring task Done in the detail view left the Status visibly stuck on Done even though the task is only completed-for-today and resets to todo. The reset now reaches the open detail (`markRecurringDoneToday` clears the status) and the detail's local status stays in sync with the task.
 - **Search & filters on the Backlog** — The Tasks → Backlog now has a search box (title/ticket) plus status chips and a project filter, mirroring the History view. A "Clear filters" shortcut appears when any filter is active.
 - **Support link** — A new "Support" entry in the popup menu opens `pomodoso.com/support` in a new tab, which auto-launches the Crisp chat (identifying the user when signed in).
+- **Sign-up link goes to sign-up (not sign-in)** — The Account screen's "create account" link pointed at `/login` (the sign-in form). It now deep-links to `/login?mode=signup` and is a prominent "Create a free account" button instead of faint footer text.
 
 ### Web
 
 - **`/support` page** — New route that auto-opens the Crisp support chat (and identifies the signed-in user); it's the target for the extension's Support link. Falls back to a `support@pomodoso.com` mailto if the chat can't load.
+- **`?mode=signup` on /login** — The login page now opens directly on the Create-account form when linked with `?mode=signup` (used by the extension's sign-up button).
 
 ### Habits
 
