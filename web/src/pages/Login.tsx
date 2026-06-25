@@ -73,7 +73,7 @@ export default function Login() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signUpWithEmail(getSupabase(), email, password);
+        await signUpWithEmail(getSupabase(), email, password, `${window.location.origin}/dashboard`);
         setSignupDone(true);
       } else {
         await signInWithEmail(getSupabase(), email, password);

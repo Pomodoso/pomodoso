@@ -21,6 +21,7 @@
 
 - **`/support` page** — New route that auto-opens the Crisp support chat (and identifies the signed-in user); it's the target for the extension's Support link. Falls back to a `support@pomodoso.com` mailto if the chat can't load.
 - **`?mode=signup` on /login** — The login page now opens directly on the Create-account form when linked with `?mode=signup` (used by the extension's sign-up button).
+- **Signup confirmation link uses the right origin** — `signUpWithEmail` now passes `emailRedirectTo` (`<origin>/dashboard`), so the confirmation email lands on the current environment instead of falling back to the Supabase Site URL (which pointed at `localhost:3000`). NOTE: the redirect URL must be in Supabase Auth → URL Configuration → Redirect URLs, and the "Supabase Auth" sender name/address is a dashboard SMTP setting (configure custom SMTP, e.g. Resend, to brand it).
 
 ### Habits
 

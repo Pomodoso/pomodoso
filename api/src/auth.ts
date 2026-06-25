@@ -61,8 +61,15 @@ export async function signUpWithEmail(
   supabase: SupabaseClient,
   email: string,
   password: string,
+  redirectTo?: string,
 ): Promise<void> {
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    // Where the confirmation email's link lands. Without this, Supabase falls
+    // back to the project's Site URL (e.g. localhost:3000) for every environment.
+    ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+  });
   if (error) throw error;
 }
 
