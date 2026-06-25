@@ -14,6 +14,7 @@
 
 ### Habits
 
+- **"This week" cells fade by completion** — Each day in the Habits "This week" strip is now shaded by how many habits were met that day (a light green tint for one, deepening to solid green when all are done) instead of a flat partial/full color.
 - **Closed habits hidden from the list** — Habits past their end date drop out of the Habits list and progress count, and live behind a "Show closed (N)" link, shown dimmed with a `Closed · DD/MM` badge (edit/delete only).
 - **History respects end date & schedule** — History no longer marks habits as missed after their end date or on off-schedule weekdays, and now lists every active habit per day (counters at 0 show as missed) so newly created habits appear.
 - **Habits track a creation date** — New `createdAt` on habits (syncs via `habit.extra`; backfilled for existing habits from their first log) so History never fabricates missed days before a habit existed.
