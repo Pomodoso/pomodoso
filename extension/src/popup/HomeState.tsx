@@ -210,6 +210,14 @@ export function HomeState({
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
+  const filterChipStyle = (active: boolean): React.CSSProperties => ({
+    padding: '3px 10px', fontSize: 11, fontWeight: active ? 600 : 400,
+    borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+    border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+    background: active ? 'var(--color-accent-soft)' : 'transparent',
+    color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
+    fontFamily: 'inherit',
+  });
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
@@ -231,6 +239,9 @@ export function HomeState({
   ) ?? [];
   const [tasksSubTab, setTasksSubTab] = useState<'backlog' | 'history'>('backlog');
   const [recurringCollapsed, setRecurringCollapsed] = useState(false);
+  const [backlogSearch, setBacklogSearch] = useState('');
+  const [backlogStatusFilter, setBacklogStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [backlogProjectFilter, setBacklogProjectFilter] = useState<string | null>(null);
   const [habitsSubTab, setHabitsSubTab] = useState<'today' | 'history'>('today');
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitDef | null>(null);
@@ -1265,26 +1276,94 @@ export function HomeState({
 
             {tasksSubTab === 'backlog' && (
               <>
-                <div style={{ padding: '8px 14px 0' }}>
-                  <SectionHeader label="Backlog" done={0} total={backlog.length} />
-                  {backlog.map((task) => {
-                    const proj = projectById(task.projectId);
-                    return (
-                      <BacklogRow
-                        key={task.id}
-                        task={task}
-                        {...(proj ? { project: proj } : {})}
-                        isInPriorities={priorityIds.has(task.id)}
-                        isInTasks={taskIds.has(task.id)}
-                        prioritiesFull={prioritiesFull}
-                        onAddToPriorities={() => onAddToPriorities(task)}
-                        onAddToTasks={() => onAddToTasks(task)}
-                        onRemove={() => onRemoveFromToday(task.id)}
-                        onSelect={() => onSelectTask(task)}
-                      />
-                    );
-                  })}
-                </div>
+                {(() => {
+                  const tq = backlogSearch.trim().toLowerCase();
+                  const statuses = Array.from(new Set(backlog.map(t => t.status)));
+                  const filtered = backlog.filter(t => {
+                    if (backlogStatusFilter !== 'all' && t.status !== backlogStatusFilter) return false;
+                    if (backlogProjectFilter && t.projectId !== backlogProjectFilter) return false;
+                    if (tq && !t.title.toLowerCase().includes(tq) && !(t.ticketId ?? '').toLowerCase().includes(tq)) return false;
+                    return true;
+                  });
+                  const isFiltered = backlogSearch !== '' || backlogStatusFilter !== 'all' || backlogProjectFilter !== null;
+                  const clearFilters = () => { setBacklogSearch(''); setBacklogStatusFilter('all'); setBacklogProjectFilter(null); };
+                  return (
+                    <>
+                      {backlog.length > 0 && (
+                        <>
+                          {/* Search */}
+                          <div style={{ padding: '10px 14px 6px' }}>
+                            <input
+                              value={backlogSearch}
+                              onChange={e => setBacklogSearch(e.target.value)}
+                              placeholder="Search tasks…"
+                              style={{
+                                width: '100%', boxSizing: 'border-box', padding: '6px 10px',
+                                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--color-text)',
+                                outline: 'none', fontFamily: 'inherit',
+                              }}
+                            />
+                          </div>
+                          {/* Status chips + project select */}
+                          <div style={{ display: 'flex', gap: 5, padding: '0 14px 6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button onClick={() => setBacklogStatusFilter('all')} style={filterChipStyle(backlogStatusFilter === 'all')}>All</button>
+                            {statuses.map(s => (
+                              <button key={s} onClick={() => setBacklogStatusFilter(s)} style={filterChipStyle(backlogStatusFilter === s)}>{STATUS_LABELS[s]}</button>
+                            ))}
+                            {projects.length > 0 && (
+                              <select
+                                value={backlogProjectFilter ?? ''}
+                                onChange={e => setBacklogProjectFilter(e.target.value || null)}
+                                style={{
+                                  padding: '3px 8px', fontSize: 11,
+                                  borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                                  border: `1px solid ${backlogProjectFilter ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                                  background: backlogProjectFilter ? 'var(--color-accent-soft)' : 'transparent',
+                                  color: backlogProjectFilter ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                                  outline: 'none', fontFamily: 'inherit',
+                                }}
+                              >
+                                <option value="">All projects</option>
+                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                            )}
+                            {isFiltered && (
+                              <button onClick={clearFilters} style={{ ...filterChipStyle(false), marginLeft: 'auto', color: 'var(--color-text-faint)', fontSize: 10 }}>
+                                Clear filters
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <div style={{ padding: '8px 14px 0' }}>
+                        <SectionHeader label="Backlog" done={0} total={filtered.length} />
+                        {filtered.map((task) => {
+                          const proj = projectById(task.projectId);
+                          return (
+                            <BacklogRow
+                              key={task.id}
+                              task={task}
+                              {...(proj ? { project: proj } : {})}
+                              isInPriorities={priorityIds.has(task.id)}
+                              isInTasks={taskIds.has(task.id)}
+                              prioritiesFull={prioritiesFull}
+                              onAddToPriorities={() => onAddToPriorities(task)}
+                              onAddToTasks={() => onAddToTasks(task)}
+                              onRemove={() => onRemoveFromToday(task.id)}
+                              onSelect={() => onSelectTask(task)}
+                            />
+                          );
+                        })}
+                        {backlog.length > 0 && filtered.length === 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--color-text-faint)', textAlign: 'center', padding: '12px 0' }}>
+                            No tasks match your filters.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Recurring templates section */}
                 {recurringTemplates.length > 0 && (
