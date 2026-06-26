@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
@@ -455,10 +455,13 @@ export function App() {
   // Whether the current page is already covered by an existing detection rule
   // (any active rule, including native presets like Linear/GitHub). When true we
   // don't offer to add a rule for it.
-  const urlMatchesRule = /^https?:/i.test(tabUrl) && rules.some(r => {
-    if (!r.active || r.deletedAt) return false;
-    try { return new RegExp(r.urlPattern, 'i').test(tabUrl); } catch { return false; }
-  });
+  const urlMatchesRule = useMemo(
+    () => /^https?:/i.test(tabUrl) && rules.some(r => {
+      if (!r.active || r.deletedAt) return false;
+      try { return new RegExp(r.urlPattern, 'i').test(tabUrl); } catch { return false; }
+    }),
+    [tabUrl, rules],
+  );
 
   const detectedExistingTasks = activeTicket
     ? Object.values(allTasks).filter(t => {

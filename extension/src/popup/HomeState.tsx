@@ -215,10 +215,14 @@ function detectionPatternsForUrl(rawUrl: string | undefined): { host: string; do
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
     const host = u.hostname.replace(/^www\./, '');
     const firstSeg = u.pathname.split('/').filter(Boolean)[0];
+    // Anchor the host after `//` and allow an optional subdomain, so a rule for
+    // example.com matches www/app.example.com but NOT notexample.com. The
+    // subdomain group is non-capturing so it doesn't leak into the ticket id.
+    const hostRe = `\\/\\/(?:[^/]+\\.)?${escapeRegex(host)}`;
     return {
       host,
-      domain: escapeRegex(host),
-      domainPath: firstSeg ? `${escapeRegex(host)}\\/${escapeRegex(firstSeg)}` : null,
+      domain: `${hostRe}(?:[\\/:?#]|$)`,
+      domainPath: firstSeg ? `${hostRe}\\/${escapeRegex(firstSeg)}` : null,
       pathLabel: firstSeg ? `${host}/${firstSeg}` : null,
     };
   } catch {
@@ -1614,6 +1618,11 @@ function DetectionRuleModal({ patterns, onAdd, onClose }: {
   onAdd: (name: string, urlPattern: string) => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const optBtn: React.CSSProperties = {
     padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
     background: 'var(--color-surface)', border: '1px solid var(--color-border)',
