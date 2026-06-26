@@ -15,12 +15,14 @@
 - **Search & filters on the Backlog** — The Tasks → Backlog now has a search box (title/ticket) plus status chips and a project filter, mirroring the History view. A "Clear filters" shortcut appears when any filter is active.
 - **Support link** — A new "Support" entry in the popup menu opens `pomodoso.com/support` in a new tab, which auto-launches the Crisp chat (identifying the user when signed in).
 - **Sign-up link goes to sign-up (not sign-in)** — The Account screen's "create account" link pointed at `/login` (the sign-in form). It now deep-links to `/login?mode=signup` and is a prominent "Create a free account" button instead of faint footer text.
+- **One-click detection rule for the current page** — A `◎` button next to the header `+` (shown only on a real http(s) page that **no existing rule already matches**) opens a small picker offering two ready-made patterns — **Whole site** (`example.com`) or **This section** (`example.com/<first-path>`) — and adding either creates a custom detection rule in one click, no regex typing.
 - **Fix: priorities cap counted completed/orphaned tasks** — The global priorities limit counted every id in the priority orders, including completed (done/cancelled) and deleted/orphaned tasks left in the order. That filled the cap and blocked adding new priorities even when fewer than the max were actually shown. The cap now only counts existing, still-open tasks.
 
 ### Web
 
 - **`/support` page** — New route that auto-opens the Crisp support chat (and identifies the signed-in user); it's the target for the extension's Support link. Falls back to a `support@pomodoso.com` mailto if the chat can't load.
 - **`?mode=signup` on /login** — The login page now opens directly on the Create-account form when linked with `?mode=signup` (used by the extension's sign-up button).
+- **Signup confirmation link uses the right origin** — `signUpWithEmail` now passes `emailRedirectTo` (`<origin>/dashboard`), so the confirmation email lands on the current environment instead of falling back to the Supabase Site URL (which pointed at `localhost:3000`). NOTE: the redirect URL must be in Supabase Auth → URL Configuration → Redirect URLs, and the "Supabase Auth" sender name/address is a dashboard SMTP setting (configure custom SMTP, e.g. Resend, to brand it).
 
 ### Habits
 
