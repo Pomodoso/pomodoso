@@ -222,7 +222,7 @@ function detectionPatternsForUrl(rawUrl: string | undefined): { host: string; do
     return {
       host,
       domain: `${hostRe}(?:[\\/:?#]|$)`,
-      domainPath: firstSeg ? `${hostRe}\\/${escapeRegex(firstSeg)}` : null,
+      domainPath: firstSeg ? `${hostRe}\\/${escapeRegex(firstSeg)}(?:[\\/:?#]|$)` : null,
       pathLabel: firstSeg ? `${host}/${firstSeg}` : null,
     };
   } catch {
