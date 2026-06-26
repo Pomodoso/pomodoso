@@ -452,6 +452,14 @@ export function App() {
     : null;
   const activeTicket = detectedTicket ?? ruleTicket;
 
+  // Whether the current page is already covered by an existing detection rule
+  // (any active rule, including native presets like Linear/GitHub). When true we
+  // don't offer to add a rule for it.
+  const urlMatchesRule = /^https?:/i.test(tabUrl) && rules.some(r => {
+    if (!r.active || r.deletedAt) return false;
+    try { return new RegExp(r.urlPattern, 'i').test(tabUrl); } catch { return false; }
+  });
+
   const detectedExistingTasks = activeTicket
     ? Object.values(allTasks).filter(t => {
         if (t.deletedAt) return false;
@@ -1104,6 +1112,9 @@ export function App() {
         onLinkToTask={(ticket) => setLinkingTicket(ticket)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenCalendarSettings={() => { setSettingsInitialPage('calendar'); setShowSettings(true); }}
+        currentUrl={tabUrl}
+        urlMatchesRule={urlMatchesRule}
+        onAddDetectionRule={(name, urlPattern) => void addRule({ id: crypto.randomUUID(), name, urlPattern, active: true, kind: 'custom', updatedAt: now() })}
         onOpenAccount={() => { setSettingsInitialPage('account'); setShowSettings(true); }}
         onSignOut={() => void auth.signOut()}
         onSyncNow={canSync ? syncNow : undefined}

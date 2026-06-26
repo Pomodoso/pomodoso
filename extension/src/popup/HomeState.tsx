@@ -73,6 +73,9 @@ interface HomeStateProps {
   onLinkToTask: (ticket: TicketRef) => void;
   onOpenSettings: () => void;
   onOpenCalendarSettings: () => void;
+  currentUrl?: string;
+  urlMatchesRule?: boolean;
+  onAddDetectionRule?: (name: string, urlPattern: string) => void;
   onOpenAccount: () => void;
   onSignOut: () => void;
   onSyncNow?: () => void;
@@ -200,12 +203,36 @@ function RemoteTimerBanner({ beacon }: { beacon: RemoteBeacon }) {
   );
 }
 
+// Build detection-rule regex options from the current tab URL. Returns null for
+// non-http(s) pages (chrome://, the extension itself, blank tabs).
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function detectionPatternsForUrl(rawUrl: string | undefined): { host: string; domain: string; domainPath: string | null; pathLabel: string | null } | null {
+  if (!rawUrl) return null;
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const host = u.hostname.replace(/^www\./, '');
+    const firstSeg = u.pathname.split('/').filter(Boolean)[0];
+    return {
+      host,
+      domain: escapeRegex(host),
+      domainPath: firstSeg ? `${escapeRegex(host)}\\/${escapeRegex(firstSeg)}` : null,
+      pathLabel: firstSeg ? `${host}/${firstSeg}` : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function HomeState({
   timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, recurringTemplates, projects, prioritiesFull,
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
+  currentUrl, urlMatchesRule, onAddDetectionRule,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
@@ -221,7 +248,9 @@ export function HomeState({
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showModePicker, setShowModePicker] = useState<SelectedTask | null>(null);
+  const [showDetectionModal, setShowDetectionModal] = useState(false);
   const [linkedDismissed, setLinkedDismissed] = useState(false);
+  const detectionPatterns = detectionPatternsForUrl(currentUrl);
   const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
@@ -534,15 +563,31 @@ export function HomeState({
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--color-text-faint)', userSelect: 'none' }}>
           POMODOSO
         </span>
-        <div style={{ display: 'flex', gap: 2 }}>
-          <IconButton title="Add task" onClick={() => setShowQuickAdd(true)}>+</IconButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {detectionPatterns && onAddDetectionRule && !urlMatchesRule && (
+            <IconButton title={`Detect tasks on ${detectionPatterns.host}`} onClick={() => setShowDetectionModal(true)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="7" />
+                <line x1="12" y1="1" x2="12" y2="5" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="1" y1="12" x2="5" y2="12" />
+                <line x1="19" y1="12" x2="23" y2="12" />
+              </svg>
+            </IconButton>
+          )}
+          <IconButton title="Add task" onClick={() => setShowQuickAdd(true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </IconButton>
           {/* ── Header menu ── */}
           <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setShowMenu(v => !v)}
               title="Menu"
               style={{
-                width: 28, height: 28, borderRadius: 'var(--radius-sm)',
+                width: 32, height: 32, borderRadius: 'var(--radius-sm)',
                 border: 'none', cursor: 'pointer',
                 background: showMenu ? 'var(--color-surface)' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
@@ -644,6 +689,14 @@ export function HomeState({
             setShowModePicker(null);
           }}
           onClose={() => setShowModePicker(null)}
+        />
+      )}
+
+      {showDetectionModal && detectionPatterns && onAddDetectionRule && (
+        <DetectionRuleModal
+          patterns={detectionPatterns}
+          onAdd={(name, pattern) => { onAddDetectionRule(name, pattern); setShowDetectionModal(false); }}
+          onClose={() => setShowDetectionModal(false)}
         />
       )}
 
@@ -1548,6 +1601,53 @@ function ModePickerModal({ task, timerSettings, onStart, onClose }: {
           >
             ⏱ Log time only
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// One-click "create a detection rule for the current page". Offers a domain
+// pattern and (when the URL has a path) a narrower domain+path pattern.
+function DetectionRuleModal({ patterns, onAdd, onClose }: {
+  patterns: { host: string; domain: string; domainPath: string | null; pathLabel: string | null };
+  onAdd: (name: string, urlPattern: string) => void;
+  onClose: () => void;
+}) {
+  const optBtn: React.CSSProperties = {
+    padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+    color: 'var(--color-text)', textAlign: 'left', fontFamily: 'inherit',
+    display: 'flex', flexDirection: 'column', gap: 2,
+  };
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,0.35)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div style={{
+        background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)', padding: '16px 14px', width: 256,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+      }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--color-text)' }}>
+          Detect tasks on this site
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+          Add a rule so pages here can be turned into tasks. Pick how broad it should match.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button onClick={() => onAdd(patterns.host, patterns.domain)} style={{ ...optBtn, borderColor: 'var(--color-accent)' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-accent)' }}>Whole site</span>
+            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>{patterns.host}</span>
+          </button>
+          {patterns.domainPath && patterns.pathLabel && (
+            <button onClick={() => onAdd(patterns.pathLabel!, patterns.domainPath!)} style={optBtn}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>This section</span>
+              <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>{patterns.pathLabel}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
