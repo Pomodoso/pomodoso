@@ -1,7 +1,9 @@
 # Changelog
 
 
-## v1.2.0 (In progress)
+## v1.3.0 (In progress)
+
+## v1.2.0
 
 ### Calendar
 
@@ -17,6 +19,8 @@
 - **Sign-up link goes to sign-up (not sign-in)** — The Account screen's "create account" link pointed at `/login` (the sign-in form). It now deep-links to `/login?mode=signup` and is a prominent "Create a free account" button instead of faint footer text.
 - **One-click detection rule for the current page** — A `◎` button next to the header `+` (shown only on a real http(s) page that **no existing rule already matches**) opens a small picker offering two ready-made patterns — **Whole site** (`example.com`) or **This section** (`example.com/<first-path>`) — and adding either creates a custom detection rule in one click, no regex typing.
 - **Fix: priorities cap counted completed/orphaned tasks** — The global priorities limit counted every id in the priority orders, including completed (done/cancelled) and deleted/orphaned tasks left in the order. That filled the cap and blocked adding new priorities even when fewer than the max were actually shown. The cap now only counts existing, still-open tasks.
+- **Removed Microsoft sign-in** — Dropped the "Continue with Microsoft" (Azure) option from the extension and web login; Google + email remain. Keeps auth setup simple (no Azure app registration to maintain).
+- **Fix: periodic logout (refresh-token race)** — The popup and service worker each ran their own Supabase auto-refresh timer; refreshing the same account from two contexts rotated the refresh token against each other and tripped Supabase's reuse detection, signing the user out every so often. The extension now disables background auto-refresh and lets only the service worker refresh explicitly (on its periodic alarm); `ensureFreshSession` also adopts the freshest stored session before refreshing and recovers from a concurrent-rotation error instead of logging out.
 
 ### Web
 

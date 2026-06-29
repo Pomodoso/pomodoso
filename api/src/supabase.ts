@@ -15,6 +15,11 @@ export interface SupabaseAuthStorage {
 export interface SupabaseClientOptions {
   storage?: SupabaseAuthStorage;
   storageKey?: string;
+  /** Defaults to true. The extension disables it so a single context (the service
+   *  worker) refreshes explicitly — two GoTrue clients auto-refreshing the same
+   *  account rotate the refresh token against each other and trip Supabase's reuse
+   *  detection, which signs the user out. */
+  autoRefreshToken?: boolean;
 }
 
 export function getSupabaseClient(
@@ -26,7 +31,7 @@ export function getSupabaseClient(
     _client = createClient(url, anonKey, {
       auth: {
         persistSession: true,
-        autoRefreshToken: true,
+        autoRefreshToken: opts.autoRefreshToken ?? true,
         ...(opts.storage ? { storage: opts.storage } : {}),
         ...(opts.storageKey ? { storageKey: opts.storageKey } : {}),
       },

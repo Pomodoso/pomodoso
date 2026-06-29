@@ -502,7 +502,7 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<'google' | null>(null);
   const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -580,15 +580,11 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
     }
   };
 
-  const handleOAuth = async (provider: 'google' | 'microsoft') => {
+  const handleOAuth = async (provider: 'google') => {
     setError('');
     setOauthLoading(provider);
     try {
-      if (provider === 'google') {
-        await auth.signInWithGoogle();
-      } else {
-        await auth.signInWithMicrosoft();
-      }
+      await auth.signInWithGoogle();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign in failed');
     } finally {
@@ -671,19 +667,6 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                     <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
                   </svg>
                   {oauthLoading === 'google' ? 'Signing in…' : 'Continue with Google'}
-                </button>
-                <button
-                  onClick={() => void handleOAuth('microsoft')}
-                  disabled={oauthLoading !== null || loading}
-                  style={{ ...btnBase, opacity: oauthLoading === 'microsoft' ? 0.7 : 1 }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 21 21" fill="none">
-                    <rect x="0" y="0" width="10" height="10" fill="#F25022"/>
-                    <rect x="11" y="0" width="10" height="10" fill="#7FBA00"/>
-                    <rect x="0" y="11" width="10" height="10" fill="#00A4EF"/>
-                    <rect x="11" y="11" width="10" height="10" fill="#FFB900"/>
-                  </svg>
-                  {oauthLoading === 'microsoft' ? 'Signing in…' : 'Continue with Microsoft'}
                 </button>
               </div>
 

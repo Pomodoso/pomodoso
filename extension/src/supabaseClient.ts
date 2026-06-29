@@ -43,6 +43,12 @@ export function getExtensionSupabase(): SupabaseClient {
   const client = getSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: chromeStorageAdapter,
     storageKey: STORAGE_KEY,
+    // No background auto-refresh: the popup and the service worker are separate
+    // contexts, and two GoTrue timers refreshing the same account rotate the
+    // refresh token against each other → Supabase reuse detection signs the user
+    // out "every X time". Instead the service worker refreshes explicitly on its
+    // periodic alarm via ensureFreshSession(), so only one context ever rotates.
+    autoRefreshToken: false,
   });
   // Register once per context: every refresh/sign-in/sign-out is mirrored into
   // IndexedDB, where the sync engine and popup read the token.
@@ -67,20 +73,26 @@ export async function mirrorSession(session: Session | null): Promise<void> {
  *
  *  Falls back to the IndexedDB session for users upgrading from the old
  *  localStorage-only client, seeding the chrome.storage adapter on the way. */
+async function storedSession(): Promise<Session | null> {
+  const s = (await db.settings.get(SESSION_KEY))?.value as Session | undefined;
+  return s?.access_token && s?.refresh_token ? s : null;
+}
+
 export async function ensureFreshSession(): Promise<Session | null> {
   if (!isAuthConfigured()) return null;
   const supabase = getExtensionSupabase();
 
+  // Adopt the freshest stored session first. Another context (or a previous
+  // service-worker lifetime) may have already rotated the refresh token; using a
+  // stale in-memory one would trip reuse detection and sign the user out.
   let session = (await supabase.auth.getSession()).data.session;
-  if (!session) {
-    const stored = (await db.settings.get(SESSION_KEY))?.value as Session | undefined;
-    if (stored?.access_token && stored?.refresh_token) {
-      const { data } = await supabase.auth.setSession({
-        access_token: stored.access_token,
-        refresh_token: stored.refresh_token,
-      });
-      session = data.session;
-    }
+  const stored = await storedSession();
+  if (stored && (!session || stored.refresh_token !== session.refresh_token)) {
+    const { data } = await supabase.auth.setSession({
+      access_token: stored.access_token,
+      refresh_token: stored.refresh_token,
+    });
+    session = data.session ?? session;
   }
   if (!session) return null;
 
@@ -90,6 +102,17 @@ export async function ensureFreshSession(): Promise<Session | null> {
     if (!error && data.session) {
       await mirrorSession(data.session);
       return data.session;
+    }
+    // Refresh failed — most likely a concurrent refresh already rotated the
+    // token. If a newer valid session landed in storage, adopt it instead of
+    // dropping the user to the login screen.
+    const latest = await storedSession();
+    if (latest && latest.refresh_token !== session.refresh_token) {
+      const { data: d2 } = await supabase.auth.setSession({
+        access_token: latest.access_token,
+        refresh_token: latest.refresh_token,
+      });
+      if (d2.session) return d2.session;
     }
   }
   return session;

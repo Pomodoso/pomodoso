@@ -62,7 +62,7 @@ export default function Login() {
     );
   }
 
-  const handleOAuth = async (provider: 'google' | 'azure') => {
+  const handleOAuth = async (provider: 'google') => {
     setError('');
     await signInWithProvider(getSupabase(), provider, `${window.location.origin}/dashboard`);
   };
@@ -121,18 +121,6 @@ export default function Login() {
               <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
             </svg>
             <span>Continue with Google</span>
-          </button>
-          <button
-            onClick={() => void handleOAuth('azure')}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-neutral-700 text-sm font-medium hover:bg-neutral-800 transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
-              <rect x="0" y="0" width="10" height="10" fill="#F25022"/>
-              <rect x="11" y="0" width="10" height="10" fill="#7FBA00"/>
-              <rect x="0" y="11" width="10" height="10" fill="#00A4EF"/>
-              <rect x="11" y="11" width="10" height="10" fill="#FFB900"/>
-            </svg>
-            <span>Continue with Microsoft</span>
           </button>
         </div>
 

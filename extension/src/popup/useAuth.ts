@@ -20,7 +20,6 @@ export interface AuthState {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithMicrosoft: () => Promise<void>;
   requestEmailCode: (email: string) => Promise<void>;
   verifyEmailCode: (email: string, code: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -29,7 +28,7 @@ export interface AuthState {
 }
 
 async function oauthFlow(
-  provider: 'google' | 'azure',
+  provider: 'google',
   persistSession: (s: Session) => Promise<void>,
   setSession: (s: Session) => void,
 ) {
@@ -168,11 +167,6 @@ export function useAuth(): AuthState {
     await oauthFlow('google', persistSession, setSession);
   }, [isConfigured, persistSession]);
 
-  const signInWithMicrosoft = useCallback(async () => {
-    if (!isConfigured) throw new Error('Auth not configured');
-    await oauthFlow('azure', persistSession, setSession);
-  }, [isConfigured, persistSession]);
-
   // Passwordless: email a one-time code, then verify it. (A magic *link* can't
   // return the session to the popup, so the extension uses the OTP code.)
   const requestEmailCode = useCallback(async (email: string) => {
@@ -206,5 +200,5 @@ export function useAuth(): AuthState {
     await db.settings.delete(ENTITLEMENTS_KEY);
   }, [isConfigured]);
 
-  return { session, entitlements, loading, signIn, signInWithGoogle, signInWithMicrosoft, requestEmailCode, verifyEmailCode, resetPassword, signOut, isConfigured };
+  return { session, entitlements, loading, signIn, signInWithGoogle, requestEmailCode, verifyEmailCode, resetPassword, signOut, isConfigured };
 }
