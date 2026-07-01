@@ -17,6 +17,7 @@ interface TaskItem {
 
 interface RecurrenceRule {
   freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number;
   weekdays?: number[];
   monthDay?: number;
   yearMonth?: number;
@@ -43,19 +44,25 @@ function ordinal(n: number): string {
 
 // Mirrors the extension's formatRecurrenceLabel so the schedule reads the same.
 function formatRecurrence(rule: RecurrenceRule): string {
+  const n = Math.max(1, Math.floor(rule.interval ?? 1));
   const time = rule.time ? ` at ${rule.time}` : ' · All day';
   switch (rule.freq) {
     case 'daily':
-      return `Every day${time}`;
+      return (n > 1 ? `Every ${n} days` : 'Every day') + time;
     case 'weekly': {
       const days = (rule.weekdays ?? []).map(d => DAY_NAMES[d] ?? '').filter(Boolean).join(', ');
+      if (n > 1) return `Every ${n} weeks${days ? ' on ' + days : ''}${time}`;
       return `Every ${days || 'week'}${time}`;
     }
     case 'monthly':
-      return `Every ${ordinal(rule.monthDay ?? 1)} of the month${time}`;
+      return (n > 1
+        ? `Every ${n} months on the ${ordinal(rule.monthDay ?? 1)}`
+        : `Every ${ordinal(rule.monthDay ?? 1)} of the month`) + time;
     case 'yearly': {
       const month = MONTH_NAMES[(rule.yearMonth ?? 1) - 1] ?? '';
-      return `Every ${month} ${rule.yearDay ?? 1}${time}`;
+      return (n > 1
+        ? `Every ${n} years on ${month} ${rule.yearDay ?? 1}`
+        : `Every ${month} ${rule.yearDay ?? 1}`) + time;
     }
   }
 }

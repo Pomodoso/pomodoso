@@ -165,6 +165,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const today = localDate(timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule | undefined>(task.recurrence);
   const [ruleFreq, setRuleFreq] = useState<RecurrenceFreq>(task.recurrence?.freq ?? 'weekly');
+  const [ruleInterval, setRuleInterval] = useState(task.recurrence?.interval ?? 1);
   const [ruleWeekdays, setRuleWeekdays] = useState<number[]>(task.recurrence?.weekdays ?? [new Date().getDay()]);
   const [ruleMonthDay, setRuleMonthDay] = useState(task.recurrence?.monthDay ?? new Date().getDate());
   const [ruleYearMonth, setRuleYearMonth] = useState(task.recurrence?.yearMonth ?? new Date().getMonth() + 1);
@@ -242,6 +243,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const handleSaveRecurrence = () => {
     const rule: RecurrenceRule = {
       freq: ruleFreq,
+      ...(ruleInterval > 1 && { interval: ruleInterval }),
       ...(ruleFreq === 'weekly' && { weekdays: ruleWeekdays }),
       ...(ruleFreq === 'monthly' && { monthDay: ruleMonthDay }),
       ...(ruleFreq === 'yearly' && { yearMonth: ruleYearMonth, yearDay: ruleYearDay }),
@@ -440,6 +442,16 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
                         textTransform: 'capitalize',
                       }}>{f}</button>
                     ))}
+                  </div>
+                  {/* Interval — repeat every N units */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-faint)' }}>Every</span>
+                    <input type="number" min={1} max={99} value={ruleInterval}
+                      onChange={e => setRuleInterval(Math.max(1, Math.min(99, parseInt(e.target.value) || 1)))}
+                      style={{ width: 48, ...numInputStyle }} />
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                      {({ daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' } as const)[ruleFreq]}{ruleInterval > 1 ? 's' : ''}
+                    </span>
                   </div>
                   {/* Day selector */}
                   {ruleFreq === 'weekly' && (

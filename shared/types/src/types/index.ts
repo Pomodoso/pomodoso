@@ -186,6 +186,7 @@ export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface RecurrenceRule {
   freq: RecurrenceFreq;
+  interval?: number;        // repeat every N units (default 1); e.g. 2 = biweekly
   weekdays?: number[];      // [0=Sun..6=Sat], only for freq='weekly'
   monthDay?: number;        // 1-31, only for freq='monthly'
   yearMonth?: number;       // 1-12, only for freq='yearly'
