@@ -24,6 +24,8 @@
 
 ### Web
 
+- **New Tasks page** — A "Tasks" entry in the sidebar (`/dashboard/tasks`) shows the workspace's **Recurring** tasks (with their schedule) and **Backlog**, read-only. **Done** tasks live behind a "Show done" toggle that fetches them from the backend on demand (not on page load). New `GET /tasks` backend endpoint (reuses the existing task/order queries; returns `backlog`/`recurring`/`done`).
+- **Recurring tasks on the dashboard** — Today's tasks now show recurring tasks (marked with a ↺ icon) grouped at the end behind a divider, and — crucially — recurring tasks **completed today** now appear there too. Before, completing a recurring task removed it from the Today order and it vanished from the web entirely; the `/today` API now surfaces them via `extra.completedDates` with `recurring`/`done_today` flags.
 - **`/support` page** — New route that auto-opens the Crisp support chat (and identifies the signed-in user); it's the target for the extension's Support link. Falls back to a `support@pomodoso.com` mailto if the chat can't load.
 - **`?mode=signup` on /login** — The login page now opens directly on the Create-account form when linked with `?mode=signup` (used by the extension's sign-up button).
 - **Signup confirmation link uses the right origin** — `signUpWithEmail` now passes `emailRedirectTo` (`<origin>/dashboard`), so the confirmation email lands on the current environment instead of falling back to the Supabase Site URL (which pointed at `localhost:3000`). NOTE: the redirect URL must be in Supabase Auth → URL Configuration → Redirect URLs, and the "Supabase Auth" sender name/address is a dashboard SMTP setting (configure custom SMTP, e.g. Resend, to brand it).

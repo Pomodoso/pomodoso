@@ -18,6 +18,8 @@ interface TodayTask {
   workspace_color: string;
   ticket_id: string | null;
   position: number;
+  recurring: boolean;
+  done_today: boolean;
 }
 
 interface TodayMeeting {
@@ -237,7 +239,9 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
       <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
         {task.status === 'done'
           ? <i className="ti ti-check" style={{ fontSize: 12 }} />
-          : task.is_priority ? index + 1 : <i className="ti ti-point" style={{ fontSize: 10 }} />}
+          : task.recurring
+            ? <i className="ti ti-repeat" style={{ fontSize: 11 }} />
+            : task.is_priority ? index + 1 : <i className="ti ti-point" style={{ fontSize: 10 }} />}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -245,6 +249,7 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
           textDecoration: task.status === 'done' ? 'line-through' : 'none',
           color: task.status === 'done' ? 'var(--text-tert)' : 'var(--text)',
         }}>
+          {task.recurring && <i className="ti ti-repeat" title="Recurring" style={{ fontSize: 11, color: 'var(--accent)', marginRight: 5 }} />}
           {task.ticket_id && <span className="pomo-ticket-pill" style={{ marginRight: 6 }}>{task.ticket_id}</span>}
           {task.title}
         </div>
@@ -267,6 +272,13 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
 function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: TodayTask[]; tasks: TodayTask[]; showWorkspace: boolean }) {
   const allTasks = [...priorities, ...tasks];
   const doneCount = allTasks.filter(t => t.status === 'done').length;
+  // Recurring tasks are grouped at the end (done ones sink to the bottom of the
+  // group); regular priorities/tasks keep their sections above.
+  const regularPriorities = priorities.filter(t => !t.recurring);
+  const regularTasks = tasks.filter(t => !t.recurring);
+  const recurringTasks = allTasks
+    .filter(t => t.recurring)
+    .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done'));
 
   if (allTasks.length === 0) {
     return (
@@ -291,13 +303,19 @@ function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: Toda
         )}
       </div>
       <div className="pomo-priority-list">
-        {priorities.map((task, i) => (
+        {regularPriorities.map((task, i) => (
           <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
         ))}
-        {priorities.length > 0 && tasks.length > 0 && (
+        {regularPriorities.length > 0 && regularTasks.length > 0 && (
           <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
         )}
-        {tasks.map((task, i) => (
+        {regularTasks.map((task, i) => (
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
+        ))}
+        {recurringTasks.length > 0 && (regularPriorities.length > 0 || regularTasks.length > 0) && (
+          <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
+        )}
+        {recurringTasks.map((task, i) => (
           <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
         ))}
       </div>

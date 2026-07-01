@@ -117,6 +117,10 @@ async fn main() -> anyhow::Result<()> {
             get(routes::today::get_today).route_layer(auth.clone()),
         )
         .route(
+            "/tasks",
+            get(routes::today::get_tasks).route_layer(auth.clone()),
+        )
+        .route(
             "/billing/checkout",
             post(routes::billing::create_checkout).route_layer(auth.clone()),
         )

@@ -48,6 +48,10 @@ pub struct TodayTask {
     pub workspace_color: String,
     pub ticket_id: Option<String>,
     pub position: i32,
+    /// Task repeats on a schedule (has extra.recurrence).
+    pub recurring: bool,
+    /// Recurring task already completed for this date (extra.completedDates).
+    pub done_today: bool,
 }
 
 #[derive(Serialize)]
@@ -285,6 +289,7 @@ pub async fn get_today(
         workspace_name: String,
         workspace_color: String,
         completed_dates: Vec<String>,
+        recurring: bool,
     }
 
     let mut task_map: HashMap<Uuid, TaskInfo> = HashMap::new();
@@ -299,6 +304,7 @@ pub async fn get_today(
                     .collect()
             })
             .unwrap_or_default();
+        let recurring = row.extra.get("recurrence").is_some_and(|v| !v.is_null());
         task_map.insert(
             row.id,
             TaskInfo {
@@ -313,9 +319,12 @@ pub async fn get_today(
                 workspace_name: row.workspace_name,
                 workspace_color: row.workspace_color,
                 completed_dates,
+                recurring,
             },
         );
     }
+
+    let today_str = q.date.to_string();
 
     let build_list = |ids: &[Uuid], is_priority: bool| -> Vec<TodayTask> {
         ids.iter()
@@ -335,6 +344,8 @@ pub async fn get_today(
                     workspace_color: t.workspace_color.clone(),
                     ticket_id: t.ticket_id.clone(),
                     position: i as i32,
+                    recurring: t.recurring,
+                    done_today: t.completed_dates.contains(&today_str),
                 })
             })
             .collect()
@@ -342,6 +353,38 @@ pub async fn get_today(
 
     let mut priorities = build_list(&priority_ids, true);
     let mut tasks = build_list(&today_ids, false);
+
+    // Recurring tasks track completion via extra.completedDates and are removed
+    // from the Today order when done, so they'd otherwise vanish from the web.
+    // Surface the ones completed today (that aren't already listed) so the user
+    // still sees what they finished — the UI groups them at the end.
+    let listed_ids: std::collections::HashSet<Uuid> =
+        priorities.iter().chain(tasks.iter()).map(|t| t.id).collect();
+    let mut recurring_done: Vec<TodayTask> = task_map
+        .iter()
+        .filter(|(id, t)| {
+            t.recurring && t.completed_dates.contains(&today_str) && !listed_ids.contains(id)
+        })
+        .map(|(id, t)| TodayTask {
+            id: *id,
+            title: t.title.clone(),
+            status: "done".to_owned(),
+            is_priority: false,
+            completed_at: t.completed_at,
+            project_id: t.project_id,
+            project_name: t.project_name.clone(),
+            project_color: t.project_color.clone(),
+            workspace_id: t.workspace_id,
+            workspace_name: t.workspace_name.clone(),
+            workspace_color: t.workspace_color.clone(),
+            ticket_id: t.ticket_id.clone(),
+            position: 0,
+            recurring: true,
+            done_today: true,
+        })
+        .collect();
+    recurring_done.sort_by(|a, b| a.title.cmp(&b.title));
+    tasks.extend(recurring_done);
 
     // Completed tasks sink to the bottom, preserving relative order
     priorities.sort_by_key(|t| t.status == "done");
@@ -635,6 +678,147 @@ pub async fn get_today(
         habits,
         meetings,
         stats,
+    }))
+}
+
+// ─── Tasks list (read-only): backlog + recurring, done on demand ──────────────
+
+#[derive(Deserialize)]
+pub struct TasksQuery {
+    /// Omitted (or unparseable) → aggregate across every workspace.
+    pub workspace_id: Option<Uuid>,
+    /// When true, also return completed/cancelled tasks (fetched on demand).
+    #[serde(default)]
+    pub done: bool,
+}
+
+#[derive(Serialize)]
+pub struct TaskListItem {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub ticket_id: Option<String>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub project_name: Option<String>,
+    pub project_color: Option<String>,
+    pub workspace_id: Uuid,
+    pub workspace_name: String,
+    pub workspace_color: String,
+    /// The recurrence rule (extra.recurrence) for recurring tasks; null otherwise.
+    pub recurrence: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+pub struct TasksResponse {
+    pub backlog: Vec<TaskListItem>,
+    pub recurring: Vec<TaskListItem>,
+    /// Empty unless `?done=true` was requested.
+    pub done: Vec<TaskListItem>,
+}
+
+pub async fn get_tasks(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Query(q): Query<TasksQuery>,
+) -> Result<Json<TasksResponse>> {
+    let ws_ids: Vec<Uuid> = match q.workspace_id {
+        Some(id) => {
+            require_workspace_access(&state, auth.id, id).await?;
+            vec![id]
+        }
+        None => {
+            sqlx::query_scalar!(
+                r#"SELECT w.id FROM workspace w
+                   JOIN workspace_member m ON m.workspace_id = w.id
+                   WHERE m.user_id = $1 AND w.deleted_at IS NULL"#,
+                auth.id,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
+
+    let task_rows = sqlx::query!(
+        r#"
+        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,
+               t.project_id, t.workspace_id,
+               p.name  as "project_name?",
+               p.color as "project_color?",
+               w.name  as "workspace_name!",
+               w.color as "workspace_color!"
+        FROM task t
+        LEFT JOIN project p ON p.id = t.project_id
+        JOIN workspace w ON w.id = t.workspace_id
+        WHERE t.workspace_id = ANY($1)
+          AND t.deleted_at IS NULL
+        "#,
+        &ws_ids,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let orders = sqlx::query!(
+        "SELECT priority_ids, today_ids FROM task_order WHERE workspace_id = ANY($1)",
+        &ws_ids,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    // Tasks already shown in Today/Priorities aren't backlog.
+    let mut in_today: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    for o in orders {
+        for id in json_uuid_list(&o.priority_ids) {
+            in_today.insert(id);
+        }
+        for id in json_uuid_list(&o.today_ids) {
+            in_today.insert(id);
+        }
+    }
+
+    let mut backlog: Vec<TaskListItem> = Vec::new();
+    let mut recurring: Vec<TaskListItem> = Vec::new();
+    let mut done: Vec<TaskListItem> = Vec::new();
+
+    for row in task_rows {
+        let recurrence = row
+            .extra
+            .get("recurrence")
+            .filter(|v| !v.is_null())
+            .cloned();
+        let item = TaskListItem {
+            id: row.id,
+            title: row.title,
+            status: row.status.clone(),
+            ticket_id: row.ticket_id,
+            completed_at: row.completed_at,
+            project_name: row.project_name,
+            project_color: row.project_color,
+            workspace_id: row.workspace_id,
+            workspace_name: row.workspace_name,
+            workspace_color: row.workspace_color,
+            recurrence: recurrence.clone(),
+        };
+        let is_done = row.status == "done" || row.status == "cancelled";
+        if recurrence.is_some() {
+            recurring.push(item);
+        } else if is_done {
+            if q.done {
+                done.push(item);
+            }
+        } else if !in_today.contains(&row.id) {
+            backlog.push(item);
+        }
+    }
+
+    backlog.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    recurring.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    // Most recently completed first.
+    done.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
+
+    Ok(Json(TasksResponse {
+        backlog,
+        recurring,
+        done,
     }))
 }
 

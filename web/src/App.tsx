@@ -28,6 +28,7 @@ export default function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/support" element={<Support />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/dashboard/tasks" element={<ProtectedRoute><Dashboard page="tasks" /></ProtectedRoute>} />
           <Route path="/settings/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
