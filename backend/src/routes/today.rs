@@ -358,8 +358,11 @@ pub async fn get_today(
     // from the Today order when done, so they'd otherwise vanish from the web.
     // Surface the ones completed today (that aren't already listed) so the user
     // still sees what they finished — the UI groups them at the end.
-    let listed_ids: std::collections::HashSet<Uuid> =
-        priorities.iter().chain(tasks.iter()).map(|t| t.id).collect();
+    let listed_ids: std::collections::HashSet<Uuid> = priorities
+        .iter()
+        .chain(tasks.iter())
+        .map(|t| t.id)
+        .collect();
     let mut recurring_done: Vec<TodayTask> = task_map
         .iter()
         .filter(|(id, t)| {
