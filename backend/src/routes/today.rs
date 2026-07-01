@@ -813,10 +813,10 @@ pub async fn get_tasks(
         }
     }
 
-    backlog.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-    recurring.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    backlog.sort_by_key(|a| a.title.to_lowercase());
+    recurring.sort_by_key(|a| a.title.to_lowercase());
     // Most recently completed first.
-    done.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
+    done.sort_by_key(|b| std::cmp::Reverse(b.completed_at));
 
     Ok(Json(TasksResponse {
         backlog,
