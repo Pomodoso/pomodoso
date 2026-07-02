@@ -317,9 +317,13 @@ export function App() {
         const shouldRemove = async (id: string) => {
           const t = await db.tasks.get(id);
           if (!t) return true;
-          // Recurring tasks are always cleared on rollover; the recurring effect
-          // re-adds them if they're scheduled for the new day.
-          if (t.recurrence) return true;
+          if (t.recurrence) {
+            // Carry-over recurring tasks stay in Today until done/cancelled (they
+            // read as overdue); others are cleared each day and re-added by the
+            // recurring effect on their next scheduled occurrence.
+            if (t.recurrence.carryOver !== false) return false;
+            return true;
+          }
           return t.status === 'done' || t.status === 'cancelled';
         };
         const newPriorityIds = (await Promise.all(order.priorityIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);

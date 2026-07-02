@@ -166,6 +166,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule | undefined>(task.recurrence);
   const [ruleFreq, setRuleFreq] = useState<RecurrenceFreq>(task.recurrence?.freq ?? 'weekly');
   const [ruleInterval, setRuleInterval] = useState(task.recurrence?.interval ?? 1);
+  const [ruleCarryOver, setRuleCarryOver] = useState(task.recurrence?.carryOver ?? true);
   const [ruleWeekdays, setRuleWeekdays] = useState<number[]>(task.recurrence?.weekdays ?? [new Date().getDay()]);
   const [ruleMonthDay, setRuleMonthDay] = useState(task.recurrence?.monthDay ?? new Date().getDate());
   const [ruleYearMonth, setRuleYearMonth] = useState(task.recurrence?.yearMonth ?? new Date().getMonth() + 1);
@@ -244,6 +245,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
     const rule: RecurrenceRule = {
       freq: ruleFreq,
       ...(ruleInterval > 1 && { interval: ruleInterval }),
+      ...(ruleCarryOver === false && { carryOver: false }),
       ...(ruleFreq === 'weekly' && { weekdays: ruleWeekdays }),
       ...(ruleFreq === 'monthly' && { monthDay: ruleMonthDay }),
       ...(ruleFreq === 'yearly' && { yearMonth: ruleYearMonth, yearDay: ruleYearDay }),
@@ -522,6 +524,16 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
                       )}
                     </div>
                   </div>
+                  {/* Carry over if missed */}
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 10, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={ruleCarryOver} onChange={e => setRuleCarryOver(e.target.checked)} style={{ marginTop: 1 }} />
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                      Carry over if missed
+                      <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-faint)' }}>
+                        Stays in Today until you complete or cancel it, instead of disappearing the next day.
+                      </span>
+                    </span>
+                  </label>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                     <GhostBtn onClick={() => { setShowRecurrenceEditor(false); if (!recurrenceRule) { /* nothing to reset */ } }}>Cancel</GhostBtn>
                     <GhostBtn onClick={handleSaveRecurrence} accent>Save</GhostBtn>
