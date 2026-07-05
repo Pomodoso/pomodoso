@@ -190,14 +190,14 @@ export default function Login() {
           </div>
         )}
 
-        <p className="text-center text-xs text-neutral-500 mt-6">
+        <p className="text-center text-sm text-neutral-400 mt-6">
           {mode === 'signin' ? (
-            <>No account?{' '}
-              <button onClick={() => setMode('signup')} className="text-neutral-300 hover:underline">Sign up</button>
+            <>New to Pomodoso?{' '}
+              <button onClick={() => setMode('signup')} className="font-semibold text-orange-500 hover:underline">Create an account</button>
             </>
           ) : (
             <>Already have an account?{' '}
-              <button onClick={() => setMode('signin')} className="text-neutral-300 hover:underline">Sign in</button>
+              <button onClick={() => setMode('signin')} className="font-semibold text-orange-500 hover:underline">Sign in</button>
             </>
           )}
         </p>

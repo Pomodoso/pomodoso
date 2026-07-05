@@ -66,6 +66,7 @@ function Nav({ authed }: { authed: boolean }) {
           ) : (
             <>
               <Link to="/login" style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', padding: '6px 12px', textDecoration: 'none' }}>Sign in</Link>
+              <Link to="/login?mode=signup" style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: `1px solid ${ACCENT}`, color: '#fff', textDecoration: 'none' }}>Sign up</Link>
               <a href={CHROME_URL} style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', boxShadow: `0 2px 10px ${ACCENT}40` }}>Add to Chrome</a>
             </>
           )}
@@ -373,7 +374,7 @@ function Pricing({ authed }: { authed: boolean }) {
               Get Pro
             </Link>
           ) : (
-            <Link to="/login" style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
+            <Link to="/login?mode=signup&next=/settings/billing" style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
               Get Pro
             </Link>
           )}
@@ -394,7 +395,7 @@ function Pricing({ authed }: { authed: boolean }) {
         {authed ? (
           <Link to="/settings/billing" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
         ) : (
-          <Link to="/login" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
+          <Link to="/login?mode=signup&next=/settings/billing" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
         )}
       </div>
 
