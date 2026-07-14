@@ -36,8 +36,8 @@ export default function Privacy() {
                   </tr>
                   <tr>
                     <td className="py-2.5 pr-4">Google Calendar events (today)</td>
-                    <td className="py-2.5 pr-4">Show meetings in the popup</td>
-                    <td className="py-2.5 text-zinc-500">Only to Google — never to Pomodoso</td>
+                    <td className="py-2.5 pr-4">Show today's meetings next to your tasks and let you log time against them</td>
+                    <td className="py-2.5 text-zinc-500">Read on your device; if you sign in and enable sync, the meeting's title, time and duration are stored on Pomodoso's backend to sync across your devices</td>
                   </tr>
                   <tr>
                     <td className="py-2.5 pr-4">Active tab URL</td>
@@ -62,10 +62,39 @@ export default function Privacy() {
           <section>
             <h2 className="text-white font-semibold text-lg mb-3">Google Calendar (optional)</h2>
             <p>
-              Calendar sync is an optional feature that requires you to connect a Google account. When enabled,
-              the extension uses Google's OAuth 2.0 flow to obtain a token with read-only access to your calendars.
-              This token is stored locally in your browser and is used exclusively to fetch today's events directly
-              from Google's Calendar API. We never see or store your calendar data.
+              Connecting Google Calendar is optional and user-initiated. When you connect it, Pomodoso uses
+              Google's OAuth 2.0 flow to obtain a <strong className="text-zinc-300">read-only</strong> token
+              (<code>calendar.readonly</code>). We never create, edit or delete any calendar data.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">What we access:</strong> your list of calendars (so you can choose
+              which to display) and, from the calendars you select, the events for the current day only — each
+              event's title, start time and duration.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">How we use it:</strong> solely to show today's meetings alongside
+              your tasks and to let you log time against a meeting. It is never used for advertising, profiling, or
+              any purpose other than these user-facing features, and it is never sold.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">Where it is stored:</strong> the OAuth token is stored locally in
+              your browser and never leaves your device. Calendar events are fetched directly from Google on your
+              device. If you sign in and enable sync, the derived meeting records (title, time, duration, and any
+              time you log) are stored on Pomodoso's backend so they appear across your devices — the raw Google
+              token and any other calendar data are not transmitted to us.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">Retention & deletion:</strong> disconnecting Calendar in Settings
+              deletes the local token and cached meetings immediately. Any synced meeting records are removed when
+              you delete them or delete your account; you can also revoke access from your Google Account at any
+              time (link below).
+            </p>
+            <p className="mt-2 text-zinc-500">
+              Pomodoso's use of information received from Google APIs adheres to the{' '}
+              <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 underline">
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements.
             </p>
             <p className="mt-2">
               You can revoke access at any time from the extension's Settings page or from your{' '}
