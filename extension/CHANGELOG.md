@@ -3,6 +3,10 @@
 
 ## v1.3.0 (In progress)
 
+### Web
+
+- **Privacy policy: Google data-sharing disclosure** — Added a dedicated "How we share and disclose Google user data" section to the privacy page, explicitly naming who does (Railway, as sub-processor, only for synced calendar-derived meeting records) and doesn't (Google Analytics/Sentry/Crisp, ad networks, data brokers) receive Google user data, plus legal/business-transfer/no-AI-training clauses — required for Google OAuth verification.
+
 ## v1.2.0
 
 ### Calendar

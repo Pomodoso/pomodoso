@@ -3,7 +3,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#0a0a0f] px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-        <p className="text-zinc-500 text-sm mb-10">Last updated: June 2026</p>
+        <p className="text-zinc-500 text-sm mb-10">Last updated: July 2026</p>
 
         <div className="space-y-8 text-zinc-400 leading-relaxed text-sm">
           <section>
@@ -107,6 +107,52 @@ export default function Privacy() {
                 Google Account permissions
               </a>
               .
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-white font-semibold text-lg mb-3">How we share and disclose Google user data</h2>
+            <p>
+              This section states, specifically, with whom Pomodoso shares, transfers, or discloses data
+              obtained through Google APIs (your Google account email and the calendar events you choose to
+              display — collectively, <strong className="text-zinc-300">"Google user data"</strong>).
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">We do not sell, rent, trade, or share Google user data</strong>{' '}
+              with any third party for advertising, marketing, profiling, or any purpose unrelated to the
+              features you explicitly enabled. We do not transfer it to data brokers, ad networks, or similar
+              services.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">Our analytics, monitoring, and support providers never receive
+              Google user data.</strong> Google Analytics, Sentry, and Crisp (listed under Third-party services
+              below) operate only on the Pomodoso web app and do not receive your Google account email or any
+              Google Calendar data.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">The only case in which Google user data leaves your device</strong>{' '}
+              is optional cloud sync. If you sign in and enable sync, calendar-derived meeting records (each
+              event's title, start time, duration, and any time you log against it) are transmitted to and stored
+              on Pomodoso's own backend so they appear across your devices. That backend and its database are
+              hosted by <strong className="text-zinc-300">Railway</strong> (our infrastructure provider), which
+              stores and serves this data solely on our behalf as a sub-processor and does not use it for its own
+              purposes. The raw Google OAuth token, your calendar list, and any Google data beyond those derived
+              meeting records are <strong className="text-zinc-300">never transmitted to us or to anyone else</strong>.
+              If you do not enable sync, no Google user data ever leaves your device.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">Legal and safety disclosures:</strong> we may disclose Google user
+              data if required to do so by law or valid legal process, or where we reasonably believe disclosure
+              is necessary to protect the rights, property, or safety of Pomodoso, our users, or the public.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">Business transfers:</strong> if Pomodoso is involved in a merger,
+              acquisition, or sale of assets, Google user data may transfer to the successor entity, which will
+              remain bound by this policy or a policy at least as protective.
+            </p>
+            <p className="mt-2">
+              <strong className="text-zinc-300">No AI/ML training:</strong> we do not use Google user data to
+              develop, improve, or train generalized or non-personalized AI or machine-learning models.
             </p>
           </section>
 
