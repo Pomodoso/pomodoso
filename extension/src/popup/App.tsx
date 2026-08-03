@@ -19,7 +19,7 @@ import { syncAllConnectedWorkspaces } from '../calendarSync';
 import { detectTicketFromRules } from '../ticketRules';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { importDb } from '../backup';
-import { shouldBeInTodayNow } from '../recurrence';
+import { activeOccurrence } from '../recurrence';
 
 // ─── Re-exported types (consumed by HomeState, TaskDetailState, etc.) ─────────
 export type { TaskStatus, TaskLink, TimeLogEntry, NoteEntry, TaskRow as SelectedTask, ProjectRow as Project, WorkspaceRow as Workspace } from '../db';
@@ -216,15 +216,18 @@ export function App() {
 
   // ── Add recurring tasks to Today when their scheduled time arrives ────────
   // Runs on every popup open. Tasks with a scheduled time only appear after
-  // that time has passed; all-day tasks appear immediately.
+  // that time has passed; all-day tasks appear immediately. Carry-over tasks
+  // also surface a missed past occurrence (see activeOccurrence) so they aren't
+  // lost when the app wasn't opened on the exact occurrence day.
   useEffect(() => {
     if (!migrated) return;
     void (async () => {
       const today = localDate(timezone);
       const recurring = await db.tasks.filter(t => !t.deletedAt && !!t.recurrence).toArray();
       for (const task of recurring) {
-        if (!shouldBeInTodayNow(task.recurrence!, today)) continue;
-        if ((task.completedDates ?? []).includes(today)) continue;
+        const occ = activeOccurrence(task.recurrence!, today);
+        if (!occ) continue;
+        if ((task.completedDates ?? []).includes(occ)) continue;
         const wsId = task.workspaceId ?? 'default';
         const order = await db.taskOrders.get(wsId);
         const todayIds = order?.todayIds ?? [];
@@ -585,7 +588,12 @@ export function App() {
 
   const markRecurringDoneToday = useCallback(async (taskId: string) => {
     const today = localDate(timezone);
-    const completedDates = [...new Set([...(allTasks[taskId]?.completedDates ?? []), today])];
+    // Record the occurrence being completed, not the calendar day: a carry-over
+    // task may be completed on a later day than its (missed) occurrence date,
+    // and materialization keys off the occurrence date via activeOccurrence.
+    const rule = allTasks[taskId]?.recurrence;
+    const occ = (rule ? activeOccurrence(rule, today) : null) ?? today;
+    const completedDates = [...new Set([...(allTasks[taskId]?.completedDates ?? []), occ])];
     await db.tasks.update(taskId, { completedDates, status: 'todo', updatedAt: now() });
     // Reset the open detail too: a recurring task is only "done for today", so its
     // status goes back to todo (otherwise the detail keeps showing it as Done).

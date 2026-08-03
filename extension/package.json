@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "build:prod": "vite build --mode production",
     "zip": "bash scripts/zip.sh",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
