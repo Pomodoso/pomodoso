@@ -1,7 +1,13 @@
 # Changelog
 
+## v1.3.4 (In progress)
 
-## v1.3.0 (In progress)
+### Extension
+
+- **Fix: missed recurring occurrences now carry over** — A "carry over if missed" recurring task only reappeared if the app was opened on the exact occurrence day; otherwise the occurrence was silently lost (e.g. a monthly task on the 1st never showed on the 2nd). Materialization now surfaces the most recent past occurrence for carry-over tasks, and completion is keyed to the occurrence date so late-completed tasks don't re-appear.
+
+
+## v1.3.0
 
 ### Web
 

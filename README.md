@@ -26,7 +26,7 @@ docs/         Spec, ADRs, logos
 
 ## Prerequisites
 
-- Node 20 + pnpm 9
+- Node 22 + pnpm 9
 - Rust (stable) + a PostgreSQL 16 instance (local or Docker)
 - Stripe CLI (for local webhook forwarding)
 

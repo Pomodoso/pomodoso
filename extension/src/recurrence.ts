@@ -36,6 +36,17 @@ export function formatRecurrenceLabel(rule: RecurrenceRule): string {
 function parseYmd(s: string): Date {
   return new Date(s + 'T00:00:00');
 }
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function dayBefore(date: string): string {
+  const d = parseYmd(date);
+  d.setDate(d.getDate() - 1);
+  return toYmd(d);
+}
 function daysBetween(from: Date, to: Date): number {
   return Math.round((to.getTime() - from.getTime()) / 86_400_000);
 }
@@ -91,4 +102,31 @@ export function shouldBeInTodayNow(rule: RecurrenceRule, date: string): boolean 
     if (currentMinutes < scheduledMinutes) return false;
   }
   return true;
+}
+
+// Latest occurrence date on or before `date` (YYYY-MM-DD), or null if none
+// exists in range. Walks backwards day-by-day, bounded by the rule's startDate.
+export function lastOccurrenceOnOrBefore(rule: RecurrenceRule, date: string): string | null {
+  if (date < rule.startDate) return null;
+  const cursor = parseYmd(date);
+  const start = parseYmd(rule.startDate);
+  // The startDate bound normally stops the walk quickly; the iteration cap is a
+  // safety valve so a misconfigured long-interval rule can't loop unbounded.
+  for (let i = 0; i < 366 * 20 && cursor.getTime() >= start.getTime(); i++) {
+    const ymd = toYmd(cursor);
+    if (shouldOccurOn(rule, ymd)) return ymd;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return null;
+}
+
+// The occurrence a recurring task should currently represent in Today, or null
+// if it shouldn't be shown. For carry-over tasks, a missed past occurrence is
+// surfaced until it's completed — so the task appears even if the app wasn't
+// opened on the exact occurrence day. Non-carry-over tasks only ever surface
+// today's occurrence (after its scheduled time).
+export function activeOccurrence(rule: RecurrenceRule, today: string): string | null {
+  if (shouldBeInTodayNow(rule, today)) return today;
+  if (rule.carryOver === false) return null;
+  return lastOccurrenceOnOrBefore(rule, dayBefore(today));
 }
