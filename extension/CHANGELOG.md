@@ -9,10 +9,6 @@
 
 ## v1.3.0
 
-### Extension
-
-- **Fix: missed recurring occurrences now carry over** — A "carry over if missed" recurring task only reappeared if the app was opened on the exact occurrence day; otherwise the occurrence was silently lost (e.g. a monthly task on the 1st never showed on the 2nd). Materialization now surfaces the most recent past occurrence for carry-over tasks, and completion is keyed to the occurrence date so late-completed tasks don't re-appear.
-
 ### Web
 
 - **Privacy policy: Google data-sharing disclosure** — Added a dedicated "How we share and disclose Google user data" section to the privacy page, explicitly naming who does (Railway, as sub-processor, only for synced calendar-derived meeting records) and doesn't (Google Analytics/Sentry/Crisp, ad networks, data brokers) receive Google user data, plus legal/business-transfer/no-AI-training clauses — required for Google OAuth verification.
