@@ -31,6 +31,7 @@ export function Seo({
       <meta property="og:title" content={title} />
       <meta property="og:description" content={description} />
       <meta property="og:image" content={img} />
+      <meta property="og:image:alt" content="Pomodoso logo with the tagline &quot;Track your work, not your energy&quot;" />
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content={title} />
       <meta name="twitter:description" content={description} />
