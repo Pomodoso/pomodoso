@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext.tsx'
 import { useCrisp } from '../lib/useCrisp.ts'
+import { Seo } from '../seo.tsx'
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/pomodoso/kloaflkoffpkpldhaipegeabhhkijhbj'
 const ACCENT = '#f97316'
@@ -30,6 +31,11 @@ export default function Landing() {
   useCrisp()
   return (
     <div style={{ background: 'linear-gradient(175deg, #111118 0%, #0a0a0e 60%, #08080b 100%)', color: '#f1f1f2', fontFamily: 'system-ui,-apple-system,sans-serif', minHeight: '100vh' }}>
+      <Seo
+        title="Pomodoso — Track your work, not your energy"
+        description="Chrome extension that auto-detects Linear and GitHub tickets, integrates a Pomodoro timer, tracks habits, and connects to Google Calendar."
+        path="/"
+      />
       <Nav authed={authed} />
       <Hero authed={authed} />
       <FeatureCarousel />
