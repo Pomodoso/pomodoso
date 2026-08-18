@@ -79,8 +79,12 @@ export function useHabits() {
   // snapshot either drop an increment or double-insert the first row.
 
   function toggleHabit(id: string): void {
+    // Recompute today's date here rather than closing over the render-time
+    // `today` — a screen left open across local midnight would otherwise
+    // keep writing to yesterday's row.
+    const day = todayStr();
     db.insert(habitHistory)
-      .values({ id: `${id}-${today}`, habitId: id, date: today, count: 0, done: true })
+      .values({ id: `${id}-${day}`, habitId: id, date: day, count: 0, done: true })
       .onConflictDoUpdate({
         target: habitHistory.id,
         set: { done: sql`NOT ${habitHistory.done}` },
@@ -93,8 +97,9 @@ export function useHabits() {
     // 12 still means the habit is done), only floor at 0. `done` isn't
     // written here: for counter habits it's derived from count/goal (isDone
     // above), not stored.
+    const day = todayStr();
     db.insert(habitHistory)
-      .values({ id: `${id}-${today}`, habitId: id, date: today, count: Math.max(0, delta), done: false })
+      .values({ id: `${id}-${day}`, habitId: id, date: day, count: Math.max(0, delta), done: false })
       .onConflictDoUpdate({
         target: habitHistory.id,
         set: { count: sql`max(0, ${habitHistory.count} + ${delta})` },
