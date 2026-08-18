@@ -1,15 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HabitControl } from '@/components/HabitControl';
 import { TaskRow } from '@/components/TaskRow';
 import { TimerRing } from '@/components/TimerRing';
 import { colors } from '@/constants/theme';
+import { useHabits } from '@/hooks/useHabits';
 
 const POMO_TOTAL = 8;
 const POMO_DONE = 6;
 
 export default function HomeScreen() {
+  const { habits, toggleHabit, incrementHabit } = useHabits();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -80,21 +85,34 @@ export default function HomeScreen() {
         <TaskRow title="Write launch checklist doc" meta="25m" onPlayPress={() => {}} />
 
         <Text style={styles.sectionTitle}>Habits today</Text>
-        <View style={styles.habitsStrip}>
-          {[
-            { icon: 'water' as const, name: 'Water', done: true },
-            { icon: 'walk' as const, name: 'Exercise', done: true },
-            { icon: 'book' as const, name: 'Read', done: false },
-            { icon: 'moon' as const, name: 'Sleep 8h', done: false },
-          ].map(h => (
-            <View key={h.name} style={styles.habitChip}>
-              <View style={[styles.habitIcon, !h.done && styles.habitIconPending]}>
-                <Ionicons name={h.icon} size={20} color={h.done ? colors.success : colors.textTertiary} />
-              </View>
-              <Text style={styles.habitName}>{h.name}</Text>
+        {habits.map(habit => (
+          <View key={habit.id} style={styles.habitRow}>
+            <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
+              <Ionicons
+                name={habit.icon as ComponentProps<typeof Ionicons>['name']}
+                size={18}
+                color={habit.done ? colors.success : colors.textTertiary}
+              />
             </View>
-          ))}
-        </View>
+            <View style={styles.habitNameBlock}>
+              <Text style={styles.habitName}>{habit.name}</Text>
+              {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
+                <Text style={styles.habitSubtext}>
+                  {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
+                  {habit.unit}
+                </Text>
+              )}
+            </View>
+            <HabitControl
+              kind={habit.kind}
+              done={habit.done}
+              count={habit.count}
+              goal={habit.goal}
+              onToggle={() => toggleHabit(habit.id)}
+              onIncrement={delta => incrementHabit(habit.id, delta)}
+            />
+          </View>
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -185,12 +203,18 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
-  habitsStrip: { flexDirection: 'row', gap: 10 },
-  habitChip: { alignItems: 'center', gap: 6, width: 58 },
+  habitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   habitIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
@@ -198,5 +222,7 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
   },
   habitIconPending: { backgroundColor: colors.surface, borderColor: colors.border },
-  habitName: { fontSize: 10.5, color: colors.textSecondary, textAlign: 'center' },
+  habitNameBlock: { flex: 1, minWidth: 0 },
+  habitName: { fontSize: 14.5, fontWeight: '500', color: colors.text },
+  habitSubtext: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
 });

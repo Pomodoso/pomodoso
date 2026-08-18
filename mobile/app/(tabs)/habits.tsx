@@ -9,8 +9,8 @@ import { useHabits } from '@/hooks/useHabits';
 
 const TODAY_INDEX = 6; // Sunday, last column — matches the week strip in the mockups
 
-// Week strips aren't in the SQLite spike schema yet (that's per-day habit_log
-// data, out of scope until the shared/core extraction) — kept static per habit.
+// Week strips aren't derived from habit_history yet (would need a real
+// per-day query, out of scope for this spike) — kept static per habit.
 const WEEK_FILLED: Record<string, boolean[]> = {
   water: [true, true, true, true, true, true, true],
   exercise: [true, false, true, true, true, false, true],
@@ -19,7 +19,7 @@ const WEEK_FILLED: Record<string, boolean[]> = {
 };
 
 export default function HabitsScreen() {
-  const { habits, toggleHabit } = useHabits();
+  const { habits, toggleHabit, incrementHabit } = useHabits();
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -50,10 +50,14 @@ export default function HabitsScreen() {
             icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
             name={habit.name}
             streakLabel={habit.streakLabel}
+            kind={habit.kind}
             done={habit.done}
+            count={habit.count}
+            goal={habit.goal}
             weekFilled={WEEK_FILLED[habit.id] ?? []}
             todayIndex={TODAY_INDEX}
-            onToggle={() => toggleHabit(habit.id, !habit.done)}
+            onToggle={() => toggleHabit(habit.id)}
+            onIncrement={delta => incrementHabit(habit.id, delta)}
           />
         ))}
       </ScrollView>
