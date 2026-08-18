@@ -165,10 +165,16 @@ export function useTimer() {
         SELECT ${uid()}, ${mode}, 'focus', ${taskTitle}, ${ticketRef}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
       `);
-      if (result.changes === 0) {
+      if (result.changes === 0 && notificationId) {
         // Lost the race — another instance's start already landed. Don't
-        // leave this call's notification orphaned.
-        await cancelScheduledNotification(notificationId);
+        // leave this call's notification orphaned; if cancellation itself
+        // fails, at least surface it instead of silently trusting it worked
+        // — that stray notification will still fire for a session that was
+        // never persisted.
+        const cancelled = await cancelScheduledNotification(notificationId);
+        if (!cancelled) {
+          console.warn('Orphaned notification from a lost session-start race could not be cancelled:', notificationId);
+        }
       }
     } finally {
       isMutatingRef.current = false;

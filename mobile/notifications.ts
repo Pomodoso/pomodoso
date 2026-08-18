@@ -75,7 +75,17 @@ export async function scheduleSessionEndNotification(endsAt: Date, title: string
   });
 }
 
-export async function cancelScheduledNotification(id: string | null | undefined): Promise<void> {
-  if (!id) return;
-  await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+/** Returns whether the cancellation actually succeeded — callers that rely on
+ *  it (e.g. cleaning up a losing race's orphaned notification) should warn
+ *  rather than silently assume it worked, since a failure here means the
+ *  notification is still live and will fire. */
+export async function cancelScheduledNotification(id: string | null | undefined): Promise<boolean> {
+  if (!id) return true;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+    return true;
+  } catch (err) {
+    console.warn('Failed to cancel scheduled notification', id, err);
+    return false;
+  }
 }
