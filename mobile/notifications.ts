@@ -1,4 +1,3 @@
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
@@ -19,13 +18,11 @@ Notifications.setNotificationHandler({
 });
 
 export async function ensureNotificationPermission(): Promise<boolean> {
-  if (!Device.isDevice) {
-    // Simulators/emulators can still schedule and receive local notifications,
-    // but permission prompts are unreliable there — assume granted and let the
-    // schedule call itself fail loudly if it isn't.
-    return true;
-  }
-
+  // iOS requires explicit authorization for local notifications too, on
+  // simulator and real devices alike — without it, scheduled notifications
+  // are silently dropped, no error. Device.isDevice is only useful to know
+  // whether push tokens will work (they won't on simulator), not to skip
+  // this.
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted) return true;
 
