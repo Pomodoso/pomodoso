@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
@@ -84,9 +84,12 @@ export function useTimer() {
       // would inflate the recorded session duration by however long the app
       // was away.
       const deadline = new Date(new Date(active.startedAt).getTime() + active.plannedDurationSeconds * 1000).toISOString();
+      // Guard on status too, not just id — if a manual pause/stop already
+      // landed between the elapsed check above and this write, this would
+      // otherwise overwrite that newer state back to "completed".
       db.update(pomodoroSession)
         .set({ status: 'completed', endedAt: deadline })
-        .where(eq(pomodoroSession.id, active.id))
+        .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'active')))
         .run();
     }
   });
@@ -185,10 +188,16 @@ export function useTimer() {
     if (!active || active.status !== 'active' || isMutatingRef.current) return;
     isMutatingRef.current = true;
     try {
-      await cancelScheduledNotification(active.notificationId);
+      const cancelled = await cancelScheduledNotification(active.notificationId);
       db.update(pomodoroSession)
-        .set({ status: 'paused', pausedAt: nowIso(), notificationId: null })
-        .where(eq(pomodoroSession.id, active.id))
+        // If cancellation failed, keep the id around instead of discarding
+        // it — nulling it here would permanently lose the only reference to
+        // a notification that's still actually scheduled.
+        .set({ status: 'paused', pausedAt: nowIso(), notificationId: cancelled ? null : active.notificationId })
+        // Guard on status too, not just id — a stale pause landing after the
+        // session already completed/was stopped elsewhere shouldn't
+        // resurrect it as "paused".
+        .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'active')))
         .run();
     } finally {
       isMutatingRef.current = false;
@@ -199,6 +208,21 @@ export function useTimer() {
     if (!active || active.status !== 'paused' || !active.pausedAt || isMutatingRef.current) return;
     isMutatingRef.current = true;
     try {
+      // If pausing earlier failed to cancel the old notification, its id is
+      // still stored here — try once more before scheduling a replacement,
+      // so a transient failure back at pause time doesn't leave two live
+      // notifications for what's conceptually one session.
+      if (active.notificationId) {
+        await cancelScheduledNotification(active.notificationId);
+      }
+
+      // NOTE (documented limitation): shifting startedAt to keep elapsed-time
+      // math simple means a session paused before local midnight and resumed
+      // after it gets attributed to the day it resumed on, not the day it
+      // started — pomosToday/streaks would count it on the wrong day. Narrow
+      // edge case (pause spanning exactly midnight); fixing it properly needs
+      // a separate day-attribution field decoupled from startedAt, which is
+      // schema scope beyond this spike.
       const pauseDurationMs = Date.now() - new Date(active.pausedAt).getTime();
       const shiftedStartedAt = new Date(new Date(active.startedAt).getTime() + pauseDurationMs).toISOString();
 
@@ -210,7 +234,7 @@ export function useTimer() {
 
       db.update(pomodoroSession)
         .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId })
-        .where(eq(pomodoroSession.id, active.id))
+        .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'paused')))
         .run();
     } finally {
       isMutatingRef.current = false;
@@ -221,10 +245,10 @@ export function useTimer() {
     if (!active || isMutatingRef.current) return;
     isMutatingRef.current = true;
     try {
-      await cancelScheduledNotification(active.notificationId);
+      const cancelled = await cancelScheduledNotification(active.notificationId);
       db.update(pomodoroSession)
-        .set({ status: 'interrupted', endedAt: nowIso(), notificationId: null })
-        .where(eq(pomodoroSession.id, active.id))
+        .set({ status: 'interrupted', endedAt: nowIso(), notificationId: cancelled ? null : active.notificationId })
+        .where(and(eq(pomodoroSession.id, active.id), inArray(pomodoroSession.status, ['active', 'paused'])))
         .run();
     } finally {
       isMutatingRef.current = false;
