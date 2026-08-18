@@ -40,3 +40,6 @@ jobs:
 
       - name: Test extension
         run: pnpm --filter extension test
+
+      - name: Type-check mobile
+        run: pnpm --filter mobile typecheck
