@@ -24,3 +24,36 @@ export const habitHistory = sqliteTable('habit_history', {
   count: integer('count').notNull().default(0),
   done: integer('done', { mode: 'boolean' }).notNull().default(false),
 });
+
+// Mirrors the shape of the real spec's pomodoro_session entity (section 6.1)
+// closely enough for a device-local mobile spike: one row per session,
+// "active" is just the row with status active/paused. No task table yet —
+// taskTitle is a plain label captured from whatever was tapped to start the
+// session, not a real foreign key (that comes with the shared/core
+// extraction and a real Task model).
+export const pomodoroSession = sqliteTable('pomodoro_session', {
+  id: text('id').primaryKey(),
+  mode: text('mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
+  kind: text('kind', { enum: ['focus', 'short_break', 'long_break'] }).notNull(),
+  taskTitle: text('task_title'),
+  ticketRef: text('ticket_ref'),
+  plannedDurationSeconds: integer('planned_duration_seconds'), // null for stopwatch
+  // startedAt is shifted forward by the paused duration on every resume, so
+  // "elapsed" is always just (now - startedAt) while active — no separate
+  // accumulator to keep in sync.
+  startedAt: text('started_at').notNull(),
+  pausedAt: text('paused_at'),
+  endedAt: text('ended_at'),
+  status: text('status', { enum: ['active', 'paused', 'completed', 'interrupted'] }).notNull(),
+  notificationId: text('notification_id'),
+});
+
+// Single row (id always 'singleton'). Spec 6.1: "the last used mode is
+// remembered... Starting a session is one click on the play button on any
+// task. The mode used is the one currently selected on the toggle." — so any
+// play button (Home's central Start, or a task row's play icon) starts a
+// session in whatever mode is stored here, not a per-task choice.
+export const timerPrefs = sqliteTable('timer_prefs', {
+  id: text('id').primaryKey(),
+  lastMode: text('last_mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
+});

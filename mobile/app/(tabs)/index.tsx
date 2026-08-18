@@ -1,19 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitControl } from '@/components/HabitControl';
+import { StartModePicker } from '@/components/StartModePicker';
 import { TaskRow } from '@/components/TaskRow';
 import { TimerRing } from '@/components/TimerRing';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
+import { useStartPicker } from '@/hooks/useStartPicker';
+import { useTimer } from '@/hooks/useTimer';
 
-const POMO_TOTAL = 8;
-const POMO_DONE = 6;
+const POMO_TOTAL_TARGET = 8;
+
+function formatTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
 
 export default function HomeScreen() {
   const { habits, toggleHabit, incrementHabit } = useHabits();
+  const { display, idleMode, setIdleMode, startSession, pauseSession, resumeSession, stopSession } = useTimer();
+  const { requestStart, pickerProps } = useStartPicker(startSession);
+
+  const isStopwatch = display.mode === 'stopwatch';
+  const timeLabel = display.status === 'idle' ? formatTime(0) : formatTime(isStopwatch ? display.elapsedSeconds : (display.remainingSeconds ?? 0));
+  const ringColor = isStopwatch && display.status !== 'idle' ? colors.success : colors.accent;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -30,59 +45,93 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.timerBlock}>
-          <View style={styles.statusRow}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusLabel}>Focus session</Text>
-          </View>
-
-          <TimerRing size={216} progress={1 - 14.5 / 25} timeLabel="14:32">
-            <View style={styles.pomoRow}>
-              <Text style={styles.pomoCount}>Pomo {POMO_DONE} of {POMO_TOTAL}</Text>
-              <View style={styles.dots}>
-                {Array.from({ length: POMO_TOTAL }).map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.dot,
-                      i < POMO_DONE - 1 && styles.dotFilled,
-                      i === POMO_DONE - 1 && styles.dotActive,
-                    ]}
-                  />
+          {display.status === 'idle' ? (
+            <>
+              <View style={styles.modeToggle}>
+                {(['pomodoro', 'stopwatch'] as const).map(mode => (
+                  <Pressable
+                    key={mode}
+                    style={[styles.modeOption, idleMode === mode && styles.modeOptionActive]}
+                    onPress={() => setIdleMode(mode)}
+                  >
+                    <Text style={[styles.modeOptionText, idleMode === mode && styles.modeOptionTextActive]}>
+                      {mode === 'pomodoro' ? '🍅 Pomodoro' : '⏱ Stopwatch'}
+                    </Text>
+                  </Pressable>
                 ))}
               </View>
-            </View>
-          </TimerRing>
 
-          <View style={styles.currentTask}>
-            <Text style={styles.currentTaskLabel}>Working on</Text>
-            <Text style={styles.currentTaskTitle}>Review MPL 2.0 question rename PR</Text>
-            <View style={styles.currentTaskMeta}>
-              <View style={styles.ticketPill}>
-                <Text style={styles.ticketPillText}>INT-455</Text>
+              <TimerRing size={216} progress={0} timeLabel={formatTime(idleMode === 'pomodoro' ? 25 * 60 : 0)} />
+
+              <Text style={styles.pomoCount}>Pomo {display.pomosToday} of {POMO_TOTAL_TARGET} today</Text>
+
+              <Pressable style={styles.startBtn} onPress={() => startSession(idleMode, null, null)}>
+                <Ionicons name="play" size={16} color={colors.surface} />
+                <Text style={styles.startBtnText}>Start {idleMode === 'pomodoro' ? 'focus session' : 'stopwatch'}</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.statusRow}>
+                <View style={[styles.statusDot, { backgroundColor: ringColor }]} />
+                <Text style={[styles.statusLabel, { color: ringColor }]}>
+                  {display.status === 'paused' ? 'Paused' : isStopwatch ? 'Stopwatch' : 'Focus session'}
+                </Text>
               </View>
-              <Text style={styles.currentTaskMetaText}>· 2 pomos so far</Text>
-            </View>
-          </View>
 
-          <View style={styles.controls}>
-            <View style={styles.btn}>
-              <Ionicons name="pause" size={15} color={colors.text} />
-              <Text style={styles.btnText}>Pause</Text>
-            </View>
-            <View style={styles.btn}>
-              <Ionicons name="swap-horizontal" size={15} color={colors.text} />
-              <Text style={styles.btnText}>Switch</Text>
-            </View>
-            <View style={[styles.btn, styles.btnStop]}>
-              <Ionicons name="stop" size={15} color={colors.accent} />
-              <Text style={[styles.btnText, styles.btnStopText]}>Stop</Text>
-            </View>
-          </View>
+              <TimerRing size={216} progress={isStopwatch ? 1 : display.progress} timeLabel={timeLabel} color={ringColor}>
+                {!isStopwatch && (
+                  <Text style={styles.pomoRowLabel}>Pomo {display.pomosToday + 1} of {POMO_TOTAL_TARGET}</Text>
+                )}
+              </TimerRing>
+
+              {display.taskTitle && (
+                <View style={styles.currentTask}>
+                  <Text style={styles.currentTaskLabel}>Working on</Text>
+                  <Text style={styles.currentTaskTitle}>{display.taskTitle}</Text>
+                  {display.ticketRef && (
+                    <View style={styles.currentTaskMeta}>
+                      <View style={styles.ticketPill}>
+                        <Text style={styles.ticketPillText}>{display.ticketRef}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.controls}>
+                {display.status === 'paused' ? (
+                  <Pressable style={styles.btn} onPress={resumeSession}>
+                    <Ionicons name="play" size={15} color={colors.text} />
+                    <Text style={styles.btnText}>Resume</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable style={styles.btn} onPress={pauseSession}>
+                    <Ionicons name="pause" size={15} color={colors.text} />
+                    <Text style={styles.btnText}>Pause</Text>
+                  </Pressable>
+                )}
+                <Pressable style={[styles.btn, styles.btnStop]} onPress={stopSession}>
+                  <Ionicons name="stop" size={15} color={colors.accent} />
+                  <Text style={[styles.btnText, styles.btnStopText]}>Stop</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
         </View>
 
         <Text style={styles.sectionTitle}>Today&apos;s priorities</Text>
-        <TaskRow title="Fix flaky retry test in sync engine" ticket="POM-89" meta="1h 20m" onPlayPress={() => {}} />
-        <TaskRow title="Write launch checklist doc" meta="25m" onPlayPress={() => {}} />
+        <TaskRow
+          title="Fix flaky retry test in sync engine"
+          ticket="POM-89"
+          meta="1h 20m"
+          onPlayPress={display.status === 'idle' ? () => requestStart('Fix flaky retry test in sync engine', 'POM-89') : undefined}
+        />
+        <TaskRow
+          title="Write launch checklist doc"
+          meta="25m"
+          onPlayPress={display.status === 'idle' ? () => requestStart('Write launch checklist doc', null) : undefined}
+        />
 
         <Text style={styles.sectionTitle}>Habits today</Text>
         {habits.map(habit => (
@@ -114,6 +163,8 @@ export default function HomeScreen() {
           </View>
         ))}
       </ScrollView>
+
+      <StartModePicker {...pickerProps} />
     </SafeAreaView>
   );
 }
@@ -140,6 +191,31 @@ const styles = StyleSheet.create({
   workspaceName: { fontSize: 15, fontWeight: '600', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 24 },
   timerBlock: { alignItems: 'center', paddingVertical: 12 },
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 2,
+    gap: 2,
+    marginBottom: 20,
+  },
+  modeOption: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
+  modeOptionActive: { backgroundColor: colors.surface },
+  modeOptionText: { fontSize: 12.5, fontWeight: '500', color: colors.textTertiary },
+  modeOptionTextActive: { fontWeight: '700', color: colors.text },
+  startBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    marginTop: 22,
+  },
+  startBtnText: { fontSize: 15, fontWeight: '700', color: colors.surface },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
   statusLabel: {
@@ -149,12 +225,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  pomoRow: { alignItems: 'center', marginTop: 8 },
-  pomoCount: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
-  dots: { flexDirection: 'row', gap: 4, marginTop: 6 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.borderStrong },
-  dotFilled: { backgroundColor: colors.accent },
-  dotActive: { backgroundColor: colors.accent, borderWidth: 2, borderColor: colors.accentSoft },
+  pomoRowLabel: { fontSize: 12, color: colors.textTertiary, fontWeight: '500', marginTop: 8 },
+  pomoCount: { fontSize: 12, color: colors.textTertiary, fontWeight: '500', marginTop: 14 },
   currentTask: {
     width: '100%',
     backgroundColor: colors.surface,
@@ -177,8 +249,7 @@ const styles = StyleSheet.create({
   currentTaskMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ticketPill: { backgroundColor: colors.infoSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 3 },
   ticketPillText: { fontSize: 11, fontWeight: '700', color: colors.info },
-  currentTaskMetaText: { fontSize: 13, color: colors.textSecondary },
-  controls: { flexDirection: 'row', gap: 8, width: '100%' },
+  controls: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 6 },
   btn: {
     flex: 1,
     flexDirection: 'row',

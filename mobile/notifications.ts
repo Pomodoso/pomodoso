@@ -1,12 +1,11 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// M0 spike (docs/mobile-app-plan.md): validate that a locally-scheduled
-// notification actually fires while the app is backgrounded/killed on a real
-// device — that's the only reliable way to end a pomodoro session on mobile,
-// since JS timers don't survive backgrounding. Foreground behavior below just
-// makes testing convenient; the thing that actually matters is background
-// delivery, which needs a physical device or simulator to verify by hand.
+// M0 spike validated in PR #21: a locally-scheduled notification survives the
+// app backgrounded/killed on a real device — that's the only reliable way to
+// end a pomodoro session on mobile, since JS timers don't survive
+// backgrounding. Sessions below always schedule against an absolute fire
+// date, never a running countdown.
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -57,4 +56,26 @@ export async function scheduleTestNotification(seconds: number): Promise<string>
       channelId: 'default',
     },
   });
+}
+
+/** Schedules the real end-of-session notification for an absolute fire date
+ *  (a pomodoro's endsAt). Reschedule on resume-from-pause by cancelling the
+ *  old id and calling this again with the new date. */
+export async function scheduleSessionEndNotification(endsAt: Date, title: string, body: string): Promise<string | null> {
+  const granted = await ensureNotificationPermission();
+  if (!granted) return null;
+
+  return Notifications.scheduleNotificationAsync({
+    content: { title, body },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: endsAt,
+      channelId: 'default',
+    },
+  });
+}
+
+export async function cancelScheduledNotification(id: string | null | undefined): Promise<void> {
+  if (!id) return;
+  await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
 }
