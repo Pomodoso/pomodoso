@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { db } from '@/db/client';
 import { habitHistory, habits } from '@/db/schema';
@@ -52,7 +54,19 @@ function streakLabel(
 }
 
 export function useHabits() {
-  const today = todayStr();
+  // A screen can stay mounted and idle across local midnight with no other
+  // trigger to re-render — re-derive `today` whenever the app comes back to
+  // the foreground (covers the realistic case: phone locked overnight, app
+  // still in memory) rather than leaving it stuck at whatever day it was
+  // when the screen first mounted.
+  const [today, setToday] = useState(todayStr);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') setToday(todayStr());
+    });
+    return () => sub.remove();
+  }, []);
+
   const { data: habitRows } = useLiveQuery(db.select().from(habits).orderBy(habits.sortOrder));
   const { data: historyRows } = useLiveQuery(db.select().from(habitHistory));
 
