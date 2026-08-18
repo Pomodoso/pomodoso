@@ -34,9 +34,11 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 if (Platform.OS === 'android') {
-  void Notifications.setNotificationChannelAsync('default', {
+  Notifications.setNotificationChannelAsync('default', {
     name: 'Pomodoso',
     importance: Notifications.AndroidImportance.HIGH,
+  }).catch(err => {
+    console.warn('Failed to create Android notification channel', err);
   });
 }
 
@@ -55,6 +57,7 @@ export async function scheduleTestNotification(seconds: number): Promise<string>
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds,
+      channelId: 'default',
     },
   });
 }
