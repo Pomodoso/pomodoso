@@ -17,6 +17,20 @@
     "pnpm": ">=9"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild"],
+    "packageExtensions": {
+      "react-router-dom@*": {
+        "dependencies": { "@types/react": "18.3.29" }
+      },
+      "react-router@*": {
+        "dependencies": { "@types/react": "18.3.29" }
+      },
+      "vite-react-ssg@*": {
+        "dependencies": { "@types/react": "18.3.29" }
+      },
+      "react-helmet-async@*": {
+        "dependencies": { "@types/react": "18.3.29" }
+      }
+    }
   }
 }
