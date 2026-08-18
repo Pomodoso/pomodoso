@@ -108,7 +108,7 @@ export default function HomeScreen() {
               done={habit.done}
               count={habit.count}
               goal={habit.goal}
-              onToggle={() => toggleHabit(habit.id, !habit.done)}
+              onToggle={() => toggleHabit(habit.id)}
               onIncrement={delta => incrementHabit(habit.id, delta)}
             />
           </View>

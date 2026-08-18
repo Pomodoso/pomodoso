@@ -8,9 +8,11 @@ const expoDb = openDatabaseSync('pomodoso.db', { enableChangeListener: true });
 export const db = drizzle(expoDb, { schema });
 
 function dateOffset(daysAgo: number): string {
+  // Local calendar date, matching hooks/useHabits.ts — habit_history.date is
+  // a local date, not UTC.
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().slice(0, 10);
+  return d.toLocaleDateString('en-CA');
 }
 
 const SEED_HABITS = [

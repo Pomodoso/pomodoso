@@ -56,7 +56,7 @@ export default function HabitsScreen() {
             goal={habit.goal}
             weekFilled={WEEK_FILLED[habit.id] ?? []}
             todayIndex={TODAY_INDEX}
-            onToggle={() => toggleHabit(habit.id, !habit.done)}
+            onToggle={() => toggleHabit(habit.id)}
             onIncrement={delta => incrementHabit(habit.id, delta)}
           />
         ))}

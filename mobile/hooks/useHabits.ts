@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -19,13 +19,15 @@ export interface HabitWithProgress {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local calendar date, not UTC — habit_history.date is a local date, and a
+  // UTC-based key rolls the day over at the wrong local time.
+  return new Date().toLocaleDateString('en-CA');
 }
 
 function dateOffset(daysAgo: number): string {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().slice(0, 10);
+  return d.toLocaleDateString('en-CA');
 }
 
 function isDone(kind: 'boolean' | 'counter', goal: number | null, row: { count: number; done: boolean } | undefined): boolean {
@@ -71,29 +73,33 @@ export function useHabits() {
     };
   });
 
-  function upsertToday(habitId: string, patch: { count?: number; done?: boolean }): void {
-    const existingRow = (historyRows ?? []).find(r => r.habitId === habitId && r.date === today);
-    if (existingRow) {
-      db.update(habitHistory).set(patch).where(eq(habitHistory.id, existingRow.id)).run();
-    } else {
-      db.insert(habitHistory)
-        .values({ id: `${habitId}-${today}`, habitId, date: today, count: patch.count ?? 0, done: patch.done ?? false })
-        .run();
-    }
-  }
+  // Both mutations below are a single atomic INSERT ... ON CONFLICT DO UPDATE
+  // that reads/writes in the same SQLite statement, rather than a JS
+  // read-then-write — otherwise two rapid taps racing on the same render-time
+  // snapshot either drop an increment or double-insert the first row.
 
-  function toggleHabit(id: string, done: boolean): void {
-    upsertToday(id, { done });
+  function toggleHabit(id: string): void {
+    db.insert(habitHistory)
+      .values({ id: `${id}-${today}`, habitId: id, date: today, count: 0, done: true })
+      .onConflictDoUpdate({
+        target: habitHistory.id,
+        set: { done: sql`NOT ${habitHistory.done}` },
+      })
+      .run();
   }
 
   function incrementHabit(id: string, delta: number): void {
-    const habit = (habitRows ?? []).find(h => h.id === id);
-    const current = rowsByHabit.get(id)?.get(today)?.count ?? 0;
-    const goal = habit?.goal ?? Infinity;
     // No upper clamp — going over goal is fine (13 glasses when the target is
-    // 12 still means the habit is done), only floor at 0.
-    const next = Math.max(0, current + delta);
-    upsertToday(id, { count: next, done: next >= goal });
+    // 12 still means the habit is done), only floor at 0. `done` isn't
+    // written here: for counter habits it's derived from count/goal (isDone
+    // above), not stored.
+    db.insert(habitHistory)
+      .values({ id: `${id}-${today}`, habitId: id, date: today, count: Math.max(0, delta), done: false })
+      .onConflictDoUpdate({
+        target: habitHistory.id,
+        set: { count: sql`max(0, ${habitHistory.count} + ${delta})` },
+      })
+      .run();
   }
 
   return { habits: merged, toggleHabit, incrementHabit };
