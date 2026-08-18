@@ -1,6 +1,7 @@
 {
   "name": "pomodoso",
   "private": true,
+  "packageManager": "pnpm@9.14.2",
   "scripts": {
     "dev:extension": "pnpm --filter extension dev",
     "extension": "pnpm --filter extension dev",
