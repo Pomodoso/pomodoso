@@ -1,20 +1,38 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
+
+import { HabitControl } from './HabitControl';
 
 interface HabitRowProps {
   icon: ComponentProps<typeof Ionicons>['name'];
   name: string;
   streakLabel: string;
+  kind: 'boolean' | 'counter';
   done: boolean;
+  count: number;
+  goal: number | null;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
-  onToggle?: () => void;
+  onToggle: () => void;
+  onIncrement: (delta: number) => void;
 }
 
-export function HabitRow({ icon, name, streakLabel, done, weekFilled, todayIndex, onToggle }: HabitRowProps) {
+export function HabitRow({
+  icon,
+  name,
+  streakLabel,
+  kind,
+  done,
+  count,
+  goal,
+  weekFilled,
+  todayIndex,
+  onToggle,
+  onIncrement,
+}: HabitRowProps) {
   return (
     <View style={styles.card}>
       <View style={styles.top}>
@@ -25,9 +43,7 @@ export function HabitRow({ icon, name, streakLabel, done, weekFilled, todayIndex
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.streak}>{streakLabel}</Text>
         </View>
-        <Pressable style={[styles.action, done && styles.actionDone]} onPress={onToggle} hitSlop={8}>
-          {done && <Ionicons name="checkmark" size={15} color={colors.surface} />}
-        </Pressable>
+        <HabitControl kind={kind} done={done} count={count} goal={goal} onToggle={onToggle} onIncrement={onIncrement} />
       </View>
       <View style={styles.week}>
         {weekFilled.map((filled, i) => (
@@ -67,16 +83,6 @@ const styles = StyleSheet.create({
   nameBlock: { flex: 1, minWidth: 0 },
   name: { fontSize: 15, fontWeight: '600', color: colors.text },
   streak: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
-  action: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 2,
-    borderColor: colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionDone: { backgroundColor: colors.success, borderColor: colors.success },
   week: { flexDirection: 'row', gap: 5 },
   day: { flex: 1, height: 22, borderRadius: 5, backgroundColor: colors.border },
   dayFilled: { backgroundColor: colors.success },
