@@ -78,14 +78,22 @@ export async function scheduleSessionEndNotification(endsAt: Date, title: string
 /** Returns whether the cancellation actually succeeded — callers that rely on
  *  it (e.g. cleaning up a losing race's orphaned notification) should warn
  *  rather than silently assume it worked, since a failure here means the
- *  notification is still live and will fire. */
+ *  notification is still live and will fire. Retries once after a short
+ *  delay: most real cancellation failures are a transient OS hiccup, not a
+ *  permanent one, and there's no other way to force-cancel a scheduled local
+ *  notification if this gives up. */
 export async function cancelScheduledNotification(id: string | null | undefined): Promise<boolean> {
   if (!id) return true;
-  try {
-    await Notifications.cancelScheduledNotificationAsync(id);
-    return true;
-  } catch (err) {
-    console.warn('Failed to cancel scheduled notification', id, err);
-    return false;
+  for (const delayMs of [0, 500]) {
+    if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
+    try {
+      await Notifications.cancelScheduledNotificationAsync(id);
+      return true;
+    } catch (err) {
+      if (delayMs === 0) continue;
+      console.warn('Failed to cancel scheduled notification after retry', id, err);
+      return false;
+    }
   }
+  return false;
 }
