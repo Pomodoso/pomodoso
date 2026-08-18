@@ -1,13 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitRow } from '@/components/HabitRow';
 import { colors } from '@/constants/theme';
+import { useHabits } from '@/hooks/useHabits';
 
 const TODAY_INDEX = 6; // Sunday, last column — matches the week strip in the mockups
 
+// Week strips aren't in the SQLite spike schema yet (that's per-day habit_log
+// data, out of scope until the shared/core extraction) — kept static per habit.
+const WEEK_FILLED: Record<string, boolean[]> = {
+  water: [true, true, true, true, true, true, true],
+  exercise: [true, false, true, true, true, false, true],
+  read: [false, false, true, false, true, false, false],
+  sleep: [true, false, false, true, false, false, false],
+};
+
 export default function HabitsScreen() {
+  const { habits, toggleHabit } = useHabits();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -31,38 +44,18 @@ export default function HabitsScreen() {
 
         <Text style={styles.sectionTitle}>Today</Text>
 
-        <HabitRow
-          icon="water"
-          name="Water"
-          streakLabel="🔥 12 day streak"
-          done
-          weekFilled={[true, true, true, true, true, true, true]}
-          todayIndex={TODAY_INDEX}
-        />
-        <HabitRow
-          icon="walk"
-          name="Exercise"
-          streakLabel="🔥 5 day streak"
-          done={false}
-          weekFilled={[true, false, true, true, true, false, true]}
-          todayIndex={TODAY_INDEX}
-        />
-        <HabitRow
-          icon="book"
-          name="Read 20 min"
-          streakLabel="No streak yet"
-          done={false}
-          weekFilled={[false, false, true, false, true, false, false]}
-          todayIndex={TODAY_INDEX}
-        />
-        <HabitRow
-          icon="moon"
-          name="Sleep 8h"
-          streakLabel="No streak yet"
-          done={false}
-          weekFilled={[true, false, false, true, false, false, false]}
-          todayIndex={TODAY_INDEX}
-        />
+        {habits.map(habit => (
+          <HabitRow
+            key={habit.id}
+            icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
+            name={habit.name}
+            streakLabel={habit.streakLabel}
+            done={habit.done}
+            weekFilled={WEEK_FILLED[habit.id] ?? []}
+            todayIndex={TODAY_INDEX}
+            onToggle={() => toggleHabit(habit.id, !habit.done)}
+          />
+        ))}
       </ScrollView>
     </SafeAreaView>
   );

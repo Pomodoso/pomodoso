@@ -43,4 +43,4 @@ jobs:
         run: pnpm --filter mobile typecheck
 
       - name: Bundle mobile (catches Metro/asset errors tsc can't see)
-        run: pnpm --filter mobile exec expo export --platform ios --platform android --platform web
+        run: pnpm --filter mobile exec expo export --platform ios --platform android

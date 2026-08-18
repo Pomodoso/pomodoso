@@ -11,9 +11,10 @@ interface HabitRowProps {
   done: boolean;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
+  onToggle?: () => void;
 }
 
-export function HabitRow({ icon, name, streakLabel, done, weekFilled, todayIndex }: HabitRowProps) {
+export function HabitRow({ icon, name, streakLabel, done, weekFilled, todayIndex, onToggle }: HabitRowProps) {
   return (
     <View style={styles.card}>
       <View style={styles.top}>
@@ -24,7 +25,7 @@ export function HabitRow({ icon, name, streakLabel, done, weekFilled, todayIndex
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.streak}>{streakLabel}</Text>
         </View>
-        <Pressable style={[styles.action, done && styles.actionDone]} hitSlop={8}>
+        <Pressable style={[styles.action, done && styles.actionDone]} onPress={onToggle} hitSlop={8}>
           {done && <Ionicons name="checkmark" size={15} color={colors.surface} />}
         </Pressable>
       </View>
