@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
@@ -144,7 +144,7 @@ export function useTimer() {
   }
 
   async function startSession(mode: TimerMode, taskTitle: string | null, ticketRef: string | null): Promise<void> {
-    if (active || isMutatingRef.current) return; // one session at a time, matches "only one device controls it" simplification
+    if (active || isMutatingRef.current) return; // fast path: same-instance rapid taps bail here
     isMutatingRef.current = true;
     try {
       setIdleMode(mode); // spec 6.1: "updated on every session start"
@@ -154,19 +154,22 @@ export function useTimer() {
       if (mode === 'pomodoro' && plannedDurationSeconds) {
         notificationId = await tryScheduleNotification(new Date(Date.now() + plannedDurationSeconds * 1000), taskTitle);
       }
-      db.insert(pomodoroSession)
-        .values({
-          id: uid(),
-          mode,
-          kind: 'focus',
-          taskTitle,
-          ticketRef,
-          plannedDurationSeconds,
-          startedAt,
-          status: 'active',
-          notificationId,
-        })
-        .run();
+      // The isMutatingRef guard above is per-hook-instance — Home and Tasks
+      // each mount their own useTimer(), so it can't stop one screen's start
+      // from racing another's. The real guard is this: INSERT ... SELECT ...
+      // WHERE NOT EXISTS, a single atomic SQLite statement, so only one
+      // concurrent start can ever actually insert a row regardless of how
+      // many screens/instances raced to get here.
+      const result = db.run(sql`
+        INSERT INTO pomodoro_session (id, mode, kind, task_title, ticket_ref, planned_duration_seconds, started_at, status, notification_id)
+        SELECT ${uid()}, ${mode}, 'focus', ${taskTitle}, ${ticketRef}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
+        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
+      `);
+      if (result.changes === 0) {
+        // Lost the race — another instance's start already landed. Don't
+        // leave this call's notification orphaned.
+        await cancelScheduledNotification(notificationId);
+      }
     } finally {
       isMutatingRef.current = false;
     }
