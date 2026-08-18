@@ -55,16 +55,30 @@ function streakLabel(
 
 export function useHabits() {
   // A screen can stay mounted and idle across local midnight with no other
-  // trigger to re-render — re-derive `today` whenever the app comes back to
-  // the foreground (covers the realistic case: phone locked overnight, app
-  // still in memory) rather than leaving it stuck at whatever day it was
-  // when the screen first mounted.
+  // trigger to re-render. Two complementary refreshes: AppState covers the
+  // realistic case (phone locked overnight, app resumed later); a timer
+  // scheduled for the exact next local midnight covers the app staying
+  // active and foregrounded the whole time, which AppState alone wouldn't
+  // catch.
   const [today, setToday] = useState(todayStr);
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') setToday(todayStr());
     });
     return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    function scheduleMidnightRefresh(): void {
+      const now = new Date();
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+      timer = setTimeout(() => {
+        setToday(todayStr());
+        scheduleMidnightRefresh();
+      }, nextMidnight.getTime() - now.getTime());
+    }
+    scheduleMidnightRefresh();
+    return () => clearTimeout(timer);
   }, []);
 
   const { data: habitRows } = useLiveQuery(db.select().from(habits).orderBy(habits.sortOrder));
