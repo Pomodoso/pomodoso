@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { db } from '@/db/client';
 import { pomodoroSession, timerPrefs } from '@/db/schema';
@@ -44,6 +44,12 @@ function secondsBetween(a: string, b: string): number {
 
 export function useTimer() {
   const [, forceTick] = useState(0);
+  // `active` is a snapshot from the last render — two taps landing before the
+  // live query re-renders would both see the same snapshot (e.g. both see no
+  // active session and both insert one). This ref is set synchronously
+  // before any `await`, so a second concurrent call bails out immediately
+  // regardless of React's render timing.
+  const isMutatingRef = useRef(false);
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession).orderBy(desc(pomodoroSession.startedAt)));
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
@@ -73,8 +79,13 @@ export function useTimer() {
     if (!active || active.status !== 'active' || active.mode !== 'pomodoro' || !active.plannedDurationSeconds) return;
     const elapsed = secondsBetween(active.startedAt, nowIso());
     if (elapsed >= active.plannedDurationSeconds) {
+      // The scheduled deadline, not "whenever this reconciliation happened to
+      // run" — if the app was backgrounded past the deadline, nowIso() here
+      // would inflate the recorded session duration by however long the app
+      // was away.
+      const deadline = new Date(new Date(active.startedAt).getTime() + active.plannedDurationSeconds * 1000).toISOString();
       db.update(pomodoroSession)
-        .set({ status: 'completed', endedAt: nowIso() })
+        .set({ status: 'completed', endedAt: deadline })
         .where(eq(pomodoroSession.id, active.id))
         .run();
     }
@@ -116,72 +127,99 @@ export function useTimer() {
     };
   }
 
-  async function startSession(mode: TimerMode, taskTitle: string | null, ticketRef: string | null): Promise<void> {
-    if (active) return; // one session at a time, matches "only one device controls it" simplification
-    setIdleMode(mode); // spec 6.1: "updated on every session start"
-    const plannedDurationSeconds = mode === 'pomodoro' ? FOCUS_DURATION_SECONDS : null;
-    const startedAt = nowIso();
-    let notificationId: string | null = null;
-    if (mode === 'pomodoro' && plannedDurationSeconds) {
-      const endsAt = new Date(Date.now() + plannedDurationSeconds * 1000);
-      notificationId = await scheduleSessionEndNotification(
+  // Scheduling can fail (permission denied, OS error) — that shouldn't block
+  // the actual state transition, just mean the session runs without a
+  // background-completion notification.
+  async function tryScheduleNotification(endsAt: Date, taskTitle: string | null): Promise<string | null> {
+    try {
+      return await scheduleSessionEndNotification(
         endsAt,
         'Pomodoro complete',
         taskTitle ? `Focus session on "${taskTitle}" is done.` : 'Focus session is done.',
       );
+    } catch (err) {
+      console.warn('Failed to schedule session-end notification', err);
+      return null;
     }
-    db.insert(pomodoroSession)
-      .values({
-        id: uid(),
-        mode,
-        kind: 'focus',
-        taskTitle,
-        ticketRef,
-        plannedDurationSeconds,
-        startedAt,
-        status: 'active',
-        notificationId,
-      })
-      .run();
+  }
+
+  async function startSession(mode: TimerMode, taskTitle: string | null, ticketRef: string | null): Promise<void> {
+    if (active || isMutatingRef.current) return; // one session at a time, matches "only one device controls it" simplification
+    isMutatingRef.current = true;
+    try {
+      setIdleMode(mode); // spec 6.1: "updated on every session start"
+      const plannedDurationSeconds = mode === 'pomodoro' ? FOCUS_DURATION_SECONDS : null;
+      const startedAt = nowIso();
+      let notificationId: string | null = null;
+      if (mode === 'pomodoro' && plannedDurationSeconds) {
+        notificationId = await tryScheduleNotification(new Date(Date.now() + plannedDurationSeconds * 1000), taskTitle);
+      }
+      db.insert(pomodoroSession)
+        .values({
+          id: uid(),
+          mode,
+          kind: 'focus',
+          taskTitle,
+          ticketRef,
+          plannedDurationSeconds,
+          startedAt,
+          status: 'active',
+          notificationId,
+        })
+        .run();
+    } finally {
+      isMutatingRef.current = false;
+    }
   }
 
   async function pauseSession(): Promise<void> {
-    if (!active || active.status !== 'active') return;
-    await cancelScheduledNotification(active.notificationId);
-    db.update(pomodoroSession)
-      .set({ status: 'paused', pausedAt: nowIso(), notificationId: null })
-      .where(eq(pomodoroSession.id, active.id))
-      .run();
+    if (!active || active.status !== 'active' || isMutatingRef.current) return;
+    isMutatingRef.current = true;
+    try {
+      await cancelScheduledNotification(active.notificationId);
+      db.update(pomodoroSession)
+        .set({ status: 'paused', pausedAt: nowIso(), notificationId: null })
+        .where(eq(pomodoroSession.id, active.id))
+        .run();
+    } finally {
+      isMutatingRef.current = false;
+    }
   }
 
   async function resumeSession(): Promise<void> {
-    if (!active || active.status !== 'paused' || !active.pausedAt) return;
-    const pauseDurationMs = Date.now() - new Date(active.pausedAt).getTime();
-    const shiftedStartedAt = new Date(new Date(active.startedAt).getTime() + pauseDurationMs).toISOString();
+    if (!active || active.status !== 'paused' || !active.pausedAt || isMutatingRef.current) return;
+    isMutatingRef.current = true;
+    try {
+      const pauseDurationMs = Date.now() - new Date(active.pausedAt).getTime();
+      const shiftedStartedAt = new Date(new Date(active.startedAt).getTime() + pauseDurationMs).toISOString();
 
-    let notificationId: string | null = null;
-    if (active.mode === 'pomodoro' && active.plannedDurationSeconds) {
-      const endsAt = new Date(new Date(shiftedStartedAt).getTime() + active.plannedDurationSeconds * 1000);
-      notificationId = await scheduleSessionEndNotification(
-        endsAt,
-        'Pomodoro complete',
-        active.taskTitle ? `Focus session on "${active.taskTitle}" is done.` : 'Focus session is done.',
-      );
+      let notificationId: string | null = null;
+      if (active.mode === 'pomodoro' && active.plannedDurationSeconds) {
+        const endsAt = new Date(new Date(shiftedStartedAt).getTime() + active.plannedDurationSeconds * 1000);
+        notificationId = await tryScheduleNotification(endsAt, active.taskTitle);
+      }
+
+      db.update(pomodoroSession)
+        .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId })
+        .where(eq(pomodoroSession.id, active.id))
+        .run();
+    } finally {
+      isMutatingRef.current = false;
     }
-
-    db.update(pomodoroSession)
-      .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId })
-      .where(eq(pomodoroSession.id, active.id))
-      .run();
   }
 
   async function stopSession(): Promise<void> {
-    if (!active) return;
-    await cancelScheduledNotification(active.notificationId);
-    db.update(pomodoroSession)
-      .set({ status: 'interrupted', endedAt: nowIso(), notificationId: null })
-      .where(eq(pomodoroSession.id, active.id))
-      .run();
+    if (!active || isMutatingRef.current) return;
+    isMutatingRef.current = true;
+    try {
+      await cancelScheduledNotification(active.notificationId);
+      db.update(pomodoroSession)
+        .set({ status: 'interrupted', endedAt: nowIso(), notificationId: null })
+        .where(eq(pomodoroSession.id, active.id))
+        .run();
+    } finally {
+      isMutatingRef.current = false;
+    }
   }
 
   return { display, idleMode, setIdleMode, startSession, pauseSession, resumeSession, stopSession };
