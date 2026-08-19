@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DAY_LABELS } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
+import { useAuth } from '@/hooks/useAuth';
 import type { AppSettings } from '@/hooks/useSettings';
 import { useSettings } from '@/hooks/useSettings';
 import { importBackup, shareBackup } from '@/utils/backup';
@@ -84,10 +85,18 @@ function DurationPicker({ label, presets, value, onChange }: DurationPickerProps
 
 export default function SettingsScreen(): React.JSX.Element {
   const { settings, update } = useSettings();
+  const auth = useAuth();
   const [longEveryStr, setLongEveryStr] = useState(String(settings.longBreakEvery));
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  function handleSignOut(): void {
+    Alert.alert('Sign out?', 'Sync stays off either way — this device keeps all its local data.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => void auth.signOut() },
+    ]);
+  }
 
   useEffect(() => {
     setLongEveryStr(String(settings.longBreakEvery));
@@ -170,6 +179,33 @@ export default function SettingsScreen(): React.JSX.Element {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {auth.isConfigured && !auth.loading && (
+          <>
+            <Text style={styles.sectionTitle}>Account</Text>
+            {auth.session ? (
+              <View style={styles.accountRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountEmail}>{auth.session.user.email}</Text>
+                  <Text style={styles.hint}>
+                    {auth.entitlements.plan === 'free' ? 'Free · sync is off' : 'Pro · sync coming soon'}
+                  </Text>
+                </View>
+                <Pressable style={styles.actionBtnOutline} onPress={handleSignOut}>
+                  <Text style={styles.actionBtnOutlineText}>Sign out</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.field}>
+                <Text style={styles.hint}>Sign in to unlock sync and paid features once they launch. Your local data works fine without it.</Text>
+                <Pressable style={styles.actionBtn} onPress={() => router.push('/login')}>
+                  <Ionicons name="log-in-outline" size={15} color={colors.surface} />
+                  <Text style={styles.actionBtnText}>Sign in</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
+        )}
+
         <Text style={styles.sectionTitle}>Timer defaults</Text>
 
         <DurationPicker
@@ -394,6 +430,19 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 12,
   },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+  },
+  accountEmail: { fontSize: 13.5, fontWeight: '600', color: colors.text },
   field: { marginBottom: 18 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 },
   pillRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
