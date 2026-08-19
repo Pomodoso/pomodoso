@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { db } from '@/db/client';
 import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
+import { secondsBetween } from '@/utils/time';
 
 // Device-local timer state (CLAUDE.md rule 8: server-authoritative only when
 // sync is enabled — mobile free tier stays local, same as the extension).
@@ -60,10 +61,6 @@ function nowIso(): string {
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function secondsBetween(a: string, b: string): number {
-  return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 1000);
 }
 
 function notificationCopyFor(kind: SessionKind, taskTitle: string | null): { title: string; body: string } {

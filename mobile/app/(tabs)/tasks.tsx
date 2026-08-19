@@ -9,13 +9,21 @@ import { StatusPicker } from '@/components/StatusPicker';
 import { TaskRow } from '@/components/TaskRow';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
+import type { HistoryRange } from '@/hooks/useTaskHistory';
+import { useTaskHistory } from '@/hooks/useTaskHistory';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { formatMinutes } from '@/utils/time';
 
-const FILTERS = ['Today', 'In progress', 'All open', 'Done'];
+type SubTab = 'backlog' | 'history';
+
+const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
+  { value: 'week', label: 'This week' },
+  { value: 'month', label: 'This month' },
+];
 
 export default function TasksScreen() {
   const { display, idleMode, setIdleMode, startSession } = useTimer();
@@ -23,6 +31,7 @@ export default function TasksScreen() {
   const { tasks, addTask, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const [addingTask, setAddingTask] = useState(false);
+  const [subTab, setSubTab] = useState<SubTab>('backlog');
   const canStart = display.status === 'idle';
 
   const today = useTodayDate();
@@ -32,7 +41,8 @@ export default function TasksScreen() {
   // more than one section.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const backlog = tasks.filter(t => !t.isPriority && !isResolvedStatus(t.status));
-  const history = tasks.filter(t => isResolvedStatus(t.status) && !(t.isPriority && isUpdatedToday(t.updatedAt, today)));
+
+  const history = useTaskHistory();
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -51,65 +61,92 @@ export default function TasksScreen() {
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ gap: 8 }}>
-        {FILTERS.map((f, i) => (
-          <View key={f} style={[styles.filterChip, i === 0 && styles.filterChipActive]}>
-            <Text style={[styles.filterChipText, i === 0 && styles.filterChipTextActive]}>{f}</Text>
-          </View>
+      <View style={styles.subTabRow}>
+        {(['backlog', 'history'] as const).map(t => (
+          <Pressable key={t} style={[styles.subTabBtn, subTab === t && styles.subTabBtnActive]} onPress={() => setSubTab(t)}>
+            <Text style={[styles.subTabText, subTab === t && styles.subTabTextActive]}>{t === 'backlog' ? 'Backlog' : 'History'}</Text>
+          </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {priorities.length > 0 && (
-          <>
-            <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
-            {priorities.map(t => (
-              <TaskRow
-                key={t.id}
-                title={t.title}
-                ticket={t.ticketRef ?? undefined}
-                meta={t.meta ?? ''}
-                status={t.status}
-                onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-              />
-            ))}
-          </>
-        )}
+      {subTab === 'backlog' ? (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          {priorities.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
+              {priorities.map(t => (
+                <TaskRow
+                  key={t.id}
+                  title={t.title}
+                  ticket={t.ticketRef ?? undefined}
+                  meta={t.meta ?? ''}
+                  status={t.status}
+                  onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                />
+              ))}
+            </>
+          )}
 
-        {backlog.length > 0 && (
-          <>
-            <Text style={styles.groupTitle}>Backlog</Text>
-            {backlog.map(t => (
-              <TaskRow
-                key={t.id}
-                title={t.title}
-                ticket={t.ticketRef ?? undefined}
-                meta={t.meta ?? ''}
-                status={t.status}
-                onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
-                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-              />
+          {backlog.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>Backlog</Text>
+              {backlog.map(t => (
+                <TaskRow
+                  key={t.id}
+                  title={t.title}
+                  ticket={t.ticketRef ?? undefined}
+                  meta={t.meta ?? ''}
+                  status={t.status}
+                  onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
+                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                />
+              ))}
+            </>
+          )}
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={styles.rangeRow}>
+            {RANGE_OPTIONS.map(opt => (
+              <Pressable
+                key={opt.value}
+                style={[styles.filterChip, history.range === opt.value && styles.filterChipActive]}
+                onPress={() => history.setRange(opt.value)}
+              >
+                <Text style={[styles.filterChipText, history.range === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
+              </Pressable>
             ))}
-          </>
-        )}
+          </View>
 
-        {history.length > 0 && (
-          <>
-            <Text style={styles.groupTitle}>History</Text>
-            {history.map(t => (
-              <TaskRow
-                key={t.id}
-                title={t.title}
-                ticket={t.ticketRef ?? undefined}
-                meta={t.meta ?? ''}
-                status={t.status}
-                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-              />
-            ))}
-          </>
-        )}
-      </ScrollView>
+          {!history.hasAny ? (
+            <Text style={styles.emptyText}>No completed tasks yet.</Text>
+          ) : !history.hasFiltered ? (
+            <Text style={styles.emptyText}>No items match your filters.</Text>
+          ) : (
+            <>
+              {history.grandTotalMinutes > 0 && (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalValue}>{formatMinutes(history.grandTotalMinutes)}</Text>
+                </View>
+              )}
+
+              {history.days.map(day => (
+                <View key={day.date}>
+                  <View style={styles.dayHeader}>
+                    <Text style={styles.dayLabel}>{day.label}</Text>
+                    {day.totalMinutes > 0 && <Text style={styles.dayMinutes}>{formatMinutes(day.totalMinutes)}</Text>}
+                  </View>
+                  {day.tasks.map(t => (
+                    <TaskRow key={t.id} title={t.title} ticket={t.ticketRef ?? undefined} meta="" status={t.status} />
+                  ))}
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      )}
 
       <Pressable style={styles.fab} onPress={() => setAddingTask(true)}>
         <Ionicons name="add" size={26} color={colors.surface} />
@@ -149,7 +186,22 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   modeBadgeText: { fontSize: 11.5, fontWeight: '600', color: colors.textSecondary },
-  filterRow: { flexGrow: 0, paddingHorizontal: 20, marginBottom: 8 },
+  subTabRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 2,
+    gap: 2,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  subTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  subTabBtnActive: { backgroundColor: colors.bg },
+  subTabText: { fontSize: 13, fontWeight: '500', color: colors.textTertiary },
+  subTabTextActive: { fontWeight: '700', color: colors.text },
+  rangeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -171,6 +223,30 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 8,
   },
+  emptyText: { fontSize: 13.5, color: colors.textTertiary, textAlign: 'center', marginTop: 40 },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  totalLabel: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4 },
+  totalValue: { fontSize: 14, fontWeight: '700', color: colors.text },
+  dayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  dayLabel: { fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 },
+  dayMinutes: { fontSize: 12, fontWeight: '600', color: colors.textTertiary },
   fab: {
     position: 'absolute',
     right: 20,

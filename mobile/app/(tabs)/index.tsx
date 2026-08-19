@@ -17,6 +17,7 @@ import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { formatMinutes } from '@/utils/time';
 
 const POMO_TOTAL_TARGET = 8;
 
@@ -25,14 +26,6 @@ function formatTime(totalSeconds: number): string {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
-// Matches extension's TodayFooter fmtTime (HomeState.tsx).
-function formatTrackedTime(totalMinutes: number): string {
-  if (totalMinutes === 0) return '0m';
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
 
 export default function HomeScreen() {
@@ -69,7 +62,7 @@ export default function HomeScreen() {
   // counts all tasks instead.
   const tasksDone = tasks.filter(t => t.status === 'done').length;
   const tasksTotal = tasks.length;
-  const footerText = `${tasksDone}/${tasksTotal} tasks · ${display.pomosToday} pomo${display.pomosToday === 1 ? '' : 's'} · ${formatTrackedTime(trackedMinutesToday)} tracked`;
+  const footerText = `${tasksDone}/${tasksTotal} tasks · ${display.pomosToday} pomo${display.pomosToday === 1 ? '' : 's'} · ${formatMinutes(trackedMinutesToday)} tracked`;
 
   const isStopwatch = display.mode === 'stopwatch';
   const isBreak = display.kind === 'short_break' || display.kind === 'long_break';
