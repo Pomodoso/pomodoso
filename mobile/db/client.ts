@@ -131,6 +131,10 @@ function initDb(): void {
       id TEXT PRIMARY KEY NOT NULL,
       last_mode TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS task (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,

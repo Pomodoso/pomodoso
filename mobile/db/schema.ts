@@ -108,3 +108,13 @@ export const timerPrefs = sqliteTable('timer_prefs', {
   id: text('id').primaryKey(),
   lastMode: text('last_mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
 });
+
+// Generic key-value store, matching extension/src/db.ts's own `settings`
+// table (SettingRow { key, value }) — same pattern, not a bespoke one.
+// Values are JSON-stringified. Keys used: focus_seconds, short_break_seconds,
+// long_break_seconds, long_break_every, daily_goal, max_priorities,
+// week_start, work_days — see hooks/useSettings.ts for defaults.
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
