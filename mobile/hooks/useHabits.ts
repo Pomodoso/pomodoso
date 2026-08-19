@@ -20,6 +20,7 @@ export interface HabitWithProgress {
   done: boolean;
   scheduledToday: boolean;
   streakLabel: string;
+  weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
 }
 
 function todayStr(): string {
@@ -61,6 +62,26 @@ function streakLabel(
   return streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet';
 }
 
+function weekFilled(
+  kind: 'boolean' | 'counter',
+  goal: number | null,
+  historyByDate: Map<string, { count: number; done: boolean }>,
+): boolean[] {
+  const { dow: todayDow } = dateOffset(0);
+  const result: boolean[] = [];
+  for (let dow = 0; dow < 7; dow++) {
+    // A day later in the week than today hasn't happened yet — show
+    // unfilled rather than looking up a future date's (nonexistent) row.
+    if (dow > todayDow) {
+      result.push(false);
+      continue;
+    }
+    const { date } = dateOffset(todayDow - dow);
+    result.push(isDone(kind, goal, historyByDate.get(date)));
+  }
+  return result;
+}
+
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -98,6 +119,7 @@ export function useHabits() {
       done: isDone(h.kind, h.goal, todayRow),
       scheduledToday: isScheduledToday(days),
       streakLabel: streakLabel(h.kind, h.goal, days, byDate),
+      weekFilled: weekFilled(h.kind, h.goal, byDate),
     };
   });
 
