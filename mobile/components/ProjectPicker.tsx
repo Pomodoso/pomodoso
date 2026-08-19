@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { colors } from '@/constants/theme';
@@ -87,29 +87,31 @@ export function ProjectPicker({ visible, projects, selectedId, onSelect, onCreat
             <>
               <Text style={styles.prompt}>Project</Text>
 
-              <Pressable style={styles.option} onPress={() => onSelect(null)}>
-                <View style={[styles.dot, styles.dotNone]} />
-                <Text style={styles.optionLabel}>No project</Text>
-                {selectedId === null && <Ionicons name="checkmark" size={17} color={colors.accent} />}
-              </Pressable>
+              <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+                <Pressable style={styles.option} onPress={() => onSelect(null)}>
+                  <View style={[styles.dot, styles.dotNone]} />
+                  <Text style={styles.optionLabel}>No project</Text>
+                  {selectedId === null && <Ionicons name="checkmark" size={17} color={colors.accent} />}
+                </Pressable>
 
-              {projects.map(p => (
-                <View key={p.id} style={styles.projectRow}>
-                  <Pressable style={styles.option} onPress={() => onSelect(p.id)}>
-                    <View style={[styles.dot, { backgroundColor: p.color }]} />
-                    <Text style={styles.optionLabel}>{p.name}</Text>
-                    {selectedId === p.id && <Ionicons name="checkmark" size={17} color={colors.accent} />}
-                  </Pressable>
-                  <Pressable style={styles.editBtn} onPress={() => openEdit(p)} hitSlop={8}>
-                    <Ionicons name="pencil" size={14} color={colors.textTertiary} />
-                  </Pressable>
-                </View>
-              ))}
+                {projects.map(p => (
+                  <View key={p.id} style={styles.projectRow}>
+                    <Pressable style={styles.option} onPress={() => onSelect(p.id)}>
+                      <View style={[styles.dot, { backgroundColor: p.color }]} />
+                      <Text style={styles.optionLabel}>{p.name}</Text>
+                      {selectedId === p.id && <Ionicons name="checkmark" size={17} color={colors.accent} />}
+                    </Pressable>
+                    <Pressable style={styles.editBtn} onPress={() => openEdit(p)} hitSlop={8}>
+                      <Ionicons name="pencil" size={14} color={colors.textTertiary} />
+                    </Pressable>
+                  </View>
+                ))}
 
-              <Pressable style={styles.newBtn} onPress={openCreate}>
-                <Ionicons name="add" size={16} color={colors.accent} />
-                <Text style={styles.newBtnText}>New project</Text>
-              </Pressable>
+                <Pressable style={styles.newBtn} onPress={openCreate}>
+                  <Ionicons name="add" size={16} color={colors.accent} />
+                  <Text style={styles.newBtnText}>New project</Text>
+                </Pressable>
+              </ScrollView>
 
               <Pressable style={styles.cancel} onPress={handleCancel}>
                 <Text style={styles.cancelText}>Close</Text>
@@ -170,6 +172,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 14,
   },
+  // Fixed cap (rather than flex-filling the sheet's 80% maxHeight) so a
+  // long project list scrolls internally instead of pushing New
+  // project/Close off the bottom of the sheet, unreachable.
+  list: { maxHeight: 340 },
   projectRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   option: {
     flex: 1,
