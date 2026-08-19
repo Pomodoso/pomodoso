@@ -74,13 +74,21 @@ export function validateBackup(json: string): BackupEnvelope {
 // Replaces every local table's contents with the backup's. Transactional so
 // a failure partway through can't leave some tables replaced and others
 // stale — same reasoning as removeHabit's cascade (useHabits.ts).
+//
+// A table is only touched if the backup actually includes it (even as an
+// explicit empty array — that still means "this table should be empty").
+// validateBackup only requires task+habits (REQUIRED_TABLES), so an older
+// or partial backup can validly omit any other table — deleting those
+// unconditionally would silently erase local data the backup never meant
+// to touch, while the UI still reported a successful restore.
 export function importBackup(json: string): void {
   const envelope = validateBackup(json);
   db.transaction(tx => {
     for (const [name, table] of Object.entries(TABLES)) {
-      tx.delete(table).run();
       const rows = envelope.data[name];
-      if (Array.isArray(rows) && rows.length > 0) {
+      if (!Array.isArray(rows)) continue;
+      tx.delete(table).run();
+      if (rows.length > 0) {
         tx.insert(table).values(rows as never[]).run();
       }
     }
