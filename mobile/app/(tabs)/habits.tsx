@@ -6,20 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitFormModal } from '@/components/HabitFormModal';
 import { HabitRow } from '@/components/HabitRow';
+import { toMondayFirstDow } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
 import { useHabits } from '@/hooks/useHabits';
-
-const TODAY_INDEX = 6; // Sunday, last column — matches the week strip in the mockups
-
-// Week strips aren't derived from habit_history yet (would need a real
-// per-day query, out of scope for this spike) — kept static per habit.
-const WEEK_FILLED: Record<string, boolean[]> = {
-  water: [true, true, true, true, true, true, true],
-  exercise: [true, false, true, true, true, false, true],
-  read: [false, false, true, false, true, false, false],
-  sleep: [true, false, false, true, false, false, false],
-};
 
 export default function HabitsScreen() {
   const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit } = useHabits();
@@ -72,8 +62,8 @@ export default function HabitsScreen() {
             done={habit.done}
             count={habit.count}
             goal={habit.goal}
-            weekFilled={WEEK_FILLED[habit.id] ?? []}
-            todayIndex={TODAY_INDEX}
+            weekFilled={habit.weekFilled}
+            todayIndex={toMondayFirstDow(new Date())}
             onPress={() => openEdit(habit)}
             onToggle={() => toggleHabit(habit.id)}
             onIncrement={delta => incrementHabit(habit.id, delta)}
