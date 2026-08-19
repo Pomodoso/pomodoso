@@ -44,6 +44,15 @@ export default function TaskDetailScreen() {
     if (task) setTitle(task.title);
   }, [task?.id, task?.title]);
 
+  const [ticketRef, setTicketRef] = useState(task?.ticketRef ?? '');
+  const [showTicketId, setShowTicketId] = useState(!!task?.ticketRef);
+  useEffect(() => {
+    if (task) {
+      setTicketRef(task.ticketRef ?? '');
+      setShowTicketId(!!task.ticketRef);
+    }
+  }, [task?.id, task?.ticketRef]);
+
   const [description, setDescription] = useState(task?.description ?? '');
   const [showDescription, setShowDescription] = useState(!!task?.description);
   useEffect(() => {
@@ -118,6 +127,14 @@ export default function TaskDetailScreen() {
     }
   }
 
+  function handleTicketRefBlur(): void {
+    if (!task) return;
+    const trimmed = ticketRef.trim();
+    if (trimmed !== (task.ticketRef ?? '')) {
+      updateTask(task.id, { ticketRef: trimmed || null });
+    }
+  }
+
   function handleDescriptionBlur(): void {
     if (!task) return;
     const trimmed = description.trim();
@@ -178,10 +195,22 @@ export default function TaskDetailScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} onBlur={handleTitleBlur} multiline />
 
-        {task.ticketRef && (
-          <View style={styles.ticketPill}>
-            <Text style={styles.ticketPillText}>{task.ticketRef}</Text>
-          </View>
+        {showTicketId ? (
+          <TextInput
+            style={styles.ticketInput}
+            value={ticketRef}
+            onChangeText={setTicketRef}
+            onBlur={handleTicketRefBlur}
+            placeholder="e.g. INT-455"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+        ) : (
+          <Pressable style={styles.addFieldBtn} onPress={() => setShowTicketId(true)}>
+            <Ionicons name="add" size={14} color={colors.textTertiary} />
+            <Text style={styles.addFieldBtnText}>Add ticket ID</Text>
+          </Pressable>
         )}
 
         {showDescription ? (
@@ -368,15 +397,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 0,
   },
-  ticketPill: {
+  ticketInput: {
     alignSelf: 'flex-start',
     backgroundColor: colors.infoSoft,
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    marginBottom: 20,
+    marginBottom: 18,
+    fontFamily: fontMono,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.info,
+    minWidth: 90,
   },
-  ticketPillText: { fontFamily: fontMono, fontSize: 12, fontWeight: '700', color: colors.info },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
