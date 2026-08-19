@@ -18,6 +18,8 @@ export const colors = {
   infoSoft: '#E9EFF7',
   delayed: '#7B5DB4', // matches extension's TaskStatus 'delayed' — no existing token fit
   delayedSoft: '#F1ECF9',
+  break: '#2E8B8B', // extension's badge color scheme: "break = teal"
+  breakSoft: '#E7F3F3',
 } as const;
 
 export const fontMono = 'SpaceMono-Regular';

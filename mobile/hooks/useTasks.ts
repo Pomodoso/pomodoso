@@ -30,10 +30,14 @@ export function useTasks() {
   // session history yet.
   const statsByTask = new Map<string, { pomos: number; seconds: number }>();
   for (const s of sessions ?? []) {
-    if (!s.taskId || s.status !== 'completed' || !s.endedAt) continue;
+    // Breaks are carried-over from a task's focus session (see
+    // useTimer.ts's startFollowUpSession) purely for display continuity —
+    // spec 6.1: "Breaks are not logged in reports", so they're excluded here
+    // even though they technically have a taskId.
+    if (!s.taskId || s.status !== 'completed' || !s.endedAt || s.kind !== 'focus') continue;
     const entry = statsByTask.get(s.taskId) ?? { pomos: 0, seconds: 0 };
     entry.seconds += secondsBetween(s.startedAt, s.endedAt);
-    if (s.mode === 'pomodoro' && s.kind === 'focus') entry.pomos += 1;
+    if (s.mode === 'pomodoro') entry.pomos += 1;
     statsByTask.set(s.taskId, entry);
   }
 

@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BreakBanner } from '@/components/BreakBanner';
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
@@ -28,7 +29,21 @@ function formatTime(totalSeconds: number): string {
 
 export default function HomeScreen() {
   const { habits, toggleHabit, incrementHabit } = useHabits();
-  const { display, idleMode, setIdleMode, startSession, pauseSession, resumeSession, stopSession } = useTimer();
+  const {
+    display,
+    idleMode,
+    setIdleMode,
+    pendingBreak,
+    pendingNextFocus,
+    startSession,
+    startBreak,
+    skipBreak,
+    startNextFocus,
+    dismissBreakDone,
+    pauseSession,
+    resumeSession,
+    stopSession,
+  } = useTimer();
   const { requestStart, pickerProps } = useStartPicker(startSession);
   const { tasks, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
@@ -39,8 +54,9 @@ export default function HomeScreen() {
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
 
   const isStopwatch = display.mode === 'stopwatch';
+  const isBreak = display.kind === 'short_break' || display.kind === 'long_break';
   const timeLabel = display.status === 'idle' ? formatTime(0) : formatTime(isStopwatch ? display.elapsedSeconds : (display.remainingSeconds ?? 0));
-  const ringColor = isStopwatch && display.status !== 'idle' ? colors.success : colors.accent;
+  const ringColor = display.status === 'idle' ? colors.accent : isBreak ? colors.break : isStopwatch ? colors.success : colors.accent;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -57,7 +73,17 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.timerBlock}>
-          {display.status === 'idle' ? (
+          {display.status === 'idle' && pendingBreak ? (
+            <BreakBanner
+              variant="offer-break"
+              taskTitle={pendingBreak.taskTitle}
+              breakLabel={`${Math.round(pendingBreak.durationSeconds / 60)}m break`}
+              onPrimary={startBreak}
+              onSecondary={skipBreak}
+            />
+          ) : display.status === 'idle' && pendingNextFocus ? (
+            <BreakBanner variant="break-over" taskTitle={pendingNextFocus.taskTitle} onPrimary={startNextFocus} onSecondary={dismissBreakDone} />
+          ) : display.status === 'idle' ? (
             <>
               <View style={styles.modeToggle}>
                 {(['pomodoro', 'stopwatch'] as const).map(mode => (
@@ -87,19 +113,27 @@ export default function HomeScreen() {
               <View style={styles.statusRow}>
                 <View style={[styles.statusDot, { backgroundColor: ringColor }]} />
                 <Text style={[styles.statusLabel, { color: ringColor }]}>
-                  {display.status === 'paused' ? 'Paused' : isStopwatch ? 'Stopwatch' : 'Focus session'}
+                  {display.status === 'paused'
+                    ? 'Paused'
+                    : isBreak
+                      ? display.kind === 'long_break'
+                        ? 'Long break'
+                        : 'Short break'
+                      : isStopwatch
+                        ? 'Stopwatch'
+                        : 'Focus session'}
                 </Text>
               </View>
 
               <TimerRing size={216} progress={isStopwatch ? 1 : display.progress} timeLabel={timeLabel} color={ringColor}>
-                {!isStopwatch && (
+                {!isStopwatch && !isBreak && (
                   <Text style={styles.pomoRowLabel}>Pomo {display.pomosToday + 1} of {POMO_TOTAL_TARGET}</Text>
                 )}
               </TimerRing>
 
               {display.taskTitle && (
                 <View style={styles.currentTask}>
-                  <Text style={styles.currentTaskLabel}>Working on</Text>
+                  <Text style={styles.currentTaskLabel}>{isBreak ? 'Break — up next' : 'Working on'}</Text>
                   <Text style={styles.currentTaskTitle}>{display.taskTitle}</Text>
                   {display.ticketRef && (
                     <View style={styles.currentTaskMeta}>
