@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
-import type { TaskStatus } from '@/db/schema';
+import type { NoteEntry, TaskLink, TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { activeOccurrence } from '@/utils/recurrence';
 import { secondsBetween } from '@/utils/time';
@@ -35,6 +35,24 @@ function parseRecurrence(raw: string | null): RecurrenceRule | null {
 }
 
 function parseCompletedDates(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseLinks(raw: string): TaskLink[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseNoteEntries(raw: string): NoteEntry[] {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -89,17 +107,19 @@ export function useTasks() {
     statsByTask.set(s.taskId, entry);
   }
 
-  // Adds parsed convenience fields alongside the raw recurrence/completedDates
-  // columns (still present via the spread) — consumers that need the raw
-  // JSON (e.g. writing it back unchanged) still can, without re-parsing.
+  // Adds parsed convenience fields alongside the raw JSON columns (still
+  // present via the spread) — consumers that need the raw JSON (e.g.
+  // writing it back unchanged) still can, without re-parsing.
   const withMeta = (tasks ?? []).map(t => {
     const stats = statsByTask.get(t.id);
     const recurrenceRule = parseRecurrence(t.recurrence);
     const completedOccurrences = parseCompletedDates(t.completedDates);
-    if (!stats) return { ...t, recurrenceRule, completedOccurrences };
+    const links = parseLinks(t.links);
+    const noteEntries = parseNoteEntries(t.noteEntries);
+    if (!stats) return { ...t, recurrenceRule, completedOccurrences, links, noteEntries };
     const time = formatDuration(stats.seconds);
     const meta = stats.pomos > 0 ? `${stats.pomos} pomo${stats.pomos === 1 ? '' : 's'} · ${time}` : time;
-    return { ...t, meta, recurrenceRule, completedOccurrences };
+    return { ...t, meta, recurrenceRule, completedOccurrences, links, noteEntries };
   });
 
   function addTask(title: string, projectId: string | null = null): void {
@@ -188,10 +208,49 @@ export function useTasks() {
       .run();
   }
 
-  function updateTask(id: string, updates: { title?: string; projectId?: string | null }): void {
+  function updateTask(id: string, updates: { title?: string; projectId?: string | null; description?: string | null }): void {
     db.update(task)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
+      .run();
+  }
+
+  function setLinks(id: string, links: TaskLink[]): void {
+    db.update(task)
+      .set({ links: JSON.stringify(links), updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
+  }
+
+  function setNoteEntries(id: string, noteEntries: NoteEntry[]): void {
+    db.update(task)
+      .set({ noteEntries: JSON.stringify(noteEntries), updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
+  }
+
+  // Retroactive time log, not a live timer session — mirrors extension's
+  // handleAddTime (TaskDetailState.tsx): just hours+minutes, logged as
+  // ending now. promptResolved must be true on insert: useTimer.ts's
+  // mostRecentUnresolved picks the latest completed+unresolved session
+  // regardless of mode, so an unresolved manual entry would otherwise
+  // trigger Home's "want a break?" banner for a session that never ran.
+  function addManualTime(taskId: string, durationSeconds: number): void {
+    if (durationSeconds <= 0) return;
+    const endedAt = new Date().toISOString();
+    const startedAt = new Date(Date.now() - durationSeconds * 1000).toISOString();
+    db.insert(pomodoroSession)
+      .values({
+        id: uid(),
+        mode: 'manual',
+        kind: 'focus',
+        taskId,
+        plannedDurationSeconds: null,
+        startedAt,
+        endedAt,
+        status: 'completed',
+        promptResolved: true,
+      })
       .run();
   }
 
@@ -270,5 +329,18 @@ export function useTasks() {
     db.delete(task).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, removeTask };
+  return {
+    tasks: withMeta,
+    sessions: sessions ?? [],
+    addTask,
+    setTaskStatus,
+    updateTask,
+    togglePriority,
+    toggleToday,
+    setRecurrence,
+    setLinks,
+    setNoteEntries,
+    addManualTime,
+    removeTask,
+  };
 }

@@ -36,7 +36,10 @@ export const habitHistory = sqliteTable('habit_history', {
 // can be "unassigned time" (documented deviation, see useTimer.ts).
 export const pomodoroSession = sqliteTable('pomodoro_session', {
   id: text('id').primaryKey(),
-  mode: text('mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
+  // 'manual' mirrors extension's TimerMode (@pomodoso/types) — a retroactive
+  // time-log entry with no live timer lifecycle, always inserted directly as
+  // status='completed'/promptResolved=true (see useTasks.ts's addManualTime).
+  mode: text('mode', { enum: ['pomodoro', 'stopwatch', 'manual'] }).notNull(),
   kind: text('kind', { enum: ['focus', 'short_break', 'long_break'] }).notNull(),
   taskId: text('task_id'),
   plannedDurationSeconds: integer('planned_duration_seconds'), // null for stopwatch
@@ -77,6 +80,20 @@ export type ProjectRow = typeof project.$inferSelect;
 // STATUS_OPTIONS/STATUS_DOT_COLOR in extension/src/popup/HomeState.tsx).
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'delayed' | 'cancelled';
 
+// Mirrors extension's db.ts TaskLink/NoteEntry exactly — not exported from
+// @pomodoso/types (extension-local types there too), so defined locally
+// here alongside TaskStatus rather than duplicated per-consumer.
+export interface TaskLink {
+  url: string;
+  label: string;
+}
+
+export interface NoteEntry {
+  id: string;
+  createdAt: string; // ISO
+  content: string;
+}
+
 // Spike task model — enough to back Home's "Today's priorities" and the Tasks
 // tab. No project/workspace yet (comes with the shared/core extraction and a
 // real multi-entity model). pomodoroSession.taskId references this — meta is
@@ -110,6 +127,13 @@ export const task = sqliteTable('task', {
   // (useTasks.ts's completeRecurringOccurrence) records the date here and
   // resets status back to 'todo' so the next occurrence starts clean.
   completedDates: text('completed_dates').notNull().default('[]'),
+  description: text('description'),
+  // JSON-serialized TaskLink[] — mirrors extension's Task.links.
+  links: text('links').notNull().default('[]'),
+  // JSON-serialized NoteEntry[] — mirrors extension's Task.noteEntries.
+  // Mobile never had a legacy singular `notes` string field to migrate away
+  // from, so unlike the extension there's no notes-vs-noteEntries split.
+  noteEntries: text('note_entries').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
