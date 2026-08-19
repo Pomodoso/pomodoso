@@ -208,7 +208,10 @@ export function useTasks() {
       .run();
   }
 
-  function updateTask(id: string, updates: { title?: string; projectId?: string | null; description?: string | null }): void {
+  function updateTask(
+    id: string,
+    updates: { title?: string; projectId?: string | null; description?: string | null; ticketRef?: string | null },
+  ): void {
     db.update(task)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
