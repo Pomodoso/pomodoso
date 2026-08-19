@@ -19,6 +19,7 @@ import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { formatRecurrenceLabel } from '@/utils/recurrence';
 import { formatMinutes } from '@/utils/time';
 
 function formatTime(totalSeconds: number): string {
@@ -57,6 +58,11 @@ export default function HomeScreen() {
   // marking one done/cancelled shouldn't make it vanish immediately.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const todayTasks = tasks.filter(t => t.isToday && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
+  // Every task with a recurrence rule, regardless of priority/today/backlog
+  // membership — a management list, matching extension's recurringTemplates
+  // (App.tsx). A recurring task can appear here AND under Today's tasks at
+  // the same time; that's intentional, not a duplicate-section bug.
+  const recurringTemplates = tasks.filter(t => t.recurrenceRule);
 
   // Matches extension's TodayFooter (HomeState.tsx) — "X/Y tasks · N pomos ·
   // Zm tracked", scoped to priorities + today's tasks specifically
@@ -244,6 +250,23 @@ export default function HomeScreen() {
             />
           </View>
         ))}
+
+        {recurringTemplates.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Recurring</Text>
+            {recurringTemplates.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.recurrenceRule ? formatRecurrenceLabel(t.recurrenceRule) : ''}
+                status={t.status}
+                projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                onPress={() => router.push(`/task/${t.id}`)}
+              />
+            ))}
+          </>
+        )}
 
         <Text style={styles.footer}>{footerText}</Text>
       </ScrollView>

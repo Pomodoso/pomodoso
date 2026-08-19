@@ -20,6 +20,7 @@ import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { formatRecurrenceLabel } from '@/utils/recurrence';
 import { formatMinutes } from '@/utils/time';
 
 type SubTab = 'backlog' | 'history';
@@ -50,6 +51,11 @@ export default function TasksScreen() {
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const todayTasks = tasks.filter(t => t.isToday && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const backlog = tasks.filter(t => !t.isPriority && !t.isToday && !isResolvedStatus(t.status));
+  // Every task with a recurrence rule — a management list, matching
+  // extension's recurringTemplates (App.tsx). Can overlap with the sections
+  // above (a recurring task with an active occurrence also shows under
+  // Today's tasks); that's intentional, not a duplicate-section bug.
+  const recurringTemplates = tasks.filter(t => t.recurrenceRule);
 
   const history = useTaskHistory();
 
@@ -132,6 +138,23 @@ export default function TasksScreen() {
                   onPress={() => router.push(`/task/${t.id}`)}
                   onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                   onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                />
+              ))}
+            </>
+          )}
+
+          {recurringTemplates.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>Recurring</Text>
+              {recurringTemplates.map(t => (
+                <TaskRow
+                  key={t.id}
+                  title={t.title}
+                  ticket={t.ticketRef ?? undefined}
+                  meta={t.recurrenceRule ? formatRecurrenceLabel(t.recurrenceRule) : ''}
+                  status={t.status}
+                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                  onPress={() => router.push(`/task/${t.id}`)}
                 />
               ))}
             </>

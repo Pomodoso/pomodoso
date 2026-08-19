@@ -100,6 +100,16 @@ export const task = sqliteTable('task', {
   // Mutually exclusive with isPriority, same as the extension's
   // addToPriorities/addToTasks (App.tsx) always clearing the other list.
   isToday: integer('is_today', { mode: 'boolean' }).notNull().default(false),
+  // JSON-serialized RecurrenceRule (@pomodoso/types), null = not recurring.
+  // Mirrors extension's Task.recurrence exactly — see utils/recurrence.ts
+  // for the ported occurrence-calculation logic.
+  recurrence: text('recurrence'),
+  // JSON-serialized string[] of YYYY-MM-DD occurrence dates already
+  // completed — mirrors extension's Task.completedDates. Recurring tasks
+  // never reach status 'done' permanently: completing today's occurrence
+  // (useTasks.ts's completeRecurringOccurrence) records the date here and
+  // resets status back to 'todo' so the next occurrence starts clean.
+  completedDates: text('completed_dates').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

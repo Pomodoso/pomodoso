@@ -1,3 +1,4 @@
+import type { RecurrenceRule } from '@pomodoso/types';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import { openDatabaseSync } from 'expo-sqlite';
 
@@ -15,6 +16,8 @@ function dateOffset(daysAgo: number): string {
   return d.toLocaleDateString('en-CA');
 }
 
+const STANDUP_RECURRENCE: RecurrenceRule = { freq: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '09:30', startDate: '2026-01-05' };
+
 const SEED_TASKS = [
   { id: 'task-mpl', title: 'Review MPL 2.0 question rename PR', ticketRef: 'INT-455', meta: '2 pomos · 50m', status: 'todo' as const, isPriority: false, sortOrder: 0 },
   { id: 'task-flaky', title: 'Fix flaky retry test in sync engine', ticketRef: 'POM-89', meta: '1h 20m', status: 'todo' as const, isPriority: true, sortOrder: 1 },
@@ -22,6 +25,16 @@ const SEED_TASKS = [
   { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', status: 'todo' as const, isPriority: false, isToday: true, sortOrder: 3 },
   { id: 'task-sqlite', title: 'Investigate SQLite adapter perf', ticketRef: 'POM-94', meta: 'Not started', status: 'todo' as const, isPriority: false, sortOrder: 4 },
   { id: 'task-eas', title: 'Set up EAS Build project', ticketRef: null, meta: '40m · yesterday', status: 'done' as const, isPriority: false, sortOrder: 5 },
+  {
+    id: 'task-standup',
+    title: 'Daily standup notes',
+    ticketRef: null,
+    meta: 'Not started',
+    status: 'todo' as const,
+    isPriority: false,
+    recurrence: JSON.stringify(STANDUP_RECURRENCE),
+    sortOrder: 6,
+  },
 ];
 
 const SEED_HABITS = [
@@ -82,10 +95,10 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for task's done -> status change,
-  // and later the project_id and is_today columns.
+  // and later the project_id, is_today, and recurrence/completed_dates columns.
   const hasCurrentTaskSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT status, project_id, is_today FROM task LIMIT 1');
+      expoDb.getFirstSync('SELECT status, project_id, is_today, recurrence, completed_dates FROM task LIMIT 1');
       return true;
     } catch {
       return false;
@@ -144,6 +157,8 @@ function initDb(): void {
       project_id TEXT,
       is_priority INTEGER NOT NULL DEFAULT 0,
       is_today INTEGER NOT NULL DEFAULT 0,
+      recurrence TEXT,
+      completed_dates TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
