@@ -1,11 +1,14 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
+import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { secondsBetween } from '@/utils/time';
+
+import { useTodayDate } from './useTodayDate';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -20,6 +23,7 @@ function formatDuration(totalSeconds: number): string {
 }
 
 export function useTasks() {
+  const today = useTodayDate();
   const { data: tasks } = useLiveQuery(db.select().from(task).orderBy(asc(task.sortOrder)));
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
 
@@ -67,6 +71,7 @@ export function useTasks() {
         status: 'todo',
         projectId,
         isPriority: false,
+        isToday: false,
         sortOrder: maxSortOrder + 1,
         createdAt: now,
         updatedAt: now,
@@ -78,11 +83,46 @@ export function useTasks() {
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  function updateTask(id: string, updates: { title?: string; projectId?: string | null; isPriority?: boolean }): void {
+  function updateTask(id: string, updates: { title?: string; projectId?: string | null }): void {
     db.update(task)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+  }
+
+  // Priority/Today membership mirrors extension's separate taskOrders table
+  // (priorityIds/todayIds) — mutually exclusive, and deliberately NOT
+  // touching updatedAt: that field drives "still visible today after being
+  // resolved" (constants/taskStatus.ts) and, for task-less sessions,
+  // useTaskHistory's fallback bucketing date. Bumping it on a mere
+  // priority/today toggle would be a side effect the extension's own model
+  // (a wholly separate table) never has.
+
+  // Returns false (no-op) if adding would exceed maxPriorities — caller
+  // decides how to surface that (task/[id].tsx shows an alert).
+  function togglePriority(id: string, maxPriorities: number): boolean {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current) return false;
+    if (current.isPriority) {
+      db.update(task).set({ isPriority: false }).where(eq(task.id, id)).run();
+      return true;
+    }
+    const priorityCount = (tasks ?? []).filter(
+      t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)),
+    ).length;
+    if (priorityCount >= maxPriorities) return false;
+    db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
+    return true;
+  }
+
+  function toggleToday(id: string): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current) return;
+    if (current.isToday) {
+      db.update(task).set({ isToday: false }).where(eq(task.id, id)).run();
+    } else {
+      db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
+    }
   }
 
   async function cancelLiveSessionNotifications(id: string): Promise<void> {
@@ -117,5 +157,5 @@ export function useTasks() {
     db.delete(task).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus, updateTask, removeTask };
+  return { tasks: withMeta, addTask, setTaskStatus, updateTask, togglePriority, toggleToday, removeTask };
 }

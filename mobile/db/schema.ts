@@ -94,6 +94,12 @@ export const task = sqliteTable('task', {
     .default('todo'),
   projectId: text('project_id'),
   isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
+  // Mirrors extension's todayIds membership (db.ts TaskOrderRow) as a simple
+  // per-task flag rather than a per-workspace ordered list — mobile has no
+  // workspace concept, and display order already comes from sortOrder.
+  // Mutually exclusive with isPriority, same as the extension's
+  // addToPriorities/addToTasks (App.tsx) always clearing the other list.
+  isToday: integer('is_today', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

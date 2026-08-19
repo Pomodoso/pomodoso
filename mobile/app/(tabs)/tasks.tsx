@@ -43,12 +43,13 @@ export default function TasksScreen() {
   const canStart = display.status === 'idle';
 
   const today = useTodayDate();
-  // Same "stays visible today" rule as Home: a priority task resolved today
-  // stays under Today's priorities; once it rolls off (next day) or if it
-  // was never a priority, it lives in History instead. No task appears in
-  // more than one section.
+  // Same "stays visible today" rule as Home: a priority/today task resolved
+  // today stays under its section; once it rolls off (next day) or if it was
+  // never marked, it lives in History instead. No task appears in more than
+  // one section.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
-  const backlog = tasks.filter(t => !t.isPriority && !isResolvedStatus(t.status));
+  const todayTasks = tasks.filter(t => t.isToday && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
+  const backlog = tasks.filter(t => !t.isPriority && !t.isToday && !isResolvedStatus(t.status));
 
   const history = useTaskHistory();
 
@@ -83,6 +84,25 @@ export default function TasksScreen() {
             <>
               <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
               {priorities.map(t => (
+                <TaskRow
+                  key={t.id}
+                  title={t.title}
+                  ticket={t.ticketRef ?? undefined}
+                  meta={t.meta ?? ''}
+                  status={t.status}
+                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                  onPress={() => router.push(`/task/${t.id}`)}
+                  onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                />
+              ))}
+            </>
+          )}
+
+          {todayTasks.length > 0 && (
+            <>
+              <Text style={styles.groupTitle}>Today&apos;s tasks</Text>
+              {todayTasks.map(t => (
                 <TaskRow
                   key={t.id}
                   title={t.title}

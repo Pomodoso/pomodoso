@@ -19,7 +19,7 @@ const SEED_TASKS = [
   { id: 'task-mpl', title: 'Review MPL 2.0 question rename PR', ticketRef: 'INT-455', meta: '2 pomos · 50m', status: 'todo' as const, isPriority: false, sortOrder: 0 },
   { id: 'task-flaky', title: 'Fix flaky retry test in sync engine', ticketRef: 'POM-89', meta: '1h 20m', status: 'todo' as const, isPriority: true, sortOrder: 1 },
   { id: 'task-checklist', title: 'Write launch checklist doc', ticketRef: null, meta: '25m', status: 'todo' as const, isPriority: true, sortOrder: 2 },
-  { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', status: 'todo' as const, isPriority: false, sortOrder: 3 },
+  { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', status: 'todo' as const, isPriority: false, isToday: true, sortOrder: 3 },
   { id: 'task-sqlite', title: 'Investigate SQLite adapter perf', ticketRef: 'POM-94', meta: 'Not started', status: 'todo' as const, isPriority: false, sortOrder: 4 },
   { id: 'task-eas', title: 'Set up EAS Build project', ticketRef: null, meta: '40m · yesterday', status: 'done' as const, isPriority: false, sortOrder: 5 },
 ];
@@ -82,10 +82,10 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for task's done -> status change,
-  // and later the project_id column.
+  // and later the project_id and is_today columns.
   const hasCurrentTaskSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT status, project_id FROM task LIMIT 1');
+      expoDb.getFirstSync('SELECT status, project_id, is_today FROM task LIMIT 1');
       return true;
     } catch {
       return false;
@@ -143,6 +143,7 @@ function initDb(): void {
       status TEXT NOT NULL DEFAULT 'todo',
       project_id TEXT,
       is_priority INTEGER NOT NULL DEFAULT 0,
+      is_today INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
