@@ -147,6 +147,28 @@ export function useTimer() {
       new Date(s.startedAt).toLocaleDateString('en-CA') === today,
   ).length;
 
+  // Extension's TodayFooter (HomeState.tsx) sums ALL timeLogs for today
+  // regardless of mode (pomodoro or stopwatch aren't distinguished in the
+  // tracked-time total, only in the separate pomo count above) — matched
+  // here. kind='focus' still excludes breaks, same as pomosToday. Unlike
+  // pomosToday, this deliberately includes 'interrupted' too — a stopwatch
+  // session always ends via manual Stop (stopSession sets 'interrupted',
+  // never 'completed', since there's no natural deadline to reconcile
+  // against), and a focus session stopped early still logged real time
+  // (spec 6.1: "marked interrupted with actual accumulated time"). Only
+  // pomosToday needs the strict completed-only gate, since it's counting
+  // whole finished pomodoros, not time spent.
+  const trackedSecondsToday = (sessions ?? [])
+    .filter(
+      s =>
+        s.kind === 'focus' &&
+        (s.status === 'completed' || s.status === 'interrupted') &&
+        s.endedAt &&
+        new Date(s.startedAt).toLocaleDateString('en-CA') === today,
+    )
+    .reduce((sum, s) => sum + secondsBetween(s.startedAt, s.endedAt!), 0);
+  const trackedMinutesToday = Math.floor(trackedSecondsToday / 60);
+
   // The most recently completed session (if any) whose post-session prompt
   // hasn't been resolved yet — at most one of pendingBreak/pendingNextFocus
   // is ever set, whichever this turns out to be. Deriving from real
@@ -415,8 +437,13 @@ export function useTimer() {
     isMutatingRef.current = true;
     try {
       const cancelled = await cancelScheduledNotification(active.notificationId);
+      // Stopping from a paused state: no time has elapsed since pausedAt —
+      // using nowIso() here would count the paused interval itself as
+      // tracked/focus time in every downstream aggregation that computes
+      // duration from (startedAt, endedAt).
+      const endedAt = active.status === 'paused' && active.pausedAt ? active.pausedAt : nowIso();
       db.update(pomodoroSession)
-        .set({ status: 'interrupted', endedAt: nowIso(), notificationId: cancelled ? null : active.notificationId })
+        .set({ status: 'interrupted', endedAt, notificationId: cancelled ? null : active.notificationId })
         .where(and(eq(pomodoroSession.id, active.id), inArray(pomodoroSession.status, ['active', 'paused'])))
         .run();
     } finally {
@@ -428,6 +455,7 @@ export function useTimer() {
     display,
     idleMode,
     setIdleMode,
+    trackedMinutesToday,
     pendingBreak,
     pendingNextFocus,
     startSession,

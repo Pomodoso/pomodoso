@@ -34,10 +34,16 @@ export function useTasks() {
     // useTimer.ts's startFollowUpSession) purely for display continuity —
     // spec 6.1: "Breaks are not logged in reports", so they're excluded here
     // even though they technically have a taskId.
-    if (!s.taskId || s.status !== 'completed' || !s.endedAt || s.kind !== 'focus') continue;
+    if (!s.taskId || !s.endedAt || s.kind !== 'focus') continue;
+    // 'interrupted' counts toward seconds too — a stopwatch session always
+    // ends this way (no natural deadline to reconcile), and a focus session
+    // stopped early still logged real time (spec 6.1: "marked interrupted
+    // with actual accumulated time"). Only a whole completed pomodoro counts
+    // toward the pomo tally below.
+    if (s.status !== 'completed' && s.status !== 'interrupted') continue;
     const entry = statsByTask.get(s.taskId) ?? { pomos: 0, seconds: 0 };
     entry.seconds += secondsBetween(s.startedAt, s.endedAt);
-    if (s.mode === 'pomodoro') entry.pomos += 1;
+    if (s.mode === 'pomodoro' && s.status === 'completed') entry.pomos += 1;
     statsByTask.set(s.taskId, entry);
   }
 

@@ -27,12 +27,21 @@ function formatTime(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
+// Matches extension's TodayFooter fmtTime (HomeState.tsx).
+function formatTrackedTime(totalMinutes: number): string {
+  if (totalMinutes === 0) return '0m';
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
 export default function HomeScreen() {
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const {
     display,
     idleMode,
     setIdleMode,
+    trackedMinutesToday,
     pendingBreak,
     pendingNextFocus,
     startSession,
@@ -52,6 +61,15 @@ export default function HomeScreen() {
   // resolved on (matches extension's HomeState.tsx completedToday rule) —
   // marking one done/cancelled shouldn't make it vanish immediately.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
+
+  // Matches extension's TodayFooter (HomeState.tsx) — "X/Y tasks · N pomos ·
+  // Zm tracked". tasksTotal there is scoped to "today's" tasks specifically
+  // (priorities + tasks scheduled today, excluding backlog); mobile has no
+  // separate "scheduled for today" concept on regular tasks yet, so this
+  // counts all tasks instead.
+  const tasksDone = tasks.filter(t => t.status === 'done').length;
+  const tasksTotal = tasks.length;
+  const footerText = `${tasksDone}/${tasksTotal} tasks · ${display.pomosToday} pomo${display.pomosToday === 1 ? '' : 's'} · ${formatTrackedTime(trackedMinutesToday)} tracked`;
 
   const isStopwatch = display.mode === 'stopwatch';
   const isBreak = display.kind === 'short_break' || display.kind === 'long_break';
@@ -208,6 +226,8 @@ export default function HomeScreen() {
             />
           </View>
         ))}
+
+        <Text style={styles.footer}>{footerText}</Text>
       </ScrollView>
 
       <StartModePicker {...pickerProps} />
@@ -343,4 +363,12 @@ const styles = StyleSheet.create({
   habitNameBlock: { flex: 1, minWidth: 0 },
   habitName: { fontSize: 14.5, fontWeight: '500', color: colors.text },
   habitSubtext: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
+  footer: {
+    marginTop: 18,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    fontSize: 12,
+    color: colors.textTertiary,
+  },
 });
