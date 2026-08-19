@@ -222,7 +222,11 @@ export function useTimer() {
     const remaining = active.plannedDurationSeconds != null ? Math.max(0, active.plannedDurationSeconds - elapsed) : null;
     display = {
       status: active.status as 'active' | 'paused',
-      mode: active.mode,
+      // Narrowed like `status` above: startSession only ever inserts
+      // 'pomodoro'/'stopwatch' — 'manual' entries (useTasks.ts's
+      // addManualTime) are always written directly as status='completed',
+      // so an active/paused row can never actually be mode='manual'.
+      mode: active.mode as TimerMode,
       kind: active.kind,
       taskTitle: activeTask?.title ?? null,
       ticketRef: activeTask?.ticketRef ?? null,

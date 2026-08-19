@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { LinksEditor } from '@/components/LinksEditor';
+import { NotesEditor } from '@/components/NotesEditor';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { RecurrenceFormModal } from '@/components/RecurrenceFormModal';
 import { StatusPicker } from '@/components/StatusPicker';
@@ -16,6 +18,7 @@ import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTodayDate } from '@/hooks/useTodayDate';
 import { formatRecurrenceLabel } from '@/utils/recurrence';
+import { formatMinutes, secondsBetween } from '@/utils/time';
 
 // The extension's entry point for editing project/priority is its task
 // detail screen — mobile didn't have one (see #31's known gap), which also
@@ -23,7 +26,8 @@ import { formatRecurrenceLabel } from '@/utils/recurrence';
 // both: reassigning a project after creation, and toggling priority.
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, removeTask } = useTasks();
+  const { tasks, sessions, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, setLinks, setNoteEntries, addManualTime, removeTask } =
+    useTasks();
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const { settings } = useSettings();
@@ -39,6 +43,19 @@ export default function TaskDetailScreen() {
   useEffect(() => {
     if (task) setTitle(task.title);
   }, [task?.id, task?.title]);
+
+  const [description, setDescription] = useState(task?.description ?? '');
+  const [showDescription, setShowDescription] = useState(!!task?.description);
+  useEffect(() => {
+    if (task) {
+      setDescription(task.description ?? '');
+      setShowDescription(!!task.description);
+    }
+  }, [task?.id, task?.description]);
+
+  const [addTimeVisible, setAddTimeVisible] = useState(false);
+  const [addHours, setAddHours] = useState('');
+  const [addMinutes, setAddMinutes] = useState('');
 
   if (!task) {
     return (
@@ -66,6 +83,11 @@ export default function TaskDetailScreen() {
   const taskResolved = isResolvedStatus(task.status);
   const priorityRowDisabled = !task.isPriority && taskResolved;
   const todayRowDisabled = !task.isToday && taskResolved;
+  // Same inclusion rule as useTasks.ts's stats/useTaskHistory's loggedFor —
+  // only completed/interrupted focus sessions represent real logged time.
+  const taskSessions = sessions
+    .filter(s => s.taskId === task.id && s.kind === 'focus' && (s.status === 'completed' || s.status === 'interrupted') && s.endedAt)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 
   // togglePriority enforces the maxPriorities cap itself (mirrors extension's
   // addToPriorities, App.tsx) and returns false when it refused; this just
@@ -94,6 +116,29 @@ export default function TaskDetailScreen() {
     } else {
       setTitle(task.title);
     }
+  }
+
+  function handleDescriptionBlur(): void {
+    if (!task) return;
+    const trimmed = description.trim();
+    if (trimmed !== (task.description ?? '')) {
+      updateTask(task.id, { description: trimmed || null });
+    }
+  }
+
+  function handleAddTime(): void {
+    if (!task) return;
+    const h = parseInt(addHours, 10) || 0;
+    const m = parseInt(addMinutes, 10) || 0;
+    const seconds = h * 3600 + m * 60;
+    // parseInt can return Infinity for a sufficiently long pasted digit
+    // string, which passes seconds > 0 — addManualTime's Date math would
+    // then throw on toISOString() instead of recording or rejecting it.
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    addManualTime(task.id, seconds);
+    setAddHours('');
+    setAddMinutes('');
+    setAddTimeVisible(false);
   }
 
   function handleDelete(): void {
@@ -137,6 +182,23 @@ export default function TaskDetailScreen() {
           <View style={styles.ticketPill}>
             <Text style={styles.ticketPillText}>{task.ticketRef}</Text>
           </View>
+        )}
+
+        {showDescription ? (
+          <TextInput
+            style={styles.descriptionInput}
+            value={description}
+            onChangeText={setDescription}
+            onBlur={handleDescriptionBlur}
+            placeholder="Add a description…"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+          />
+        ) : (
+          <Pressable style={styles.addFieldBtn} onPress={() => setShowDescription(true)}>
+            <Ionicons name="add" size={14} color={colors.textTertiary} />
+            <Text style={styles.addFieldBtnText}>Add description</Text>
+          </Pressable>
         )}
 
         <Text style={styles.sectionLabel}>Status</Text>
@@ -208,12 +270,67 @@ export default function TaskDetailScreen() {
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </Pressable>
 
-        {task.meta && (
-          <>
-            <Text style={styles.sectionLabel}>Time tracked</Text>
-            <Text style={styles.metaText}>{task.meta}</Text>
-          </>
+        <Text style={styles.sectionLabel}>Links</Text>
+        <LinksEditor links={task.links} onChange={next => setLinks(task.id, next)} />
+
+        <Text style={styles.sectionLabel}>Notes</Text>
+        <NotesEditor notes={task.noteEntries} onChange={next => setNoteEntries(task.id, next)} />
+
+        <View style={styles.sessionHeaderRow}>
+          <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Time tracked</Text>
+          {task.meta && <Text style={styles.metaText}>{task.meta}</Text>}
+        </View>
+
+        {addTimeVisible ? (
+          <View style={styles.addTimeForm}>
+            <TextInput
+              style={styles.addTimeInput}
+              value={addHours}
+              onChangeText={setAddHours}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <Text style={styles.addTimeUnit}>h</Text>
+            <TextInput
+              style={styles.addTimeInput}
+              value={addMinutes}
+              onChangeText={setAddMinutes}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <Text style={styles.addTimeUnit}>m</Text>
+            <View style={{ flex: 1 }} />
+            <Pressable onPress={handleAddTime}>
+              <Text style={styles.addFormBtnAccent}>Add</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setAddTimeVisible(false);
+                setAddHours('');
+                setAddMinutes('');
+              }}
+            >
+              <Text style={styles.addFormBtnMuted}>Cancel</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable style={styles.addFieldBtn} onPress={() => setAddTimeVisible(true)}>
+            <Ionicons name="add" size={14} color={colors.textTertiary} />
+            <Text style={styles.addFieldBtnText}>Add time</Text>
+          </Pressable>
         )}
+
+        {taskSessions.map(s => (
+          <View key={s.id} style={styles.sessionRow}>
+            <Text style={styles.sessionDate} numberOfLines={1}>
+              {new Date(s.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </Text>
+            <Text style={styles.sessionMode}>{s.mode === 'pomodoro' ? '🍅' : s.mode === 'manual' ? 'manual' : '⏱'}</Text>
+            <Text style={styles.sessionDuration}>{formatMinutes(Math.round(secondsBetween(s.startedAt, s.endedAt!) / 60))}</Text>
+          </View>
+        ))}
       </ScrollView>
 
       <StatusPicker {...statusPickerProps} />
@@ -286,4 +403,57 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.text },
   rowTextMuted: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.textTertiary },
   metaText: { fontSize: 14, color: colors.textSecondary },
+  descriptionInput: {
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 18,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  addFieldBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, marginBottom: 18 },
+  addFieldBtnText: { fontSize: 13, color: colors.textTertiary },
+  sessionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  addTimeForm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  addTimeInput: {
+    width: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    textAlign: 'center',
+    color: colors.text,
+  },
+  addTimeUnit: { fontSize: 12, color: colors.textTertiary },
+  addFormBtnAccent: { fontSize: 13, fontWeight: '600', color: colors.accent },
+  addFormBtnMuted: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sessionDate: { flex: 1, fontSize: 12, color: colors.textTertiary },
+  sessionMode: { fontSize: 11, color: colors.textTertiary },
+  sessionDuration: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 });

@@ -95,10 +95,13 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for task's done -> status change,
-  // and later the project_id, is_today, and recurrence/completed_dates columns.
+  // and later the project_id, is_today, recurrence/completed_dates, and
+  // description/links/note_entries columns.
   const hasCurrentTaskSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT status, project_id, is_today, recurrence, completed_dates FROM task LIMIT 1');
+      expoDb.getFirstSync(
+        'SELECT status, project_id, is_today, recurrence, completed_dates, description, links, note_entries FROM task LIMIT 1',
+      );
       return true;
     } catch {
       return false;
@@ -159,6 +162,9 @@ function initDb(): void {
       is_today INTEGER NOT NULL DEFAULT 0,
       recurrence TEXT,
       completed_dates TEXT NOT NULL DEFAULT '[]',
+      description TEXT,
+      links TEXT NOT NULL DEFAULT '[]',
+      note_entries TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
