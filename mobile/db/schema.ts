@@ -48,6 +48,23 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   notificationId: text('notification_id'),
 });
 
+// Spike task model — id/title/ticketRef/done/isPriority is enough to back
+// Home's "Today's priorities" and the Tasks tab. No project/workspace yet
+// (comes with the shared/core extraction and a real multi-entity model).
+// pomodoroSession still stores a plain taskTitle/ticketRef text snapshot
+// rather than a taskId FK — keeps this PR from also having to migrate the
+// timer schema; revisit once real task-level time aggregation is needed.
+export const task = sqliteTable('task', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  ticketRef: text('ticket_ref'),
+  meta: text('meta'), // display-only placeholder ("1h 20m", "Not started") until real time aggregation exists
+  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
 // Single row (id always 'singleton'). Spec 6.1: "the last used mode is
 // remembered... Starting a session is one click on the play button on any
 // task. The mode used is the one currently selected on the toggle." — so any

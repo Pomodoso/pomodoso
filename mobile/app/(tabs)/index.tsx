@@ -10,6 +10,7 @@ import { TimerRing } from '@/components/TimerRing';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
 import { useStartPicker } from '@/hooks/useStartPicker';
+import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 
 const POMO_TOTAL_TARGET = 8;
@@ -25,6 +26,8 @@ export default function HomeScreen() {
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const { display, idleMode, setIdleMode, startSession, pauseSession, resumeSession, stopSession } = useTimer();
   const { requestStart, pickerProps } = useStartPicker(startSession);
+  const { tasks, toggleTaskDone } = useTasks();
+  const priorities = tasks.filter(t => t.isPriority && !t.done);
 
   const isStopwatch = display.mode === 'stopwatch';
   const timeLabel = display.status === 'idle' ? formatTime(0) : formatTime(isStopwatch ? display.elapsedSeconds : (display.remainingSeconds ?? 0));
@@ -121,17 +124,16 @@ export default function HomeScreen() {
         </View>
 
         <Text style={styles.sectionTitle}>Today&apos;s priorities</Text>
-        <TaskRow
-          title="Fix flaky retry test in sync engine"
-          ticket="POM-89"
-          meta="1h 20m"
-          onPlayPress={display.status === 'idle' ? () => requestStart('Fix flaky retry test in sync engine', 'POM-89') : undefined}
-        />
-        <TaskRow
-          title="Write launch checklist doc"
-          meta="25m"
-          onPlayPress={display.status === 'idle' ? () => requestStart('Write launch checklist doc', null) : undefined}
-        />
+        {priorities.map(t => (
+          <TaskRow
+            key={t.id}
+            title={t.title}
+            ticket={t.ticketRef ?? undefined}
+            meta={t.meta ?? ''}
+            onPlayPress={display.status === 'idle' ? () => requestStart(t.title, t.ticketRef) : undefined}
+            onTogglePress={() => toggleTaskDone(t.id, true)}
+          />
+        ))}
 
         <Text style={styles.sectionTitle}>Habits today</Text>
         {habits.map(habit => (
