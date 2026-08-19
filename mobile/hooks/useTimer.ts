@@ -150,7 +150,6 @@ export function useTimer() {
     if (active || isMutatingRef.current) return; // fast path: same-instance rapid taps bail here
     isMutatingRef.current = true;
     try {
-      setIdleMode(mode); // spec 6.1: "updated on every session start"
       const plannedDurationSeconds = mode === 'pomodoro' ? FOCUS_DURATION_SECONDS : null;
       const startedAt = nowIso();
       let notificationId: string | null = null;
@@ -168,17 +167,20 @@ export function useTimer() {
         SELECT ${uid()}, ${mode}, 'focus', ${taskTitle}, ${ticketRef}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
       `);
-      if (result.changes === 0 && notificationId) {
+      if (result.changes === 0) {
         // Lost the race — another instance's start already landed. Don't
-        // leave this call's notification orphaned; if cancellation itself
-        // fails, at least surface it instead of silently trusting it worked
-        // — that stray notification will still fire for a session that was
-        // never persisted.
-        const cancelled = await cancelScheduledNotification(notificationId);
-        if (!cancelled) {
-          console.warn('Orphaned notification from a lost session-start race could not be cancelled:', notificationId);
+        // leave this call's notification orphaned, and don't persist its
+        // mode as the shared preference (a losing call's mode shouldn't
+        // override whatever the winning session actually started with).
+        if (notificationId) {
+          const cancelled = await cancelScheduledNotification(notificationId);
+          if (!cancelled) {
+            console.warn('Orphaned notification from a lost session-start race could not be cancelled:', notificationId);
+          }
         }
+        return;
       }
+      setIdleMode(mode); // spec 6.1: "updated on every session start" — only once we know this call won
     } finally {
       isMutatingRef.current = false;
     }
@@ -211,7 +213,13 @@ export function useTimer() {
       // If pausing earlier failed to cancel the old notification, its id is
       // still stored here — try once more before scheduling a replacement,
       // so a transient failure back at pause time doesn't leave two live
-      // notifications for what's conceptually one session.
+      // notifications for what's conceptually one session. NOTE (documented
+      // limitation): if this second attempt also fails, the old notification
+      // is overwritten and lost here anyway (a single notificationId column
+      // can't track two in-flight ids) — accepted residual risk, same
+      // category as the midnight-attribution note below: needs a schema
+      // change (a list, not a single id) to close properly, low real-world
+      // odds (would need cancellation to fail twice in a row).
       if (active.notificationId) {
         await cancelScheduledNotification(active.notificationId);
       }
@@ -232,10 +240,19 @@ export function useTimer() {
         notificationId = await tryScheduleNotification(endsAt, active.taskTitle);
       }
 
-      db.update(pomodoroSession)
+      const result = db
+        .update(pomodoroSession)
         .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId })
         .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'paused')))
         .run();
+      if (result.changes === 0 && notificationId) {
+        // Lost the race (another instance already resumed/stopped this
+        // session) — don't leave the notification we just scheduled orphaned.
+        const cancelled = await cancelScheduledNotification(notificationId);
+        if (!cancelled) {
+          console.warn('Orphaned notification from a lost resume race could not be cancelled:', notificationId);
+        }
+      }
     } finally {
       isMutatingRef.current = false;
     }
