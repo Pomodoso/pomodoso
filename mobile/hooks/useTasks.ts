@@ -52,7 +52,7 @@ export function useTasks() {
     return { ...t, meta };
   });
 
-  function addTask(title: string): void {
+  function addTask(title: string, projectId: string | null = null): void {
     const trimmed = title.trim();
     if (!trimmed) return;
     const maxSortOrder = (tasks ?? []).reduce((max, t) => Math.max(max, t.sortOrder), -1);
@@ -64,6 +64,7 @@ export function useTasks() {
         ticketRef: null,
         meta: 'Not started',
         status: 'todo',
+        projectId,
         isPriority: false,
         sortOrder: maxSortOrder + 1,
         createdAt: now,

@@ -10,16 +10,17 @@ interface TaskRowProps {
   ticket?: string;
   meta: string;
   status: TaskStatus;
+  projectColor?: string | null;
   onPlayPress?: () => void;
   onStatusPress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, status, onPlayPress, onStatusPress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, status, projectColor, onPlayPress, onStatusPress }: TaskRowProps) {
   const resolved = isResolvedStatus(status);
   const dotColor = STATUS_DOT_COLOR[status];
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, projectColor && { borderLeftWidth: 3, borderLeftColor: projectColor, paddingLeft: 9 }]}>
       <Pressable
         style={[styles.statusDot, { borderColor: dotColor }, status !== 'todo' && { backgroundColor: dotColor }]}
         onPress={onStatusPress}
@@ -29,9 +30,12 @@ export function TaskRow({ title, ticket, meta, status, onPlayPress, onStatusPres
         {status === 'cancelled' && <Ionicons name="close" size={13} color={colors.surface} />}
       </Pressable>
       <View style={styles.body}>
-        <Text style={[styles.title, resolved && styles.titleDone]} numberOfLines={2}>
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={[styles.title, resolved && styles.titleDone]} numberOfLines={2}>
+            {title}
+          </Text>
+          {projectColor && <View style={[styles.projectDot, { backgroundColor: projectColor }]} />}
+        </View>
         <View style={styles.metaRow}>
           {ticket && (
             <View style={styles.ticketPill}>
@@ -68,8 +72,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: { flex: 1, minWidth: 0 },
-  title: { fontSize: 14.5, fontWeight: '500', color: colors.text, marginBottom: 3 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  title: { flexShrink: 1, fontSize: 14.5, fontWeight: '500', color: colors.text },
   titleDone: { textDecorationLine: 'line-through', color: colors.textTertiary },
+  projectDot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ticketPill: {
     backgroundColor: colors.infoSoft,

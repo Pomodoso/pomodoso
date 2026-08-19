@@ -53,6 +53,21 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   promptResolved: integer('prompt_resolved', { mode: 'boolean' }).notNull().default(false),
 });
 
+// Mirrors extension/src/db.ts's ProjectRow, minus workspaceId (mobile has
+// no workspace concept yet — the extension itself treats a project with no
+// workspaceId as global/visible everywhere, so dropping the field entirely
+// is equivalent, not a narrowing) and endDate (extension's "archived after"
+// date — no archival UI ported yet, not needed until projects list grows).
+export const project = sqliteTable('project', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  color: text('color').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export type ProjectRow = typeof project.$inferSelect;
+
 // Status set matches extension/src/db.ts's TaskStatus exactly, so the
 // mobile status picker mirrors the extension's semantics/UX (see
 // STATUS_OPTIONS/STATUS_DOT_COLOR in extension/src/popup/HomeState.tsx).
@@ -73,6 +88,7 @@ export const task = sqliteTable('task', {
   status: text('status', { enum: ['todo', 'in_progress', 'done', 'delayed', 'cancelled'] })
     .notNull()
     .default('todo'),
+  projectId: text('project_id'),
   isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
