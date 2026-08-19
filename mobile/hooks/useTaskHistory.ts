@@ -84,7 +84,10 @@ export function useTaskHistory() {
     // toward those earlier days' totals (only toward the bucketed day).
     // Replicated as-is for parity rather than "fixed", since the goal here
     // is matching the extension's actual behavior.
-    const effectiveDate = logs.length > 0 ? logs.reduce((max, s) => (s.startedAt > max ? s.startedAt : max), '').slice(0, 10) : new Date(t.updatedAt).toLocaleDateString('en-CA');
+    const effectiveDate =
+      logs.length > 0
+        ? new Date(logs.reduce((max, s) => (s.startedAt > max ? s.startedAt : max), '')).toLocaleDateString('en-CA')
+        : new Date(t.updatedAt).toLocaleDateString('en-CA');
 
     const minutesOnDay = Math.floor(
       logs

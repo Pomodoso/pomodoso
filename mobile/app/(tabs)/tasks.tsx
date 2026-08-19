@@ -139,7 +139,14 @@ export default function TasksScreen() {
                     {day.totalMinutes > 0 && <Text style={styles.dayMinutes}>{formatMinutes(day.totalMinutes)}</Text>}
                   </View>
                   {day.tasks.map(t => (
-                    <TaskRow key={t.id} title={t.title} ticket={t.ticketRef ?? undefined} meta="" status={t.status} />
+                    <TaskRow
+                      key={t.id}
+                      title={t.title}
+                      ticket={t.ticketRef ?? undefined}
+                      meta=""
+                      status={t.status}
+                      onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                    />
                   ))}
                 </View>
               ))}
