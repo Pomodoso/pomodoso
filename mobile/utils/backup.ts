@@ -86,19 +86,13 @@ export function validateBackup(json: string): BackupEnvelope {
 export async function importBackup(json: string): Promise<void> {
   const envelope = validateBackup(json);
 
-  // Cancelled before the transaction (notification APIs are async, a
-  // db.transaction callback isn't) — mirrors removeTask's cascade
-  // (useTasks.ts): deleting a live session without cancelling its OS
-  // notification first leaves an orphaned notification that still fires
-  // later, referencing a session the imported database no longer has.
+  // Snapshot before the transaction, but only cancel notifications AFTER
+  // it commits (see below) — cancelling first would desync notification
+  // state from DB state if the transaction then rolled back (a malformed
+  // backup row violating a constraint, say): the session row would survive
+  // the rollback exactly as it was, but its notification would already be
+  // gone, so a backgrounded timer would finish silently.
   const liveSessions = db.select().from(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).all();
-  for (const s of liveSessions) {
-    if (!s.notificationId) continue;
-    const cancelled = await cancelScheduledNotification(s.notificationId);
-    if (!cancelled) {
-      console.warn('Orphaned notification from a session cleared by import could not be cancelled:', s.notificationId);
-    }
-  }
 
   db.transaction(tx => {
     for (const [name, table] of Object.entries(TABLES)) {
@@ -118,4 +112,18 @@ export async function importBackup(json: string): Promise<void> {
     // "no active session" guard (useTimer.ts) from ever starting a new one.
     tx.delete(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).run();
   });
+
+  // Only reached if the transaction above actually committed (it throws on
+  // rollback, which propagates out of this function before reaching here)
+  // — so every session in liveSessions is now genuinely gone. Cancellation
+  // failure is logged, not treated as fatal, same as removeTask's cascade
+  // (useTasks.ts): a rare failure to cancel one notification shouldn't
+  // block an otherwise-successful import.
+  for (const s of liveSessions) {
+    if (!s.notificationId) continue;
+    const cancelled = await cancelScheduledNotification(s.notificationId);
+    if (!cancelled) {
+      console.warn('Orphaned notification from a session cleared by import could not be cancelled:', s.notificationId);
+    }
+  }
 }
