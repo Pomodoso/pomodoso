@@ -21,8 +21,6 @@ import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
 import { formatMinutes } from '@/utils/time';
 
-const POMO_TOTAL_TARGET = 8;
-
 function formatTime(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
   const m = Math.floor(s / 60);
@@ -83,7 +81,9 @@ export default function HomeScreen() {
           <Text style={styles.workspaceName}>Work</Text>
           <Ionicons name="chevron-down" size={14} color={colors.textTertiary} />
         </View>
-        <Ionicons name="settings-outline" size={20} color={colors.textTertiary} />
+        <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+          <Ionicons name="settings-outline" size={20} color={colors.textTertiary} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -114,9 +114,9 @@ export default function HomeScreen() {
                 ))}
               </View>
 
-              <TimerRing size={216} progress={0} timeLabel={formatTime(idleMode === 'pomodoro' ? 25 * 60 : 0)} />
+              <TimerRing size={216} progress={0} timeLabel={formatTime(idleMode === 'pomodoro' ? display.focusSeconds : 0)} />
 
-              <Text style={styles.pomoCount}>Pomo {display.pomosToday} of {POMO_TOTAL_TARGET} today</Text>
+              <Text style={styles.pomoCount}>Pomo {display.pomosToday} of {display.dailyGoal} today</Text>
 
               <Pressable style={styles.startBtn} onPress={() => startSession(idleMode, null)}>
                 <Ionicons name="play" size={16} color={colors.surface} />
@@ -142,7 +142,7 @@ export default function HomeScreen() {
 
               <TimerRing size={216} progress={isStopwatch ? 1 : display.progress} timeLabel={timeLabel} color={ringColor}>
                 {!isStopwatch && !isBreak && (
-                  <Text style={styles.pomoRowLabel}>Pomo {display.pomosToday + 1} of {POMO_TOTAL_TARGET}</Text>
+                  <Text style={styles.pomoRowLabel}>Pomo {display.pomosToday + 1} of {display.dailyGoal}</Text>
                 )}
               </TimerRing>
 

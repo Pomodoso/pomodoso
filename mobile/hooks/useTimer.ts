@@ -7,6 +7,8 @@ import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
 import { secondsBetween } from '@/utils/time';
 
+import { useSettings } from './useSettings';
+
 // Device-local timer state (CLAUDE.md rule 8: server-authoritative only when
 // sync is enabled — mobile free tier stays local, same as the extension).
 // "Mandatory task association" from spec 6.1 is relaxed here — a session can
@@ -16,15 +18,6 @@ import { secondsBetween } from '@/utils/time';
 export type TimerMode = 'pomodoro' | 'stopwatch';
 export type SessionKind = 'focus' | 'short_break' | 'long_break';
 export type TimerStatus = 'idle' | 'active' | 'paused';
-
-export const FOCUS_DURATION_SECONDS = 25 * 60;
-// Matches extension's DEFAULT_TIMER_SETTINGS (shared/types/src/types/index.ts)
-// — global defaults, not per-workspace despite spec 6.1's wording; the
-// extension itself only ever reads/writes these as a single flat settings
-// row, no workspace scoping exists in its actual implementation either.
-export const SHORT_BREAK_DURATION_SECONDS = 5 * 60;
-export const LONG_BREAK_DURATION_SECONDS = 15 * 60;
-export const LONG_BREAK_EVERY = 4;
 
 export interface TimerDisplay {
   status: TimerStatus;
@@ -36,6 +29,8 @@ export interface TimerDisplay {
   remainingSeconds: number | null; // null for stopwatch
   progress: number; // 0..1, meaningful for pomodoro only
   pomosToday: number;
+  focusSeconds: number; // from settings — for the idle-state preview ring
+  dailyGoal: number; // from settings — "Pomo X of {dailyGoal} today"
 }
 
 // Extension offers a break after a completed focus pomo, and the next focus
@@ -86,6 +81,7 @@ export function useTimer() {
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
   const { data: tasks } = useLiveQuery(db.select().from(task));
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
+  const { settings } = useSettings();
 
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
   // shared (and persisted) across Home and Tasks, not a per-screen choice.
@@ -195,11 +191,11 @@ export function useTimer() {
           new Date(s.startedAt).toLocaleDateString('en-CA') === sessionDay &&
           s.startedAt <= mostRecentUnresolved.startedAt,
       ).length;
-      const isLongBreak = ordinalThatDay > 0 && ordinalThatDay % LONG_BREAK_EVERY === 0;
+      const isLongBreak = ordinalThatDay > 0 && ordinalThatDay % settings.longBreakEvery === 0;
       pendingBreak = {
         taskTitle,
         kind: isLongBreak ? 'long_break' : 'short_break',
-        durationSeconds: isLongBreak ? LONG_BREAK_DURATION_SECONDS : SHORT_BREAK_DURATION_SECONDS,
+        durationSeconds: isLongBreak ? settings.longBreakSeconds : settings.shortBreakSeconds,
       };
     } else {
       pendingNextFocus = { taskTitle };
@@ -215,9 +211,11 @@ export function useTimer() {
       taskTitle: null,
       ticketRef: null,
       elapsedSeconds: 0,
-      remainingSeconds: FOCUS_DURATION_SECONDS,
+      remainingSeconds: settings.focusSeconds,
       progress: 0,
       pomosToday,
+      focusSeconds: settings.focusSeconds,
+      dailyGoal: settings.dailyGoal,
     };
   } else {
     const elapsed = secondsBetween(active.startedAt, active.status === 'paused' && active.pausedAt ? active.pausedAt : nowIso());
@@ -232,6 +230,8 @@ export function useTimer() {
       remainingSeconds: remaining,
       progress: active.plannedDurationSeconds ? Math.min(1, elapsed / active.plannedDurationSeconds) : 0,
       pomosToday,
+      focusSeconds: settings.focusSeconds,
+      dailyGoal: settings.dailyGoal,
     };
   }
 
@@ -265,7 +265,7 @@ export function useTimer() {
     if (active || isMutatingRef.current) return; // fast path: same-instance rapid taps bail here
     isMutatingRef.current = true;
     try {
-      const plannedDurationSeconds = mode === 'pomodoro' ? FOCUS_DURATION_SECONDS : null;
+      const plannedDurationSeconds = mode === 'pomodoro' ? settings.focusSeconds : null;
       const startedAt = nowIso();
       const taskTitle = taskId ? (taskById.get(taskId)?.title ?? null) : null;
       let notificationId: string | null = null;
@@ -348,7 +348,7 @@ export function useTimer() {
 
   function startNextFocus(): void {
     if (!mostRecentUnresolved || !pendingNextFocus) return;
-    void startFollowUpSession('focus', mostRecentUnresolved.taskId, FOCUS_DURATION_SECONDS);
+    void startFollowUpSession('focus', mostRecentUnresolved.taskId, settings.focusSeconds);
   }
 
   function dismissBreakDone(): void {

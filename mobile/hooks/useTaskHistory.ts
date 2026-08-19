@@ -5,14 +5,15 @@ import { db } from '@/db/client';
 import type { TaskStatus } from '@/db/schema';
 import { pomodoroSession, task } from '@/db/schema';
 import { isResolvedStatus } from '@/constants/taskStatus';
+import { useSettings } from '@/hooks/useSettings';
 import { secondsBetween } from '@/utils/time';
 
 // Ports extension's TaskHistoryView (HomeState.tsx) — day-grouped work
 // history reached from the Tasks tab. Deliberate simplifications for
-// mobile's simpler model: no projects/meetings (don't exist yet), no
-// per-workspace weekStart setting (hardcoded Monday), no custom date range
-// (just This week / this month, the two extension defaults) — these can
-// follow later if actually needed, not built ahead of a real use case.
+// mobile's simpler model: no projects/meetings (don't exist yet), no custom
+// date range (just This week / this month, the two extension defaults) —
+// these can follow later if actually needed, not built ahead of a real use
+// case.
 
 export type HistoryRange = 'week' | 'month';
 
@@ -42,12 +43,12 @@ function daysAgo(n: number): string {
 }
 
 // Extension: weekStartDate — most recent occurrence of the configured
-// week-start weekday. Mobile has no per-workspace setting for this yet, so
-// Monday is hardcoded (day 0 in extension's 0=Mon..6=Sun convention).
-function mostRecentMonday(): string {
+// week-start weekday (settings.weekStart, 0=Mon..6=Sun convention).
+function mostRecentWeekStart(weekStart: number): string {
   const now = new Date();
   const dow = (now.getDay() + 6) % 7; // JS getDay is 0=Sun..6=Sat; shift to 0=Mon..6=Sun
-  return daysAgo(dow);
+  const daysSince = (dow - weekStart + 7) % 7;
+  return daysAgo(daysSince);
 }
 
 function formatDayLabel(dateStr: string): string {
@@ -58,6 +59,7 @@ function formatDayLabel(dateStr: string): string {
 
 export function useTaskHistory() {
   const [range, setRange] = useState<HistoryRange>('week');
+  const { settings } = useSettings();
   const { data: tasks } = useLiveQuery(db.select().from(task));
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
 
@@ -111,7 +113,7 @@ export function useTaskHistory() {
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const cutoff = range === 'week' ? mostRecentMonday() : daysAgo(30);
+  const cutoff = range === 'week' ? mostRecentWeekStart(settings.weekStart) : daysAgo(30);
   const days = allDays.filter(d => d.date >= cutoff);
 
   const hasAny = allDays.length > 0;
