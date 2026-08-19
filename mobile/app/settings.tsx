@@ -1,14 +1,17 @@
 import type { SoundEvent, SoundSettings } from '@pomodoso/types';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DAY_LABELS } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 import type { AppSettings } from '@/hooks/useSettings';
 import { useSettings } from '@/hooks/useSettings';
+import { importBackup, shareBackup } from '@/utils/backup';
 import { playSound } from '@/utils/sounds';
 
 const SOUND_EVENTS: { event: SoundEvent; key: keyof SoundSettings['events']; label: string; description: string }[] = [
@@ -83,6 +86,8 @@ export default function SettingsScreen(): React.JSX.Element {
   const { settings, update } = useSettings();
   const [longEveryStr, setLongEveryStr] = useState(String(settings.longBreakEvery));
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     setLongEveryStr(String(settings.longBreakEvery));
@@ -108,6 +113,50 @@ export default function SettingsScreen(): React.JSX.Element {
     const active = settings.workDays.includes(day);
     const next = active ? settings.workDays.filter(d => d !== day) : [...settings.workDays, day].sort((a, b) => a - b);
     update('workDays', next);
+  }
+
+  async function handleExport(): Promise<void> {
+    setExporting(true);
+    try {
+      await shareBackup();
+    } catch (err) {
+      Alert.alert('Export failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleImport(): Promise<void> {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
+    if (result.canceled || !result.assets[0]) return;
+    const uri = result.assets[0].uri;
+    let content: string;
+    try {
+      content = await new File(uri).text();
+    } catch {
+      Alert.alert('Import failed', 'Could not read the selected file.');
+      return;
+    }
+    Alert.alert('Replace all data?', 'This will replace ALL your current tasks, habits, sessions, and settings. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Replace all data',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setImporting(true);
+            try {
+              await importBackup(content);
+              Alert.alert('Import complete', 'Your data has been restored.');
+            } catch (err) {
+              Alert.alert('Import failed', err instanceof Error ? err.message : 'Unknown error');
+            } finally {
+              setImporting(false);
+            }
+          })();
+        },
+      },
+    ]);
   }
 
   return (
@@ -280,6 +329,46 @@ export default function SettingsScreen(): React.JSX.Element {
             </View>
           ))}
         </View>
+
+        <Text style={styles.sectionTitle}>Data</Text>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Export</Text>
+          <Text style={styles.hint}>Download all your tasks, habits, sessions, and settings as a JSON file.</Text>
+          <Pressable
+            style={[styles.actionBtn, exporting && styles.actionBtnDisabled]}
+            onPress={() => void handleExport()}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <ActivityIndicator color={colors.surface} size="small" />
+            ) : (
+              <>
+                <Ionicons name="download-outline" size={15} color={colors.surface} />
+                <Text style={styles.actionBtnText}>Export data</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Import</Text>
+          <Text style={styles.hint}>Restore data from a previously exported file. This replaces all current data.</Text>
+          <Pressable
+            style={[styles.actionBtnOutline, importing && styles.actionBtnDisabled]}
+            onPress={() => void handleImport()}
+            disabled={importing}
+          >
+            {importing ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={15} color={colors.text} />
+                <Text style={styles.actionBtnOutlineText}>Choose file…</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -398,4 +487,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  actionBtnText: { fontSize: 13.5, fontWeight: '700', color: colors.surface },
+  actionBtnOutline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  actionBtnOutlineText: { fontSize: 13.5, fontWeight: '700', color: colors.text },
+  actionBtnDisabled: { opacity: 0.6 },
 });
