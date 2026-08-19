@@ -1,8 +1,9 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
 import { habitHistory, habits } from '@/db/schema';
+import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
 import { useTodayDate } from './useTodayDate';
 
 export interface HabitWithProgress {
@@ -13,9 +14,11 @@ export interface HabitWithProgress {
   goal: number | null;
   unit: string | null;
   unitAmount: number | null;
+  days: number[];
   sortOrder: number;
   count: number;
   done: boolean;
+  scheduledToday: boolean;
   streakLabel: string;
 }
 
@@ -25,10 +28,10 @@ function todayStr(): string {
   return new Date().toLocaleDateString('en-CA');
 }
 
-function dateOffset(daysAgo: number): string {
+function dateOffset(daysAgo: number): { date: string; dow: number } {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
-  return d.toLocaleDateString('en-CA');
+  return { date: d.toLocaleDateString('en-CA'), dow: toMondayFirstDow(d) };
 }
 
 function isDone(kind: 'boolean' | 'counter', goal: number | null, row: { count: number; done: boolean } | undefined): boolean {
@@ -39,17 +42,37 @@ function isDone(kind: 'boolean' | 'counter', goal: number | null, row: { count: 
 function streakLabel(
   kind: 'boolean' | 'counter',
   goal: number | null,
+  days: number[],
   historyByDate: Map<string, { count: number; done: boolean }>,
 ): string {
   let streak = 0;
   for (let i = 1; i < 365; i++) {
-    if (isDone(kind, goal, historyByDate.get(dateOffset(i)))) {
+    const { date, dow } = dateOffset(i);
+    // Not scheduled that day — skip without breaking the streak, matching
+    // the extension's "every day" default semantics of [] and the general
+    // expectation that a Mon/Wed/Fri habit isn't "missed" on a Tuesday.
+    if (days.length > 0 && !days.includes(dow)) continue;
+    if (isDone(kind, goal, historyByDate.get(date))) {
       streak++;
     } else {
       break;
     }
   }
   return streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet';
+}
+
+function uid(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export interface HabitInput {
+  name: string;
+  icon: string;
+  kind: 'boolean' | 'counter';
+  goal: number | null;
+  unit: string | null;
+  unitAmount: number | null;
+  days: number[];
 }
 
 export function useHabits() {
@@ -67,11 +90,14 @@ export function useHabits() {
   const merged: HabitWithProgress[] = (habitRows ?? []).map(h => {
     const byDate = rowsByHabit.get(h.id) ?? new Map();
     const todayRow = byDate.get(today);
+    const days = parseDays(h.days);
     return {
       ...h,
+      days,
       count: todayRow?.count ?? 0,
       done: isDone(h.kind, h.goal, todayRow),
-      streakLabel: streakLabel(h.kind, h.goal, byDate),
+      scheduledToday: isScheduledToday(days),
+      streakLabel: streakLabel(h.kind, h.goal, days, byDate),
     };
   });
 
@@ -109,5 +135,48 @@ export function useHabits() {
       .run();
   }
 
-  return { habits: merged, toggleHabit, incrementHabit };
+  function addHabit(input: HabitInput): void {
+    const maxSortOrder = (habitRows ?? []).reduce((max, h) => Math.max(max, h.sortOrder), -1);
+    db.insert(habits)
+      .values({
+        id: uid(),
+        name: input.name.trim(),
+        icon: input.icon,
+        kind: input.kind,
+        goal: input.goal,
+        unit: input.unit,
+        unitAmount: input.unitAmount,
+        days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+        sortOrder: maxSortOrder + 1,
+      })
+      .run();
+  }
+
+  function updateHabit(id: string, input: HabitInput): void {
+    db.update(habits)
+      .set({
+        name: input.name.trim(),
+        icon: input.icon,
+        kind: input.kind,
+        goal: input.goal,
+        unit: input.unit,
+        unitAmount: input.unitAmount,
+        days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+      })
+      .where(eq(habits.id, id))
+      .run();
+  }
+
+  function removeHabit(id: string): void {
+    // Cascade, wrapped in a transaction so the two deletes commit together —
+    // an interruption between them would otherwise leave the habit_history
+    // gone but the habit itself still present, looking like a "brand new"
+    // habit with its whole streak silently erased.
+    db.transaction(tx => {
+      tx.delete(habitHistory).where(eq(habitHistory.habitId, id)).run();
+      tx.delete(habits).where(eq(habits.id, id)).run();
+    });
+  }
+
+  return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit };
 }

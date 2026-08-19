@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { daysSummary } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 
 import { HabitControl } from './HabitControl';
@@ -10,12 +11,14 @@ interface HabitRowProps {
   icon: ComponentProps<typeof Ionicons>['name'];
   name: string;
   streakLabel: string;
+  days: number[];
   kind: 'boolean' | 'counter';
   done: boolean;
   count: number;
   goal: number | null;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
+  onPress?: () => void;
   onToggle: () => void;
   onIncrement: (delta: number) => void;
 }
@@ -24,25 +27,32 @@ export function HabitRow({
   icon,
   name,
   streakLabel,
+  days,
   kind,
   done,
   count,
   goal,
   weekFilled,
   todayIndex,
+  onPress,
   onToggle,
   onIncrement,
 }: HabitRowProps) {
+  const schedule = daysSummary(days);
+
   return (
     <View style={styles.card}>
       <View style={styles.top}>
         <View style={[styles.icon, !done && styles.iconPending]}>
           <Ionicons name={icon} size={19} color={done ? colors.success : colors.textTertiary} />
         </View>
-        <View style={styles.nameBlock}>
+        <Pressable style={styles.nameBlock} onPress={onPress} disabled={!onPress}>
           <Text style={styles.name}>{name}</Text>
-          <Text style={styles.streak}>{streakLabel}</Text>
-        </View>
+          <Text style={styles.streak}>
+            {streakLabel}
+            {schedule ? ` · ${schedule}` : ''}
+          </Text>
+        </Pressable>
         <HabitControl kind={kind} done={done} count={count} goal={goal} onToggle={onToggle} onIncrement={onIncrement} />
       </View>
       <View style={styles.week}>
