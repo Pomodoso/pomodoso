@@ -9,8 +9,10 @@ import { pomodoroSession, task } from '@/db/schema';
 import type { NoteEntry, TaskLink, TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { activeOccurrence } from '@/utils/recurrence';
+import { playSound } from '@/utils/sounds';
 import { secondsBetween } from '@/utils/time';
 
+import { useSettings } from './useSettings';
 import { useTodayDate } from './useTodayDate';
 
 function uid(): string {
@@ -63,6 +65,7 @@ function parseNoteEntries(raw: string): NoteEntry[] {
 
 export function useTasks() {
   const today = useTodayDate();
+  const { settings: settingsValue } = useSettings();
   const { data: tasks } = useLiveQuery(db.select().from(task).orderBy(asc(task.sortOrder)));
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
 
@@ -158,9 +161,13 @@ export function useTasks() {
     const current = (tasks ?? []).find(t => t.id === id);
     if ((status === 'done' || status === 'cancelled') && current?.recurrence) {
       resolveRecurringOccurrence(id);
-      return;
+    } else {
+      db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
     }
-    db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
+    // Matches extension's App.tsx (line ~707): plays regardless of whether
+    // the recurring or one-off path handled it above, but only for 'done' —
+    // 'cancelled' never gets a sound in the extension either.
+    if (status === 'done') playSound('task-done', settingsValue.soundSettings);
   }
 
   function resolveRecurringOccurrence(id: string): void {

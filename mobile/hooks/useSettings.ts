@@ -1,3 +1,4 @@
+import type { SoundSettings } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useRef } from 'react';
 
@@ -13,7 +14,29 @@ export interface AppSettings {
   maxPriorities: number;
   weekStart: number; // 0=Mon..6=Sun, same convention as habit.days
   workDays: number[]; // same convention
+  // Stored as one JSON blob (not flattened into per-field keys, unlike the
+  // rest of AppSettings) — mirrors extension's own single `sound_settings`
+  // key exactly (db.ts), and the shape is already cohesive from
+  // @pomodoso/types, so there's nothing to gain from splitting it up.
+  soundSettings: SoundSettings;
 }
+
+// Matches @pomodoso/types' DEFAULT_SOUND_SETTINGS exactly (kept as a literal
+// here rather than importing the value — Metro can't resolve @pomodoso/types'
+// bundler-mode "export * from './types/index.js'" for anything beyond
+// type-only imports, which get erased before Metro ever sees them; SoundSettings
+// above is fine as import type for the same reason).
+const DEFAULT_SOUND_SETTINGS: SoundSettings = {
+  enabled: true,
+  volume: 0.6,
+  events: {
+    pomoDone: true,
+    breakStart: true,
+    breakDone: true,
+    focusStart: false,
+    taskDone: true,
+  },
+};
 
 // Matches extension's DEFAULT_TIMER_SETTINGS (shared/types/src/types/index.ts)
 // plus its General page defaults (App.tsx: maxPriorities ?? 3, weekStart ??
@@ -28,6 +51,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxPriorities: 3,
   weekStart: 0,
   workDays: [0, 1, 2, 3, 4],
+  soundSettings: DEFAULT_SOUND_SETTINGS,
 };
 
 const KEYS: Record<keyof AppSettings, string> = {
@@ -39,6 +63,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   maxPriorities: 'max_priorities',
   weekStart: 'week_start',
   workDays: 'work_days',
+  soundSettings: 'sound_settings',
 };
 
 export function useSettings() {
@@ -76,6 +101,7 @@ export function useSettings() {
     maxPriorities: get('maxPriorities'),
     weekStart: get('weekStart'),
     workDays: get('workDays'),
+    soundSettings: get('soundSettings'),
   };
 
   function update<K extends keyof AppSettings>(field: K, next: AppSettings[K]): void {
