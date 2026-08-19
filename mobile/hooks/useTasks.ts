@@ -91,12 +91,15 @@ export function useTasks() {
   }
 
   // Priority/Today membership mirrors extension's separate taskOrders table
-  // (priorityIds/todayIds) — mutually exclusive, and deliberately NOT
-  // touching updatedAt: that field drives "still visible today after being
-  // resolved" (constants/taskStatus.ts) and, for task-less sessions,
-  // useTaskHistory's fallback bucketing date. Bumping it on a mere
-  // priority/today toggle would be a side effect the extension's own model
-  // (a wholly separate table) never has.
+  // (priorityIds/todayIds) — mutually exclusive. Turning a flag OFF never
+  // touches updatedAt (removal is immediate regardless of that field). But
+  // turning one ON must bump updatedAt when the task is currently resolved
+  // on an earlier day: the "stays visible today" rule
+  // (constants/taskStatus.ts) gates on isUpdatedToday for resolved tasks, so
+  // without this, reopening an old done/cancelled task from History and
+  // marking it Priority/Today would flip the flag but leave it invisible in
+  // Today's priorities/tasks — Task Detail would claim membership while the
+  // task stayed absent everywhere else.
 
   // Returns false (no-op) if adding would exceed maxPriorities — caller
   // decides how to surface that (task/[id].tsx shows an alert).
@@ -111,7 +114,10 @@ export function useTasks() {
       t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)),
     ).length;
     if (priorityCount >= maxPriorities) return false;
-    db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
+    db.update(task)
+      .set({ isPriority: true, isToday: false, updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
     return true;
   }
 
@@ -121,7 +127,10 @@ export function useTasks() {
     if (current.isToday) {
       db.update(task).set({ isToday: false }).where(eq(task.id, id)).run();
     } else {
-      db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
+      db.update(task)
+        .set({ isToday: true, isPriority: false, updatedAt: new Date().toISOString() })
+        .where(eq(task.id, id))
+        .run();
     }
   }
 
