@@ -1,7 +1,8 @@
-import { getMe, resetPasswordForEmail, sendMagicLink, signInWithEmail, signOut as supabaseSignOut, signUpWithEmail, TokenApiClient } from '@pomodoso/api';
+import { getMe, resetPasswordForEmail, sendMagicLink, signInWithEmail, signOut as supabaseSignOut, signUpWithEmail, TokenApiClient, updatePassword as supabaseUpdatePassword } from '@pomodoso/api';
 import type { Entitlements } from '@pomodoso/types';
 import type { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
 import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
@@ -40,6 +41,7 @@ export interface AuthState {
   signUp: (email: string, password: string) => Promise<void>;
   sendMagicLinkEmail: (email: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -58,7 +60,19 @@ async function applySessionFromUrl(url: string): Promise<void> {
   if (!accessToken || !refreshToken) return;
   const supabase = getMobileSupabase();
   const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  if (error) console.warn('Failed to apply session from auth redirect', error);
+  if (error) {
+    console.warn('Failed to apply session from auth redirect', error);
+    return;
+  }
+  // A password-reset link also lands here (same "pomodoso://auth-callback"
+  // redirect as magic link/signup) — Supabase tells them apart via
+  // type=recovery in the fragment. Route to the dedicated screen instead of
+  // silently signing the user in and closing login, which would leave them
+  // signed in under their OLD password with no chance to set a new one
+  // (mirrors web's ResetPassword.tsx, reached the same way there).
+  if (params.get('type') === 'recovery') {
+    router.push('/reset-password');
+  }
 }
 
 export function useAuth(): AuthState {
@@ -138,6 +152,10 @@ export function useAuth(): AuthState {
     await resetPasswordForEmail(getMobileSupabase(), email, REDIRECT_URL);
   }, []);
 
+  const updatePassword = useCallback(async (newPassword: string) => {
+    await supabaseUpdatePassword(getMobileSupabase(), newPassword);
+  }, []);
+
   const signOut = useCallback(async () => {
     await supabaseSignOut(getMobileSupabase());
     setSession(null);
@@ -153,6 +171,7 @@ export function useAuth(): AuthState {
     signUp,
     sendMagicLinkEmail,
     resetPassword,
+    updatePassword,
     signOut,
   };
 }
