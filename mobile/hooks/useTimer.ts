@@ -160,7 +160,23 @@ export function useTimer() {
   if (mostRecentUnresolved && !active) {
     const taskTitle = mostRecentUnresolved.taskId ? (taskById.get(mostRecentUnresolved.taskId)?.title ?? null) : null;
     if (mostRecentUnresolved.kind === 'focus') {
-      const isLongBreak = pomosToday > 0 && pomosToday % LONG_BREAK_EVERY === 0;
+      // Deliberately NOT `pomosToday` — that's live and reflects the current
+      // wall-clock day. If a completed session sits unresolved across local
+      // midnight (banner ignored, app reopened the next day), pomosToday
+      // would reset to 0 and silently turn a due long break into a short
+      // one. Instead, freeze the ordinal to the session's own day: "this was
+      // the Nth focus pomo completed on the day IT finished", computed once
+      // from durable history, not from whatever day it happens to be now.
+      const sessionDay = new Date(mostRecentUnresolved.startedAt).toLocaleDateString('en-CA');
+      const ordinalThatDay = (sessions ?? []).filter(
+        s =>
+          s.mode === 'pomodoro' &&
+          s.kind === 'focus' &&
+          s.status === 'completed' &&
+          new Date(s.startedAt).toLocaleDateString('en-CA') === sessionDay &&
+          s.startedAt <= mostRecentUnresolved.startedAt,
+      ).length;
+      const isLongBreak = ordinalThatDay > 0 && ordinalThatDay % LONG_BREAK_EVERY === 0;
       pendingBreak = {
         taskTitle,
         kind: isLongBreak ? 'long_break' : 'short_break',
@@ -198,6 +214,20 @@ export function useTimer() {
       progress: active.plannedDurationSeconds ? Math.min(1, elapsed / active.plannedDurationSeconds) : 0,
       pomosToday,
     };
+  }
+
+  // Starting anything new, or explicitly skipping/dismissing a banner,
+  // implicitly resolves EVERY dangling prompt — not just the one the current
+  // action is "about". Without this, bypassing a banner (e.g. tapping play
+  // on a different task from the Tasks tab instead of reacting to Home's
+  // break offer) leaves the older session's prompt unresolved; once the
+  // newer session's own prompt gets handled, the stale older banner would
+  // otherwise resurface for a session nobody cares about anymore.
+  function resolveAllPendingPrompts(): void {
+    db.update(pomodoroSession)
+      .set({ promptResolved: true })
+      .where(and(eq(pomodoroSession.status, 'completed'), eq(pomodoroSession.promptResolved, false)))
+      .run();
   }
 
   // Scheduling can fail (permission denied, OS error) — that shouldn't block
@@ -248,6 +278,7 @@ export function useTimer() {
         }
         return;
       }
+      resolveAllPendingPrompts(); // starting something new supersedes any dangling banner
       setIdleMode(mode); // spec 6.1: "updated on every session start" — only once we know this call won
     } finally {
       isMutatingRef.current = false;
@@ -256,10 +287,9 @@ export function useTimer() {
 
   // Shared by startBreak/startNextFocus: both insert a new active session
   // (atomically guarded the same way as startSession) and, only once that
-  // insert actually wins, mark the just-completed session's prompt resolved
-  // — so a lost race doesn't silently dismiss the banner with nothing
-  // started in its place.
-  async function startFollowUpSession(kind: SessionKind, taskId: string | null, durationSeconds: number, resolveSessionId: string): Promise<void> {
+  // insert actually wins, sweep every dangling prompt — so a lost race
+  // doesn't silently dismiss a banner with nothing started in its place.
+  async function startFollowUpSession(kind: SessionKind, taskId: string | null, durationSeconds: number): Promise<void> {
     if (active || isMutatingRef.current) return;
     isMutatingRef.current = true;
     try {
@@ -281,7 +311,7 @@ export function useTimer() {
         }
         return;
       }
-      db.update(pomodoroSession).set({ promptResolved: true }).where(eq(pomodoroSession.id, resolveSessionId)).run();
+      resolveAllPendingPrompts();
     } finally {
       isMutatingRef.current = false;
     }
@@ -289,22 +319,22 @@ export function useTimer() {
 
   function startBreak(): void {
     if (!mostRecentUnresolved || !pendingBreak) return;
-    void startFollowUpSession(pendingBreak.kind, mostRecentUnresolved.taskId, pendingBreak.durationSeconds, mostRecentUnresolved.id);
+    void startFollowUpSession(pendingBreak.kind, mostRecentUnresolved.taskId, pendingBreak.durationSeconds);
   }
 
   function skipBreak(): void {
     if (!mostRecentUnresolved) return;
-    db.update(pomodoroSession).set({ promptResolved: true }).where(eq(pomodoroSession.id, mostRecentUnresolved.id)).run();
+    resolveAllPendingPrompts();
   }
 
   function startNextFocus(): void {
     if (!mostRecentUnresolved || !pendingNextFocus) return;
-    void startFollowUpSession('focus', mostRecentUnresolved.taskId, FOCUS_DURATION_SECONDS, mostRecentUnresolved.id);
+    void startFollowUpSession('focus', mostRecentUnresolved.taskId, FOCUS_DURATION_SECONDS);
   }
 
   function dismissBreakDone(): void {
     if (!mostRecentUnresolved) return;
-    db.update(pomodoroSession).set({ promptResolved: true }).where(eq(pomodoroSession.id, mostRecentUnresolved.id)).run();
+    resolveAllPendingPrompts();
   }
 
   async function pauseSession(): Promise<void> {
