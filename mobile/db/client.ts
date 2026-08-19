@@ -25,10 +25,10 @@ const SEED_TASKS = [
 ];
 
 const SEED_HABITS = [
-  { id: 'water', name: 'Water', icon: 'water', kind: 'counter' as const, goal: 12, unit: 'ml', unitAmount: 250, sortOrder: 0 },
-  { id: 'exercise', name: 'Exercise', icon: 'walk', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, sortOrder: 1 },
-  { id: 'read', name: 'Read 20 min', icon: 'book', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, sortOrder: 2 },
-  { id: 'sleep', name: 'Sleep 8h', icon: 'moon', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, sortOrder: 3 },
+  { id: 'water', name: 'Water', icon: 'water', kind: 'counter' as const, goal: 12, unit: 'ml', unitAmount: 250, days: '[]', sortOrder: 0 },
+  { id: 'exercise', name: 'Exercise', icon: 'walk', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, days: '[]', sortOrder: 1 },
+  { id: 'read', name: 'Read 20 min', icon: 'book', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, days: '[]', sortOrder: 2 },
+  { id: 'sleep', name: 'Sleep 8h', icon: 'moon', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, days: '[]', sortOrder: 3 },
 ];
 
 // Backfilled so the streak computed in useHabits() has something to show —
@@ -57,7 +57,7 @@ function initDb(): void {
   // needs to keep.
   const hasCurrentSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT kind FROM habits LIMIT 1');
+      expoDb.getFirstSync('SELECT kind, days FROM habits LIMIT 1');
       return true;
     } catch {
       return false;
@@ -104,6 +104,7 @@ function initDb(): void {
       goal INTEGER,
       unit TEXT,
       unit_amount INTEGER,
+      days TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS habit_history (

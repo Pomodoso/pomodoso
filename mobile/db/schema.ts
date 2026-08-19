@@ -14,6 +14,10 @@ export const habits = sqliteTable('habits', {
   goal: integer('goal'), // counter only — target step count for the day
   unit: text('unit'), // counter only — e.g. 'ml'
   unitAmount: integer('unit_amount'), // counter only — amount per step, e.g. 250
+  // JSON-stringified number[], matching extension/src/db.ts's HabitRow.days
+  // exactly: 0=Mon..6=Sun, [] means "every day" (canonical form for daily —
+  // the extension's own form always saves length-7 selections as []).
+  days: text('days').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull(),
 });
 

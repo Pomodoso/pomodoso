@@ -197,7 +197,7 @@ export default function HomeScreen() {
         ))}
 
         <Text style={styles.sectionTitle}>Habits today</Text>
-        {habits.map(habit => (
+        {habits.filter(h => h.scheduledToday).map(habit => (
           <View key={habit.id} style={styles.habitRow}>
             <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
               <Ionicons

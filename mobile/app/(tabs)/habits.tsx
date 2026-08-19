@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HabitFormModal } from '@/components/HabitFormModal';
 import { HabitRow } from '@/components/HabitRow';
 import { colors } from '@/constants/theme';
+import type { HabitWithProgress } from '@/hooks/useHabits';
 import { useHabits } from '@/hooks/useHabits';
 
 const TODAY_INDEX = 6; // Sunday, last column — matches the week strip in the mockups
@@ -19,13 +22,27 @@ const WEEK_FILLED: Record<string, boolean[]> = {
 };
 
 export default function HabitsScreen() {
-  const { habits, toggleHabit, incrementHabit } = useHabits();
+  const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit } = useHabits();
+  const [formVisible, setFormVisible] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
+
+  function openCreate(): void {
+    setEditingHabit(null);
+    setFormVisible(true);
+  }
+
+  function openEdit(habit: HabitWithProgress): void {
+    setEditingHabit(habit);
+    setFormVisible(true);
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Habits</Text>
-        <Ionicons name="add" size={20} color={colors.textTertiary} />
+        <Pressable onPress={openCreate} hitSlop={8}>
+          <Ionicons name="add" size={20} color={colors.text} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -50,17 +67,34 @@ export default function HabitsScreen() {
             icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
             name={habit.name}
             streakLabel={habit.streakLabel}
+            days={habit.days}
             kind={habit.kind}
             done={habit.done}
             count={habit.count}
             goal={habit.goal}
             weekFilled={WEEK_FILLED[habit.id] ?? []}
             todayIndex={TODAY_INDEX}
+            onPress={() => openEdit(habit)}
             onToggle={() => toggleHabit(habit.id)}
             onIncrement={delta => incrementHabit(habit.id, delta)}
           />
         ))}
       </ScrollView>
+
+      <HabitFormModal
+        visible={formVisible}
+        initialHabit={editingHabit}
+        onSave={input => {
+          if (editingHabit) updateHabit(editingHabit.id, input);
+          else addHabit(input);
+          setFormVisible(false);
+        }}
+        onDelete={() => {
+          if (editingHabit) removeHabit(editingHabit.id);
+          setFormVisible(false);
+        }}
+        onCancel={() => setFormVisible(false)}
+      />
     </SafeAreaView>
   );
 }
