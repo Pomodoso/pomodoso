@@ -11,11 +11,12 @@ interface TaskRowProps {
   meta: string;
   status: TaskStatus;
   projectColor?: string | null;
+  onPress?: () => void;
   onPlayPress?: () => void;
   onStatusPress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, status, projectColor, onPlayPress, onStatusPress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, status, projectColor, onPress, onPlayPress, onStatusPress }: TaskRowProps) {
   const resolved = isResolvedStatus(status);
   const dotColor = STATUS_DOT_COLOR[status];
 
@@ -29,7 +30,7 @@ export function TaskRow({ title, ticket, meta, status, projectColor, onPlayPress
         {status === 'done' && <Ionicons name="checkmark" size={13} color={colors.surface} />}
         {status === 'cancelled' && <Ionicons name="close" size={13} color={colors.surface} />}
       </Pressable>
-      <View style={styles.body}>
+      <Pressable style={styles.body} onPress={onPress} disabled={!onPress}>
         <View style={styles.titleRow}>
           <Text style={[styles.title, resolved && styles.titleDone]} numberOfLines={2}>
             {title}
@@ -44,7 +45,7 @@ export function TaskRow({ title, ticket, meta, status, projectColor, onPlayPress
           )}
           <Text style={styles.meta}>{meta}</Text>
         </View>
-      </View>
+      </Pressable>
       {onPlayPress && (
         <Pressable style={styles.playBtn} onPress={onPlayPress} hitSlop={8}>
           <Ionicons name="play" size={13} color={colors.accent} />

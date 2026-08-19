@@ -77,5 +77,16 @@ export function useTasks() {
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus };
+  function updateTask(id: string, updates: { title?: string; projectId?: string | null; isPriority?: boolean }): void {
+    db.update(task)
+      .set({ ...updates, updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
+  }
+
+  function removeTask(id: string): void {
+    db.delete(task).where(eq(task.id, id)).run();
+  }
+
+  return { tasks: withMeta, addTask, setTaskStatus, updateTask, removeTask };
 }

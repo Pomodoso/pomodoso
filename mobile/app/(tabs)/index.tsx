@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -189,6 +190,7 @@ export default function HomeScreen() {
             meta={t.meta ?? ''}
             status={t.status}
             projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+            onPress={() => router.push(`/task/${t.id}`)}
             onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
             onStatusPress={() => requestStatus(t.id, t.title, t.status)}
           />
