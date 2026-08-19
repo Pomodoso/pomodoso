@@ -94,7 +94,8 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
   const startDateValid = isValidYmd(startDate.trim());
   const timeValid = allDay || isValidTime(time.trim());
   const endDateValid = !hasEnd || isValidYmd(endDate.trim());
-  const formValid = weekdaysValid && startDateValid && timeValid && endDateValid;
+  const dateRangeValid = !hasEnd || !startDateValid || !endDateValid || endDate.trim() >= startDate.trim();
+  const formValid = weekdaysValid && startDateValid && timeValid && endDateValid && dateRangeValid;
 
   function buildRule(): RecurrenceRule {
     return {
@@ -225,6 +226,7 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
                   onChangeText={setEndDate}
                 />
                 {!endDateValid && <Text style={styles.errorText}>Enter a valid date as YYYY-MM-DD.</Text>}
+                {endDateValid && !dateRangeValid && <Text style={styles.errorText}>End date can&apos;t be before the start date.</Text>}
               </>
             )}
 

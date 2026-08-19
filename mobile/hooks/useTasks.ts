@@ -166,13 +166,24 @@ export function useTasks() {
   }
 
   // Resets completedDates whenever the rule changes (including clearing
-  // it): those dates are tied to the schedule that produced them, so an
-  // edited or newly (re)created rule could otherwise land a real occurrence
-  // on a date the OLD schedule happened to have completed, silently
-  // suppressing it from Today.
+  // it) — but ONLY when the rule actually changes: those dates are tied to
+  // the schedule that produced them, so an edited or newly (re)created rule
+  // could otherwise land a real occurrence on a date the OLD schedule
+  // happened to have completed, silently suppressing it from Today. But
+  // wiping unconditionally on every save (even a no-op re-save of the same
+  // rule) would make a completed carry-over occurrence reappear, forcing
+  // the user to resolve it again — so only clear when the stored JSON
+  // actually differs.
   function setRecurrence(id: string, rule: RecurrenceRule | null): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    const nextRecurrence = rule ? JSON.stringify(rule) : null;
+    const ruleChanged = (current?.recurrence ?? null) !== nextRecurrence;
     db.update(task)
-      .set({ recurrence: rule ? JSON.stringify(rule) : null, completedDates: '[]', updatedAt: new Date().toISOString() })
+      .set({
+        recurrence: nextRecurrence,
+        ...(ruleChanged && { completedDates: '[]' }),
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(task.id, id))
       .run();
   }
