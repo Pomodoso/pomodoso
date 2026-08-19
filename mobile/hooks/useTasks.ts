@@ -4,13 +4,10 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
+import { secondsBetween } from '@/utils/time';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function secondsBetween(a: string, b: string): number {
-  return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 1000);
 }
 
 function formatDuration(totalSeconds: number): string {
