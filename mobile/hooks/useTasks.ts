@@ -1,11 +1,14 @@
+import type { RecurrenceRule } from '@pomodoso/types';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useEffect } from 'react';
 
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
+import { activeOccurrence } from '@/utils/recurrence';
 import { secondsBetween } from '@/utils/time';
 
 import { useTodayDate } from './useTodayDate';
@@ -22,10 +25,47 @@ function formatDuration(totalSeconds: number): string {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
+function parseRecurrence(raw: string | null): RecurrenceRule | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as RecurrenceRule;
+  } catch {
+    return null;
+  }
+}
+
+function parseCompletedDates(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function useTasks() {
   const today = useTodayDate();
   const { data: tasks } = useLiveQuery(db.select().from(task).orderBy(asc(task.sortOrder)));
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
+
+  // Mirrors extension's "Add recurring tasks to Today" effect (App.tsx) —
+  // runs whenever tasks/today change, materializing each recurring task's
+  // active occurrence (if any, and not already completed for that
+  // occurrence) into Today. Never touches isPriority — auto-materialization
+  // only ever adds to Today, matching the extension exactly. Idempotent:
+  // each pass skips tasks already isToday/isPriority, so it converges
+  // immediately rather than looping.
+  useEffect(() => {
+    for (const t of tasks ?? []) {
+      if (!t.recurrence || t.isToday || t.isPriority) continue;
+      const rule = parseRecurrence(t.recurrence);
+      if (!rule) continue;
+      const occ = activeOccurrence(rule, today);
+      if (!occ) continue;
+      if (parseCompletedDates(t.completedDates).includes(occ)) continue;
+      db.update(task).set({ isToday: true }).where(eq(task.id, t.id)).run();
+    }
+  }, [tasks, today]);
 
   // Real time-per-task, computed from completed sessions — falls back to the
   // task's stored `meta` placeholder ("Not started") for tasks with no
@@ -49,12 +89,17 @@ export function useTasks() {
     statsByTask.set(s.taskId, entry);
   }
 
+  // Adds parsed convenience fields alongside the raw recurrence/completedDates
+  // columns (still present via the spread) — consumers that need the raw
+  // JSON (e.g. writing it back unchanged) still can, without re-parsing.
   const withMeta = (tasks ?? []).map(t => {
     const stats = statsByTask.get(t.id);
-    if (!stats) return t;
+    const recurrenceRule = parseRecurrence(t.recurrence);
+    const completedOccurrences = parseCompletedDates(t.completedDates);
+    if (!stats) return { ...t, recurrenceRule, completedOccurrences };
     const time = formatDuration(stats.seconds);
     const meta = stats.pomos > 0 ? `${stats.pomos} pomo${stats.pomos === 1 ? '' : 's'} · ${time}` : time;
-    return { ...t, meta };
+    return { ...t, meta, recurrenceRule, completedOccurrences };
   });
 
   function addTask(title: string, projectId: string | null = null): void {
@@ -79,8 +124,46 @@ export function useTasks() {
       .run();
   }
 
+  // Mirrors extension's updateTask intercept (App.tsx): a recurring task
+  // never reaches status 'done' permanently — completing today's occurrence
+  // records it in completedDates and resets status to 'todo' so the task is
+  // clean for its next occurrence, instead of vanishing from Today forever.
   function setTaskStatus(id: string, status: TaskStatus): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (status === 'done' && current?.recurrence) {
+      completeRecurringOccurrence(id);
+      return;
+    }
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
+  }
+
+  function completeRecurringOccurrence(id: string): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    const rule = current ? parseRecurrence(current.recurrence) : null;
+    if (!current || !rule) return;
+    // Record the occurrence being completed, not the calendar day — a
+    // carry-over task may be completed on a later day than its (missed)
+    // occurrence date; activeOccurrence resolves which one that was.
+    const occ = activeOccurrence(rule, today) ?? today;
+    const completed = new Set(parseCompletedDates(current.completedDates));
+    completed.add(occ);
+    db.update(task)
+      .set({
+        status: 'todo',
+        isPriority: false,
+        isToday: false,
+        completedDates: JSON.stringify([...completed]),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(task.id, id))
+      .run();
+  }
+
+  function setRecurrence(id: string, rule: RecurrenceRule | null): void {
+    db.update(task)
+      .set({ recurrence: rule ? JSON.stringify(rule) : null, updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
   }
 
   function updateTask(id: string, updates: { title?: string; projectId?: string | null }): void {
@@ -165,5 +248,5 @@ export function useTasks() {
     db.delete(task).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus, updateTask, togglePriority, toggleToday, removeTask };
+  return { tasks: withMeta, addTask, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, removeTask };
 }

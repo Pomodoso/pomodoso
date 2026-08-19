@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProjectPicker } from '@/components/ProjectPicker';
+import { RecurrenceFormModal } from '@/components/RecurrenceFormModal';
 import { StatusPicker } from '@/components/StatusPicker';
 import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR, STATUS_LABEL } from '@/constants/taskStatus';
 import { colors, fontMono } from '@/constants/theme';
@@ -14,6 +15,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { formatRecurrenceLabel } from '@/utils/recurrence';
 
 // The extension's entry point for editing project/priority is its task
 // detail screen — mobile didn't have one (see #31's known gap), which also
@@ -21,7 +23,8 @@ import { useTodayDate } from '@/hooks/useTodayDate';
 // both: reassigning a project after creation, and toggling priority.
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, setTaskStatus, updateTask, togglePriority, toggleToday, removeTask } = useTasks();
+  const { tasks, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, removeTask } = useTasks();
+  const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const { settings } = useSettings();
   const today = useTodayDate();
@@ -194,6 +197,17 @@ export default function TaskDetailScreen() {
           </Text>
         </Pressable>
 
+        <Text style={styles.sectionLabel}>Recurrence</Text>
+        <Pressable style={styles.row} onPress={() => setRecurrenceModalVisible(true)}>
+          <Ionicons name="repeat" size={18} color={task.recurrenceRule ? colors.info : colors.textTertiary} />
+          {task.recurrenceRule ? (
+            <Text style={styles.rowText}>{formatRecurrenceLabel(task.recurrenceRule)}</Text>
+          ) : (
+            <Text style={styles.rowTextMuted}>Not recurring</Text>
+          )}
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </Pressable>
+
         {task.meta && (
           <>
             <Text style={styles.sectionLabel}>Time tracked</Text>
@@ -204,6 +218,15 @@ export default function TaskDetailScreen() {
 
       <StatusPicker {...statusPickerProps} />
       <ProjectPicker {...projectPickerProps} projects={projects} onCreate={addProject} onUpdate={updateProject} onRemove={removeProject} />
+      <RecurrenceFormModal
+        visible={recurrenceModalVisible}
+        initialRule={task.recurrenceRule}
+        onSave={rule => {
+          setRecurrence(task.id, rule);
+          setRecurrenceModalVisible(false);
+        }}
+        onCancel={() => setRecurrenceModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
