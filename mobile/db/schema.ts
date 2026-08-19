@@ -46,21 +46,30 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   notificationId: text('notification_id'),
 });
 
-// Spike task model — id/title/ticketRef/done/isPriority is enough to back
-// Home's "Today's priorities" and the Tasks tab. No project/workspace yet
-// (comes with the shared/core extraction and a real multi-entity model).
-// pomodoroSession.taskId references this — meta is computed from completed
-// sessions where possible (useTasks.ts), falling back to this stored string
-// only for tasks with no real session history yet ("Not started").
+// Status set matches extension/src/db.ts's TaskStatus exactly, so the
+// mobile status picker mirrors the extension's semantics/UX (see
+// STATUS_OPTIONS/STATUS_DOT_COLOR in extension/src/popup/HomeState.tsx).
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'delayed' | 'cancelled';
+
+// Spike task model — enough to back Home's "Today's priorities" and the Tasks
+// tab. No project/workspace yet (comes with the shared/core extraction and a
+// real multi-entity model). pomodoroSession.taskId references this — meta is
+// computed from completed sessions where possible (useTasks.ts), falling
+// back to this stored string only for tasks with no real session history
+// yet ("Not started"). updatedAt drives the "completed today stays visible
+// in Today, rolls off the next day" rule the extension already has.
 export const task = sqliteTable('task', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   ticketRef: text('ticket_ref'),
   meta: text('meta'), // fallback placeholder for tasks with no sessions yet
-  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  status: text('status', { enum: ['todo', 'in_progress', 'done', 'delayed', 'cancelled'] })
+    .notNull()
+    .default('todo'),
   isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });
 
 // Single row (id always 'singleton'). Spec 6.1: "the last used mode is

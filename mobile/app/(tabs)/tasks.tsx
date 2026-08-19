@@ -5,24 +5,34 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddTaskModal } from '@/components/AddTaskModal';
 import { StartModePicker } from '@/components/StartModePicker';
+import { StatusPicker } from '@/components/StatusPicker';
 import { TaskRow } from '@/components/TaskRow';
+import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useStartPicker } from '@/hooks/useStartPicker';
+import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
+import { useTodayDate } from '@/hooks/useTodayDate';
 
 const FILTERS = ['Today', 'In progress', 'All open', 'Done'];
 
 export default function TasksScreen() {
   const { display, idleMode, setIdleMode, startSession } = useTimer();
   const { requestStart, pickerProps } = useStartPicker(startSession);
-  const { tasks, addTask, toggleTaskDone } = useTasks();
+  const { tasks, addTask, setTaskStatus } = useTasks();
+  const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const [addingTask, setAddingTask] = useState(false);
   const canStart = display.status === 'idle';
 
-  const priorities = tasks.filter(t => t.isPriority && !t.done);
-  const backlog = tasks.filter(t => !t.isPriority && !t.done);
-  const done = tasks.filter(t => t.done);
+  const today = useTodayDate();
+  // Same "stays visible today" rule as Home: a priority task resolved today
+  // stays under Today's priorities; once it rolls off (next day) or if it
+  // was never a priority, it lives in History instead. No task appears in
+  // more than one section.
+  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
+  const backlog = tasks.filter(t => !t.isPriority && !isResolvedStatus(t.status));
+  const history = tasks.filter(t => isResolvedStatus(t.status) && !(t.isPriority && isUpdatedToday(t.updatedAt, today)));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -59,8 +69,9 @@ export default function TasksScreen() {
                 title={t.title}
                 ticket={t.ticketRef ?? undefined}
                 meta={t.meta ?? ''}
-                onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
-                onTogglePress={() => toggleTaskDone(t.id, true)}
+                status={t.status}
+                onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
               />
             ))}
           </>
@@ -75,24 +86,25 @@ export default function TasksScreen() {
                 title={t.title}
                 ticket={t.ticketRef ?? undefined}
                 meta={t.meta ?? ''}
+                status={t.status}
                 onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
-                onTogglePress={() => toggleTaskDone(t.id, true)}
+                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
               />
             ))}
           </>
         )}
 
-        {done.length > 0 && (
+        {history.length > 0 && (
           <>
-            <Text style={styles.groupTitle}>Done</Text>
-            {done.map(t => (
+            <Text style={styles.groupTitle}>History</Text>
+            {history.map(t => (
               <TaskRow
                 key={t.id}
                 title={t.title}
                 ticket={t.ticketRef ?? undefined}
                 meta={t.meta ?? ''}
-                done
-                onTogglePress={() => toggleTaskDone(t.id, false)}
+                status={t.status}
+                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
               />
             ))}
           </>
@@ -104,6 +116,7 @@ export default function TasksScreen() {
       </Pressable>
 
       <StartModePicker {...pickerProps} />
+      <StatusPicker {...statusPickerProps} />
       <AddTaskModal
         visible={addingTask}
         onSubmit={title => {

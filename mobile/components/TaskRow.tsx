@@ -1,25 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { isResolvedStatus, STATUS_DOT_COLOR } from '@/constants/taskStatus';
 import { colors, fontMono } from '@/constants/theme';
+import type { TaskStatus } from '@/db/schema';
 
 interface TaskRowProps {
   title: string;
   ticket?: string;
   meta: string;
-  done?: boolean;
+  status: TaskStatus;
   onPlayPress?: () => void;
-  onTogglePress?: () => void;
+  onStatusPress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, done, onPlayPress, onTogglePress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, status, onPlayPress, onStatusPress }: TaskRowProps) {
+  const resolved = isResolvedStatus(status);
+  const dotColor = STATUS_DOT_COLOR[status];
+
   return (
     <View style={styles.row}>
-      <Pressable style={[styles.checkbox, done && styles.checkboxDone]} onPress={onTogglePress} hitSlop={8}>
-        {done && <Ionicons name="checkmark" size={13} color={colors.surface} />}
+      <Pressable
+        style={[styles.statusDot, { borderColor: dotColor }, status !== 'todo' && { backgroundColor: dotColor }]}
+        onPress={onStatusPress}
+        hitSlop={8}
+      >
+        {status === 'done' && <Ionicons name="checkmark" size={13} color={colors.surface} />}
+        {status === 'cancelled' && <Ionicons name="close" size={13} color={colors.surface} />}
       </Pressable>
       <View style={styles.body}>
-        <Text style={[styles.title, done && styles.titleDone]} numberOfLines={2}>
+        <Text style={[styles.title, resolved && styles.titleDone]} numberOfLines={2}>
           {title}
         </Text>
         <View style={styles.metaRow}>
@@ -49,16 +59,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  checkbox: {
+  statusDot: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: colors.borderStrong,
-  },
-  checkboxDone: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -16,12 +16,12 @@ function dateOffset(daysAgo: number): string {
 }
 
 const SEED_TASKS = [
-  { id: 'task-mpl', title: 'Review MPL 2.0 question rename PR', ticketRef: 'INT-455', meta: '2 pomos · 50m', done: false, isPriority: false, sortOrder: 0 },
-  { id: 'task-flaky', title: 'Fix flaky retry test in sync engine', ticketRef: 'POM-89', meta: '1h 20m', done: false, isPriority: true, sortOrder: 1 },
-  { id: 'task-checklist', title: 'Write launch checklist doc', ticketRef: null, meta: '25m', done: false, isPriority: true, sortOrder: 2 },
-  { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', done: false, isPriority: false, sortOrder: 3 },
-  { id: 'task-sqlite', title: 'Investigate SQLite adapter perf', ticketRef: 'POM-94', meta: 'Not started', done: false, isPriority: false, sortOrder: 4 },
-  { id: 'task-eas', title: 'Set up EAS Build project', ticketRef: null, meta: '40m · yesterday', done: true, isPriority: false, sortOrder: 5 },
+  { id: 'task-mpl', title: 'Review MPL 2.0 question rename PR', ticketRef: 'INT-455', meta: '2 pomos · 50m', status: 'todo' as const, isPriority: false, sortOrder: 0 },
+  { id: 'task-flaky', title: 'Fix flaky retry test in sync engine', ticketRef: 'POM-89', meta: '1h 20m', status: 'todo' as const, isPriority: true, sortOrder: 1 },
+  { id: 'task-checklist', title: 'Write launch checklist doc', ticketRef: null, meta: '25m', status: 'todo' as const, isPriority: true, sortOrder: 2 },
+  { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', status: 'todo' as const, isPriority: false, sortOrder: 3 },
+  { id: 'task-sqlite', title: 'Investigate SQLite adapter perf', ticketRef: 'POM-94', meta: 'Not started', status: 'todo' as const, isPriority: false, sortOrder: 4 },
+  { id: 'task-eas', title: 'Set up EAS Build project', ticketRef: null, meta: '40m · yesterday', status: 'done' as const, isPriority: false, sortOrder: 5 },
 ];
 
 const SEED_HABITS = [
@@ -81,6 +81,19 @@ function initDb(): void {
     expoDb.execSync('DROP TABLE IF EXISTS pomodoro_session;');
   }
 
+  // Same throwaway-spike migration story for task's done -> status change.
+  const hasCurrentTaskSchema = (() => {
+    try {
+      expoDb.getFirstSync('SELECT status FROM task LIMIT 1');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (!hasCurrentTaskSchema) {
+    expoDb.execSync('DROP TABLE IF EXISTS task;');
+  }
+
   expoDb.execSync(`
     CREATE TABLE IF NOT EXISTS habits (
       id TEXT PRIMARY KEY NOT NULL,
@@ -120,10 +133,11 @@ function initDb(): void {
       title TEXT NOT NULL,
       ticket_ref TEXT,
       meta TEXT,
-      done INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'todo',
       is_priority INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
 
@@ -146,7 +160,7 @@ function initDb(): void {
   if (hasTasks?.count === 0) {
     const createdAt = new Date().toISOString();
     for (const seedTask of SEED_TASKS) {
-      db.insert(schema.task).values({ ...seedTask, createdAt }).run();
+      db.insert(schema.task).values({ ...seedTask, createdAt, updatedAt: createdAt }).run();
     }
   }
 }
