@@ -16,6 +16,8 @@ export const colors = {
   warningSoft: '#FAF1DE',
   info: '#4A6FA5',
   infoSoft: '#E9EFF7',
+  delayed: '#7B5DB4', // matches extension's TaskStatus 'delayed' — no existing token fit
+  delayedSoft: '#F1ECF9',
 } as const;
 
 export const fontMono = 'SpaceMono-Regular';

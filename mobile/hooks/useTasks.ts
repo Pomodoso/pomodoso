@@ -3,6 +3,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
+import type { TaskStatus } from '@/db/schema';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -48,23 +49,25 @@ export function useTasks() {
     const trimmed = title.trim();
     if (!trimmed) return;
     const maxSortOrder = (tasks ?? []).reduce((max, t) => Math.max(max, t.sortOrder), -1);
+    const now = new Date().toISOString();
     db.insert(task)
       .values({
         id: uid(),
         title: trimmed,
         ticketRef: null,
         meta: 'Not started',
-        done: false,
+        status: 'todo',
         isPriority: false,
         sortOrder: maxSortOrder + 1,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       })
       .run();
   }
 
-  function toggleTaskDone(id: string, done: boolean): void {
-    db.update(task).set({ done }).where(eq(task.id, id)).run();
+  function setTaskStatus(id: string, status: TaskStatus): void {
+    db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, toggleTaskDone };
+  return { tasks: withMeta, addTask, setTaskStatus };
 }

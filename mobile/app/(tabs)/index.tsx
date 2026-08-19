@@ -5,11 +5,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
+import { StatusPicker } from '@/components/StatusPicker';
 import { TaskRow } from '@/components/TaskRow';
 import { TimerRing } from '@/components/TimerRing';
+import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
 import { useStartPicker } from '@/hooks/useStartPicker';
+import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 
@@ -26,8 +29,12 @@ export default function HomeScreen() {
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const { display, idleMode, setIdleMode, startSession, pauseSession, resumeSession, stopSession } = useTimer();
   const { requestStart, pickerProps } = useStartPicker(startSession);
-  const { tasks, toggleTaskDone } = useTasks();
-  const priorities = tasks.filter(t => t.isPriority && !t.done);
+  const { tasks, setTaskStatus } = useTasks();
+  const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
+  // isPriority tasks stay in Today for the rest of the day they were
+  // resolved on (matches extension's HomeState.tsx completedToday rule) —
+  // marking one done/cancelled shouldn't make it vanish immediately.
+  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt)));
 
   const isStopwatch = display.mode === 'stopwatch';
   const timeLabel = display.status === 'idle' ? formatTime(0) : formatTime(isStopwatch ? display.elapsedSeconds : (display.remainingSeconds ?? 0));
@@ -130,8 +137,9 @@ export default function HomeScreen() {
             title={t.title}
             ticket={t.ticketRef ?? undefined}
             meta={t.meta ?? ''}
-            onPlayPress={display.status === 'idle' ? () => requestStart(t.id, t.title) : undefined}
-            onTogglePress={() => toggleTaskDone(t.id, true)}
+            status={t.status}
+            onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+            onStatusPress={() => requestStatus(t.id, t.title, t.status)}
           />
         ))}
 
@@ -167,6 +175,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       <StartModePicker {...pickerProps} />
+      <StatusPicker {...statusPickerProps} />
     </SafeAreaView>
   );
 }
