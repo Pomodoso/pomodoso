@@ -7,12 +7,13 @@ interface TimerRingProps {
   size: number;
   progress: number; // 0..1
   timeLabel: string;
+  color?: string;
   children?: React.ReactNode;
 }
 
 const STROKE = 6;
 
-export function TimerRing({ size, progress, timeLabel, children }: TimerRingProps) {
+export function TimerRing({ size, progress, timeLabel, color = colors.accent, children }: TimerRingProps) {
   const radius = (size - STROKE) / 2;
   const circumference = 2 * Math.PI * radius;
 
@@ -31,7 +32,7 @@ export function TimerRing({ size, progress, timeLabel, children }: TimerRingProp
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={colors.accent}
+          stroke={color}
           strokeWidth={STROKE}
           fill="none"
           strokeDasharray={`${circumference} ${circumference}`}

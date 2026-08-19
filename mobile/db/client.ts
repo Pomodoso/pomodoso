@@ -76,6 +76,23 @@ function initDb(): void {
       count INTEGER NOT NULL DEFAULT 0,
       done INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS pomodoro_session (
+      id TEXT PRIMARY KEY NOT NULL,
+      mode TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      task_title TEXT,
+      ticket_ref TEXT,
+      planned_duration_seconds INTEGER,
+      started_at TEXT NOT NULL,
+      paused_at TEXT,
+      ended_at TEXT,
+      status TEXT NOT NULL,
+      notification_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS timer_prefs (
+      id TEXT PRIMARY KEY NOT NULL,
+      last_mode TEXT NOT NULL
+    );
   `);
 
   const existing = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM habits');
@@ -86,6 +103,11 @@ function initDb(): void {
     for (const row of seedHistory()) {
       db.insert(schema.habitHistory).values(row).run();
     }
+  }
+
+  const hasPrefs = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM timer_prefs');
+  if (hasPrefs?.count === 0) {
+    db.insert(schema.timerPrefs).values({ id: 'singleton', lastMode: 'pomodoro' }).run();
   }
 }
 
