@@ -1,3 +1,4 @@
+import { inArray } from 'drizzle-orm';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -92,5 +93,13 @@ export function importBackup(json: string): void {
         tx.insert(table).values(rows as never[]).run();
       }
     }
+    // Regardless of whether pomodoroSession was itself included above: an
+    // import replaces the world state (tasks get new rows/ids), so a
+    // still-active/paused session from before the import — or one that
+    // rode along in the backup's own snapshot — can't be left running. It
+    // may now reference a task that no longer exists, and worse, an
+    // orphaned active/paused row permanently blocks startSession's atomic
+    // "no active session" guard (useTimer.ts) from ever starting a new one.
+    tx.delete(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).run();
   });
 }
