@@ -40,6 +40,7 @@ export default function RootLayout() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
     </Stack>
   );
 }

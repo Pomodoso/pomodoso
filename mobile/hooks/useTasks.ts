@@ -77,5 +77,22 @@ export function useTasks() {
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus };
+  function updateTask(id: string, updates: { title?: string; projectId?: string | null; isPriority?: boolean }): void {
+    db.update(task)
+      .set({ ...updates, updatedAt: new Date().toISOString() })
+      .where(eq(task.id, id))
+      .run();
+  }
+
+  function removeTask(id: string): void {
+    // Cascade so nothing is left pointing at a task that no longer exists.
+    // Matters beyond tidiness: an orphaned row stuck at status
+    // active/paused would permanently block every future session start —
+    // startSession's atomic guard checks for ANY row in that state,
+    // regardless of whether its task still exists.
+    db.delete(pomodoroSession).where(eq(pomodoroSession.taskId, id)).run();
+    db.delete(task).where(eq(task.id, id)).run();
+  }
+
+  return { tasks: withMeta, addTask, setTaskStatus, updateTask, removeTask };
 }
