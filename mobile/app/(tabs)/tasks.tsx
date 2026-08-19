@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddTaskModal } from '@/components/AddTaskModal';
+import { ProjectPicker } from '@/components/ProjectPicker';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
 import { TaskRow } from '@/components/TaskRow';
@@ -11,6 +12,8 @@ import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import type { HistoryRange } from '@/hooks/useTaskHistory';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
+import { useProjectPicker } from '@/hooks/useProjectPicker';
+import { useProjects } from '@/hooks/useProjects';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
@@ -30,7 +33,11 @@ export default function TasksScreen() {
   const { requestStart, pickerProps } = useStartPicker(startSession);
   const { tasks, addTask, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
+  const { projects, addProject, updateProject, removeProject } = useProjects();
+  const projectById = new Map(projects.map(p => [p.id, p]));
   const [addingTask, setAddingTask] = useState(false);
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string | null>(null);
+  const { requestProject: requestNewTaskProject, pickerProps: projectPickerProps } = useProjectPicker(setNewTaskProjectId);
   const [subTab, setSubTab] = useState<SubTab>('backlog');
   const canStart = display.status === 'idle';
 
@@ -81,6 +88,7 @@ export default function TasksScreen() {
                   ticket={t.ticketRef ?? undefined}
                   meta={t.meta ?? ''}
                   status={t.status}
+                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                   onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
                   onStatusPress={() => requestStatus(t.id, t.title, t.status)}
                 />
@@ -98,6 +106,7 @@ export default function TasksScreen() {
                   ticket={t.ticketRef ?? undefined}
                   meta={t.meta ?? ''}
                   status={t.status}
+                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                   onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                   onStatusPress={() => requestStatus(t.id, t.title, t.status)}
                 />
@@ -145,6 +154,7 @@ export default function TasksScreen() {
                       ticket={t.ticketRef ?? undefined}
                       meta=""
                       status={t.status}
+                      projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                       onStatusPress={() => requestStatus(t.id, t.title, t.status)}
                     />
                   ))}
@@ -163,12 +173,20 @@ export default function TasksScreen() {
       <StatusPicker {...statusPickerProps} />
       <AddTaskModal
         visible={addingTask}
+        projects={projects}
+        selectedProjectId={newTaskProjectId}
+        onRequestProject={() => requestNewTaskProject(newTaskProjectId)}
         onSubmit={title => {
-          addTask(title);
+          addTask(title, newTaskProjectId);
           setAddingTask(false);
+          setNewTaskProjectId(null);
         }}
-        onCancel={() => setAddingTask(false)}
+        onCancel={() => {
+          setAddingTask(false);
+          setNewTaskProjectId(null);
+        }}
       />
+      <ProjectPicker {...projectPickerProps} projects={projects} onCreate={addProject} onUpdate={updateProject} onRemove={removeProject} />
     </SafeAreaView>
   );
 }

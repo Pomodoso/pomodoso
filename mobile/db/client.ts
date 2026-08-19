@@ -81,10 +81,11 @@ function initDb(): void {
     expoDb.execSync('DROP TABLE IF EXISTS pomodoro_session;');
   }
 
-  // Same throwaway-spike migration story for task's done -> status change.
+  // Same throwaway-spike migration story for task's done -> status change,
+  // and later the project_id column.
   const hasCurrentTaskSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT status FROM task LIMIT 1');
+      expoDb.getFirstSync('SELECT status, project_id FROM task LIMIT 1');
       return true;
     } catch {
       return false;
@@ -135,8 +136,16 @@ function initDb(): void {
       ticket_ref TEXT,
       meta TEXT,
       status TEXT NOT NULL DEFAULT 'todo',
+      project_id TEXT,
       is_priority INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS project (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );

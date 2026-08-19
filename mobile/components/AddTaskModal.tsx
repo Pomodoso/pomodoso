@@ -2,15 +2,20 @@ import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
+import type { ProjectRow } from '@/db/schema';
 
 interface AddTaskModalProps {
   visible: boolean;
+  projects: ProjectRow[];
+  selectedProjectId: string | null;
+  onRequestProject: () => void;
   onSubmit: (title: string) => void;
   onCancel: () => void;
 }
 
-export function AddTaskModal({ visible, onSubmit, onCancel }: AddTaskModalProps) {
+export function AddTaskModal({ visible, projects, selectedProjectId, onRequestProject, onSubmit, onCancel }: AddTaskModalProps) {
   const [title, setTitle] = useState('');
+  const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
 
   function handleSubmit(): void {
     if (!title.trim()) return;
@@ -38,6 +43,16 @@ export function AddTaskModal({ visible, onSubmit, onCancel }: AddTaskModalProps)
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
           />
+          <Pressable style={styles.projectBtn} onPress={onRequestProject}>
+            {selectedProject ? (
+              <>
+                <View style={[styles.projectDot, { backgroundColor: selectedProject.color }]} />
+                <Text style={styles.projectBtnText}>{selectedProject.name}</Text>
+              </>
+            ) : (
+              <Text style={styles.projectBtnTextMuted}>+ Add project</Text>
+            )}
+          </Pressable>
           <Pressable style={[styles.addBtn, !title.trim() && styles.addBtnDisabled]} onPress={handleSubmit} disabled={!title.trim()}>
             <Text style={styles.addBtnText}>Add task</Text>
           </Pressable>
@@ -77,6 +92,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
+  projectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  projectDot: { width: 10, height: 10, borderRadius: 5 },
+  projectBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.text },
+  projectBtnTextMuted: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
   addBtn: {
     backgroundColor: colors.accent,
     borderRadius: 12,

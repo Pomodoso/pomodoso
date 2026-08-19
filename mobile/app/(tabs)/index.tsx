@@ -12,6 +12,7 @@ import { TimerRing } from '@/components/TimerRing';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
+import { useProjects } from '@/hooks/useProjects';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
@@ -49,6 +50,8 @@ export default function HomeScreen() {
   const { requestStart, pickerProps } = useStartPicker(startSession);
   const { tasks, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
+  const { projects } = useProjects();
+  const projectById = new Map(projects.map(p => [p.id, p]));
   const today = useTodayDate();
   // isPriority tasks stay in Today for the rest of the day they were
   // resolved on (matches extension's HomeState.tsx completedToday rule) —
@@ -185,6 +188,7 @@ export default function HomeScreen() {
             ticket={t.ticketRef ?? undefined}
             meta={t.meta ?? ''}
             status={t.status}
+            projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
             onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
             onStatusPress={() => requestStatus(t.id, t.title, t.status)}
           />
