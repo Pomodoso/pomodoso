@@ -168,11 +168,14 @@ export function useHabits() {
   }
 
   function removeHabit(id: string): void {
-    // Cascade — an orphaned habit_history row is harmless on its own (no
-    // atomic-guard invariant like pomodoro_session's), but there's no reason
-    // to keep it around once the habit it belongs to is gone.
-    db.delete(habitHistory).where(eq(habitHistory.habitId, id)).run();
-    db.delete(habits).where(eq(habits.id, id)).run();
+    // Cascade, wrapped in a transaction so the two deletes commit together —
+    // an interruption between them would otherwise leave the habit_history
+    // gone but the habit itself still present, looking like a "brand new"
+    // habit with its whole streak silently erased.
+    db.transaction(tx => {
+      tx.delete(habitHistory).where(eq(habitHistory.habitId, id)).run();
+      tx.delete(habits).where(eq(habits.id, id)).run();
+    });
   }
 
   return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit };

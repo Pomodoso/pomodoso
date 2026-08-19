@@ -55,19 +55,33 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   }, [visible, initialHabit]);
 
   function toggleDay(day: number): void {
-    setDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a, b) => a - b)));
+    setDays(prev => {
+      // [] is the canonical "every day" sentinel (matching the extension),
+      // not "no days" — deselecting the last remaining day would silently
+      // flip the habit from "scheduled nowhere" to "scheduled everywhere".
+      // Refuse the last deselection instead; "reset to every day" already
+      // covers the intentional path back to [].
+      if (prev.includes(day)) return prev.length > 1 ? prev.filter(d => d !== day) : prev;
+      return [...prev, day].sort((a, b) => a - b);
+    });
   }
+
+  const parsedGoal = parseInt(goal, 10);
+  const goalValid = kind === 'boolean' || (!isNaN(parsedGoal) && parsedGoal > 0);
 
   function handleSave(): void {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    const parsedGoal = parseInt(goal, 10);
+    if (!trimmed || !goalValid) return;
     const parsedUnitAmount = parseInt(unitAmount, 10);
     onSave({
       name: trimmed,
       icon,
       kind,
-      goal: kind === 'counter' && !isNaN(parsedGoal) ? parsedGoal : null,
+      // goalValid already guarantees parsedGoal > 0 for counter habits — a
+      // 0 or missing goal would make isDone() (useHabits.ts) true at any
+      // count via its `?? 0` fallback, marking the habit complete before
+      // any progress is logged.
+      goal: kind === 'counter' ? parsedGoal : null,
       unit: kind === 'counter' && unit.trim() ? unit.trim() : null,
       unitAmount: kind === 'counter' && !isNaN(parsedUnitAmount) ? parsedUnitAmount : null,
       days,
@@ -125,7 +139,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
               <View style={styles.counterRow}>
                 <TextInput
                   style={[styles.input, styles.counterInput]}
-                  placeholder="Goal"
+                  placeholder="Goal (required)"
                   placeholderTextColor={colors.textTertiary}
                   value={goal}
                   onChangeText={setGoal}
@@ -169,7 +183,11 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
             </View>
             {days.length === 7 && <Text style={styles.everyDayHint}>Every day. Tap a day to customize.</Text>}
 
-            <Pressable style={[styles.saveBtn, !name.trim() && styles.saveBtnDisabled]} onPress={handleSave} disabled={!name.trim()}>
+            <Pressable
+              style={[styles.saveBtn, (!name.trim() || !goalValid) && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={!name.trim() || !goalValid}
+            >
               <Text style={styles.saveBtnText}>Save</Text>
             </Pressable>
 
