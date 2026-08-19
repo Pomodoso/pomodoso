@@ -6,13 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { StatusPicker } from '@/components/StatusPicker';
-import { STATUS_DOT_COLOR, STATUS_LABEL } from '@/constants/taskStatus';
+import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR, STATUS_LABEL } from '@/constants/taskStatus';
 import { colors, fontMono } from '@/constants/theme';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
 import { useSettings } from '@/hooks/useSettings';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
+import { useTodayDate } from '@/hooks/useTodayDate';
 
 // The extension's entry point for editing project/priority is its task
 // detail screen — mobile didn't have one (see #31's known gap), which also
@@ -23,6 +24,7 @@ export default function TaskDetailScreen() {
   const { tasks, setTaskStatus, updateTask, removeTask } = useTasks();
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const { settings } = useSettings();
+  const today = useTodayDate();
   const task = tasks.find(t => t.id === id);
 
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
@@ -49,7 +51,10 @@ export default function TaskDetailScreen() {
   }
 
   const project = task.projectId ? projects.find(p => p.id === task.projectId) : undefined;
-  const priorityCount = tasks.filter(t => t.isPriority).length;
+  // Same "stays visible today" rule as Home/Tasks (constants/taskStatus.ts) —
+  // a priority task resolved on an earlier day is no longer shown as a
+  // priority anywhere, so it shouldn't still occupy one of its slots here.
+  const priorityCount = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today))).length;
   const priorityLimitReached = !task.isPriority && priorityCount >= settings.maxPriorities;
 
   // Mirrors extension's addToPriorities (App.tsx): prevents growing past
