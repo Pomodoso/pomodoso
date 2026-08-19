@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -85,17 +85,29 @@ export function useTasks() {
       .run();
   }
 
-  async function removeTask(id: string): Promise<void> {
-    // If a session for this task is still active/paused, it has a live
-    // scheduled notification — cancel it before the row disappears, or it
-    // fires later referencing a session/task that no longer exists.
-    const liveSession = (sessions ?? []).find(s => s.taskId === id && (s.status === 'active' || s.status === 'paused'));
-    if (liveSession?.notificationId) {
-      const cancelled = await cancelScheduledNotification(liveSession.notificationId);
+  async function cancelLiveSessionNotifications(id: string): Promise<void> {
+    const live = db
+      .select()
+      .from(pomodoroSession)
+      .where(and(eq(pomodoroSession.taskId, id), inArray(pomodoroSession.status, ['active', 'paused'])))
+      .all();
+    for (const s of live) {
+      if (!s.notificationId) continue;
+      const cancelled = await cancelScheduledNotification(s.notificationId);
       if (!cancelled) {
-        console.warn('Orphaned notification from a deleted task could not be cancelled:', liveSession.notificationId);
+        console.warn('Orphaned notification from a deleted task could not be cancelled:', s.notificationId);
       }
     }
+  }
+
+  async function removeTask(id: string): Promise<void> {
+    // Queries fresh (not the render-time `sessions` snapshot) right before
+    // the cascade below, so a session started for this task in between the
+    // Delete tap and this call landing is still caught. Closing the actual
+    // race window is on the caller: this must be awaited before navigating
+    // away, or the UI would let the user reach a play button for a task
+    // that's about to disappear while this is still in flight.
+    await cancelLiveSessionNotifications(id);
     // Cascade so nothing is left pointing at a task that no longer exists.
     // Matters beyond tidiness: an orphaned row stuck at status
     // active/paused would permanently block every future session start —

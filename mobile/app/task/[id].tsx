@@ -66,8 +66,15 @@ export default function TaskDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          void removeTask(task.id);
-          router.back();
+          // Awaited before navigating away: this screen has no play button
+          // of its own, so staying here until deletion (including any
+          // notification cancellation) fully completes means there's no
+          // window where the user could reach a play button for this task
+          // elsewhere while it's still being deleted.
+          void (async () => {
+            await removeTask(task.id);
+            router.back();
+          })();
         },
       },
     ]);
