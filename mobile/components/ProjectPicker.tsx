@@ -172,10 +172,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 14,
   },
-  // Fixed cap (rather than flex-filling the sheet's 80% maxHeight) so a
-  // long project list scrolls internally instead of pushing New
-  // project/Close off the bottom of the sheet, unreachable.
-  list: { maxHeight: 340 },
+  // flexShrink (not a fixed maxHeight) so the list gives way to the sheet's
+  // own 80%-of-screen cap on short devices, instead of a magic pixel value
+  // that fits on a typical screen but can still push the fixed Close footer
+  // below it off-screen on smaller ones.
+  list: { flexShrink: 1 },
   projectRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   option: {
     flex: 1,
