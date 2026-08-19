@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,6 +23,13 @@ interface DurationPickerProps {
 function DurationPicker({ label, presets, value, onChange }: DurationPickerProps): React.JSX.Element {
   const isPreset = presets.some(p => p.seconds === value);
   const [customMin, setCustomMin] = useState(String(Math.round(value / 60)));
+
+  // useState's initializer only runs on mount — without this, a `value` that
+  // changes for a reason other than this component's own onChange (e.g. the
+  // settings live-query catching up after mount) wouldn't be reflected here.
+  useEffect(() => {
+    setCustomMin(String(Math.round(value / 60)));
+  }, [value]);
 
   function handleCustomChange(raw: string): void {
     setCustomMin(raw);
@@ -64,6 +71,14 @@ export default function SettingsScreen(): React.JSX.Element {
   const { settings, update } = useSettings();
   const [longEveryStr, setLongEveryStr] = useState(String(settings.longBreakEvery));
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
+
+  useEffect(() => {
+    setLongEveryStr(String(settings.longBreakEvery));
+  }, [settings.longBreakEvery]);
+
+  useEffect(() => {
+    setGoalStr(String(settings.dailyGoal));
+  }, [settings.dailyGoal]);
 
   function handleLongEveryChange(raw: string): void {
     setLongEveryStr(raw);

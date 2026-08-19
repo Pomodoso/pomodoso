@@ -10,6 +10,7 @@ import { STATUS_DOT_COLOR, STATUS_LABEL } from '@/constants/taskStatus';
 import { colors, fontMono } from '@/constants/theme';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
+import { useSettings } from '@/hooks/useSettings';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 
@@ -21,6 +22,7 @@ export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tasks, setTaskStatus, updateTask, removeTask } = useTasks();
   const { projects, addProject, updateProject, removeProject } = useProjects();
+  const { settings } = useSettings();
   const task = tasks.find(t => t.id === id);
 
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
@@ -47,6 +49,23 @@ export default function TaskDetailScreen() {
   }
 
   const project = task.projectId ? projects.find(p => p.id === task.projectId) : undefined;
+  const priorityCount = tasks.filter(t => t.isPriority).length;
+  const priorityLimitReached = !task.isPriority && priorityCount >= settings.maxPriorities;
+
+  // Mirrors extension's addToPriorities (App.tsx): prevents growing past
+  // maxPriorities, but never retroactively strips priority from tasks
+  // already marked — only blocks adding new ones once at the cap.
+  function handleTogglePriority(): void {
+    if (!task) return;
+    if (priorityLimitReached) {
+      Alert.alert(
+        'Priority limit reached',
+        `You can only have ${settings.maxPriorities} priority task${settings.maxPriorities === 1 ? '' : 's'} at once. Remove one first, or raise the limit in Settings.`,
+      );
+      return;
+    }
+    updateTask(task.id, { isPriority: !task.isPriority });
+  }
 
   function handleTitleBlur(): void {
     if (!task) return;
@@ -122,13 +141,15 @@ export default function TaskDetailScreen() {
         </Pressable>
 
         <Text style={styles.sectionLabel}>Priority</Text>
-        <Pressable style={styles.row} onPress={() => updateTask(task.id, { isPriority: !task.isPriority })}>
+        <Pressable style={[styles.row, priorityLimitReached && styles.rowDisabled]} onPress={handleTogglePriority}>
           <Ionicons
             name={task.isPriority ? 'star' : 'star-outline'}
             size={18}
             color={task.isPriority ? colors.warning : colors.textTertiary}
           />
-          <Text style={styles.rowText}>{task.isPriority ? "Today's priority" : 'Not a priority'}</Text>
+          <Text style={styles.rowText}>
+            {task.isPriority ? "Today's priority" : priorityLimitReached ? `Limit reached (${settings.maxPriorities})` : 'Not a priority'}
+          </Text>
         </Pressable>
 
         {task.meta && (
@@ -195,6 +216,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     marginBottom: 18,
   },
+  rowDisabled: { opacity: 0.6 },
   dot: { width: 11, height: 11, borderRadius: 6 },
   rowText: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.text },
   rowTextMuted: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.textTertiary },

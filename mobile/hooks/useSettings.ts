@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useRef } from 'react';
 
 import { db } from '@/db/client';
 import { settings } from '@/db/schema';
@@ -42,7 +43,19 @@ const KEYS: Record<keyof AppSettings, string> = {
 
 export function useSettings() {
   const { data: rows } = useLiveQuery(db.select().from(settings));
-  const byKey = new Map((rows ?? []).map(r => [r.key, r.value]));
+  // useLiveQuery's `data` starts as `[]` and only resolves to the real rows
+  // after an async first tick (drizzle-orm/expo-sqlite wraps even this sync
+  // DB's first read in a microtask) — code that can run before that tick
+  // (e.g. starting a timer session right after mount) would otherwise see
+  // defaults instead of a saved non-default value. Closed by reading once,
+  // synchronously, on first call and preferring that until the live query
+  // actually has rows.
+  const syncFallbackRef = useRef<{ key: string; value: string }[] | null>(null);
+  if (syncFallbackRef.current === null) {
+    syncFallbackRef.current = db.select().from(settings).all();
+  }
+  const effectiveRows = rows.length > 0 ? rows : syncFallbackRef.current;
+  const byKey = new Map(effectiveRows.map(r => [r.key, r.value]));
 
   function get<K extends keyof AppSettings>(field: K): AppSettings[K] {
     const raw = byKey.get(KEYS[field]);
