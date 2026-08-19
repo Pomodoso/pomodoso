@@ -131,7 +131,10 @@ export default function TaskDetailScreen() {
     const h = parseInt(addHours, 10) || 0;
     const m = parseInt(addMinutes, 10) || 0;
     const seconds = h * 3600 + m * 60;
-    if (seconds <= 0) return;
+    // parseInt can return Infinity for a sufficiently long pasted digit
+    // string, which passes seconds > 0 — addManualTime's Date math would
+    // then throw on toISOString() instead of recording or rejecting it.
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
     addManualTime(task.id, seconds);
     setAddHours('');
     setAddMinutes('');
