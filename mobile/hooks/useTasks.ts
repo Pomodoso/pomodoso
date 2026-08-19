@@ -1,9 +1,10 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
+import { cancelScheduledNotification } from '@/notifications';
 import { secondsBetween } from '@/utils/time';
 
 function uid(): string {
@@ -84,7 +85,29 @@ export function useTasks() {
       .run();
   }
 
-  function removeTask(id: string): void {
+  async function cancelLiveSessionNotifications(id: string): Promise<void> {
+    const live = db
+      .select()
+      .from(pomodoroSession)
+      .where(and(eq(pomodoroSession.taskId, id), inArray(pomodoroSession.status, ['active', 'paused'])))
+      .all();
+    for (const s of live) {
+      if (!s.notificationId) continue;
+      const cancelled = await cancelScheduledNotification(s.notificationId);
+      if (!cancelled) {
+        console.warn('Orphaned notification from a deleted task could not be cancelled:', s.notificationId);
+      }
+    }
+  }
+
+  async function removeTask(id: string): Promise<void> {
+    // Queries fresh (not the render-time `sessions` snapshot) right before
+    // the cascade below, so a session started for this task in between the
+    // Delete tap and this call landing is still caught. Closing the actual
+    // race window is on the caller: this must be awaited before navigating
+    // away, or the UI would let the user reach a play button for a task
+    // that's about to disappear while this is still in flight.
+    await cancelLiveSessionNotifications(id);
     // Cascade so nothing is left pointing at a task that no longer exists.
     // Matters beyond tidiness: an orphaned row stuck at status
     // active/paused would permanently block every future session start —
