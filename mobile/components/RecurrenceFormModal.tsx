@@ -30,6 +30,20 @@ function todayYmd(): string {
   return new Date().toLocaleDateString('en-CA');
 }
 
+// Text fields, not a date/time picker (see file header) — validate the
+// contracts recurrence.ts's date math assumes, since an unparseable
+// startDate silently makes shouldOccurOn refuse every date (string
+// comparison against "date < rule.startDate" never true) and an
+// out-of-range time silently skews shouldBeInTodayNow's cutoff.
+function isValidYmd(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00');
+  return !isNaN(d.getTime()) && d.toLocaleDateString('en-CA') === s;
+}
+function isValidTime(s: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+}
+
 // Ports extension's recurrence form (TaskDetailState.tsx, ~lines 167-259 &
 // 407-490) — same fields and defaults-from-today behavior, minus a native
 // date-picker dependency the codebase doesn't have yet: start/end date are
@@ -77,6 +91,10 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
 
   const intervalN = clampInt(interval, 1, 99, 1);
   const weekdaysValid = freq !== 'weekly' || weekdays.length > 0;
+  const startDateValid = isValidYmd(startDate.trim());
+  const timeValid = allDay || isValidTime(time.trim());
+  const endDateValid = !hasEnd || isValidYmd(endDate.trim());
+  const formValid = weekdaysValid && startDateValid && timeValid && endDateValid;
 
   function buildRule(): RecurrenceRule {
     return {
@@ -86,14 +104,14 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
       ...(freq === 'weekly' && { weekdays }),
       ...(freq === 'monthly' && { monthDay: clampInt(monthDay, 1, 31, 1) }),
       ...(freq === 'yearly' && { yearMonth: clampInt(yearMonth, 1, 12, 1), yearDay: clampInt(yearDay, 1, 31, 1) }),
-      time: allDay ? null : time.trim() || null,
-      startDate: startDate.trim() || todayYmd(),
-      endDate: hasEnd && endDate.trim() ? endDate.trim() : null,
+      time: allDay ? null : time.trim(),
+      startDate: startDate.trim(),
+      endDate: hasEnd ? endDate.trim() : null,
     };
   }
 
   function handleSave(): void {
-    if (!weekdaysValid) return;
+    if (!formValid) return;
     onSave(buildRule());
   }
 
@@ -101,7 +119,7 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
     onSave(null);
   }
 
-  const previewRule = weekdaysValid ? buildRule() : null;
+  const previewRule = formValid ? buildRule() : null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -171,13 +189,16 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
               <Switch value={allDay} onValueChange={setAllDay} trackColor={{ true: colors.accent }} />
             </View>
             {!allDay && (
-              <TextInput
-                style={styles.input}
-                placeholder="HH:MM"
-                placeholderTextColor={colors.textTertiary}
-                value={time}
-                onChangeText={setTime}
-              />
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="HH:MM"
+                  placeholderTextColor={colors.textTertiary}
+                  value={time}
+                  onChangeText={setTime}
+                />
+                {!timeValid && <Text style={styles.errorText}>Time must be HH:MM, 24-hour (e.g. 09:30).</Text>}
+              </>
             )}
 
             <Text style={styles.label}>Starts</Text>
@@ -188,19 +209,23 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
               value={startDate}
               onChangeText={setStartDate}
             />
+            {!startDateValid && <Text style={styles.errorText}>Enter a valid date as YYYY-MM-DD.</Text>}
 
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>Has an end date</Text>
               <Switch value={hasEnd} onValueChange={setHasEnd} trackColor={{ true: colors.accent }} />
             </View>
             {hasEnd && (
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textTertiary}
-                value={endDate}
-                onChangeText={setEndDate}
-              />
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textTertiary}
+                  value={endDate}
+                  onChangeText={setEndDate}
+                />
+                {!endDateValid && <Text style={styles.errorText}>Enter a valid date as YYYY-MM-DD.</Text>}
+              </>
             )}
 
             <View style={styles.switchRow}>
@@ -213,7 +238,7 @@ export function RecurrenceFormModal({ visible, initialRule, onSave, onCancel }: 
 
             {previewRule && <Text style={styles.previewText}>{formatRecurrenceLabel(previewRule)}</Text>}
 
-            <Pressable style={[styles.saveBtn, !weekdaysValid && styles.saveBtnDisabled]} onPress={handleSave} disabled={!weekdaysValid}>
+            <Pressable style={[styles.saveBtn, !formValid && styles.saveBtnDisabled]} onPress={handleSave} disabled={!formValid}>
               <Text style={styles.saveBtnText}>Save</Text>
             </Pressable>
 

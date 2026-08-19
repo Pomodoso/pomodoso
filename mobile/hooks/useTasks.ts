@@ -124,25 +124,31 @@ export function useTasks() {
       .run();
   }
 
-  // Mirrors extension's updateTask intercept (App.tsx): a recurring task
-  // never reaches status 'done' permanently — completing today's occurrence
-  // records it in completedDates and resets status to 'todo' so the task is
-  // clean for its next occurrence, instead of vanishing from Today forever.
+  // Mirrors extension's updateTask intercept (App.tsx), extended to cover
+  // 'cancelled' too (extension only special-cases 'done', but its own
+  // recurring tasks never reach 'cancelled' via that path either — its
+  // separate daily cleanup effect, which mobile doesn't replicate, is what
+  // actually keeps a cancelled recurring task from getting stuck there). A
+  // recurring task never reaches a resolved status permanently: resolving
+  // today's occurrence (done OR cancelled) records it in completedDates and
+  // resets status/isToday/isPriority to a clean slate — otherwise isToday
+  // stays true forever and the materialization effect (which skips any task
+  // already isToday) would never re-evaluate it for its next occurrence.
   function setTaskStatus(id: string, status: TaskStatus): void {
     const current = (tasks ?? []).find(t => t.id === id);
-    if (status === 'done' && current?.recurrence) {
-      completeRecurringOccurrence(id);
+    if ((status === 'done' || status === 'cancelled') && current?.recurrence) {
+      resolveRecurringOccurrence(id);
       return;
     }
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  function completeRecurringOccurrence(id: string): void {
+  function resolveRecurringOccurrence(id: string): void {
     const current = (tasks ?? []).find(t => t.id === id);
     const rule = current ? parseRecurrence(current.recurrence) : null;
     if (!current || !rule) return;
-    // Record the occurrence being completed, not the calendar day — a
-    // carry-over task may be completed on a later day than its (missed)
+    // Record the occurrence being resolved, not the calendar day — a
+    // carry-over task may be resolved on a later day than its (missed)
     // occurrence date; activeOccurrence resolves which one that was.
     const occ = activeOccurrence(rule, today) ?? today;
     const completed = new Set(parseCompletedDates(current.completedDates));
@@ -159,9 +165,14 @@ export function useTasks() {
       .run();
   }
 
+  // Resets completedDates whenever the rule changes (including clearing
+  // it): those dates are tied to the schedule that produced them, so an
+  // edited or newly (re)created rule could otherwise land a real occurrence
+  // on a date the OLD schedule happened to have completed, silently
+  // suppressing it from Today.
   function setRecurrence(id: string, rule: RecurrenceRule | null): void {
     db.update(task)
-      .set({ recurrence: rule ? JSON.stringify(rule) : null, updatedAt: new Date().toISOString() })
+      .set({ recurrence: rule ? JSON.stringify(rule) : null, completedDates: '[]', updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
   }
