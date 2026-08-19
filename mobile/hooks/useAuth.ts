@@ -58,21 +58,22 @@ async function applySessionFromUrl(url: string): Promise<void> {
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
   if (!accessToken || !refreshToken) return;
+  // A password-reset link lands here too (same "pomodoso://auth-callback"
+  // redirect as magic link/signup) — Supabase tells them apart via
+  // type=recovery in the fragment. Navigate BEFORE setSession below, not
+  // after: if the login screen happens to still be mounted, it closes
+  // itself on ANY session appearing (its own useAuth instance's session
+  // effect), and that would race a post-setSession router.push and pop the
+  // reset screen right back off before the user sees it. replace (not
+  // push) unmounts login synchronously here, so its effect never gets the
+  // chance to fire (mirrors web's ResetPassword.tsx, reached the same way
+  // there).
+  if (params.get('type') === 'recovery') {
+    router.replace('/reset-password');
+  }
   const supabase = getMobileSupabase();
   const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  if (error) {
-    console.warn('Failed to apply session from auth redirect', error);
-    return;
-  }
-  // A password-reset link also lands here (same "pomodoso://auth-callback"
-  // redirect as magic link/signup) — Supabase tells them apart via
-  // type=recovery in the fragment. Route to the dedicated screen instead of
-  // silently signing the user in and closing login, which would leave them
-  // signed in under their OLD password with no chance to set a new one
-  // (mirrors web's ResetPassword.tsx, reached the same way there).
-  if (params.get('type') === 'recovery') {
-    router.push('/reset-password');
-  }
+  if (error) console.warn('Failed to apply session from auth redirect', error);
 }
 
 export function useAuth(): AuthState {
