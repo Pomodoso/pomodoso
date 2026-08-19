@@ -33,7 +33,9 @@ export function isResolvedStatus(status: TaskStatus): boolean {
 
 // Extension's HomeState.tsx keeps a resolved task visible in Today for the
 // rest of the calendar day it was resolved on (compares updatedAt's local
-// date to today's), then it rolls off the next day. Same rule here.
-export function isUpdatedToday(updatedAt: string): boolean {
-  return new Date(updatedAt).toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA');
+// date to today's), then it rolls off the next day. `today` must come from
+// useTodayDate() rather than being computed inline here — a screen kept
+// mounted across local midnight otherwise never re-evaluates this.
+export function isUpdatedToday(updatedAt: string, today: string): boolean {
+  return new Date(updatedAt).toLocaleDateString('en-CA') === today;
 }

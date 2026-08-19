@@ -15,6 +15,7 @@ import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
+import { useTodayDate } from '@/hooks/useTodayDate';
 
 const POMO_TOTAL_TARGET = 8;
 
@@ -31,10 +32,11 @@ export default function HomeScreen() {
   const { requestStart, pickerProps } = useStartPicker(startSession);
   const { tasks, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
+  const today = useTodayDate();
   // isPriority tasks stay in Today for the rest of the day they were
   // resolved on (matches extension's HomeState.tsx completedToday rule) —
   // marking one done/cancelled shouldn't make it vanish immediately.
-  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt)));
+  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
 
   const isStopwatch = display.mode === 'stopwatch';
   const timeLabel = display.status === 'idle' ? formatTime(0) : formatTime(isStopwatch ? display.elapsedSeconds : (display.remainingSeconds ?? 0));

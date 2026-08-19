@@ -13,6 +13,7 @@ import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
+import { useTodayDate } from '@/hooks/useTodayDate';
 
 const FILTERS = ['Today', 'In progress', 'All open', 'Done'];
 
@@ -24,13 +25,14 @@ export default function TasksScreen() {
   const [addingTask, setAddingTask] = useState(false);
   const canStart = display.status === 'idle';
 
+  const today = useTodayDate();
   // Same "stays visible today" rule as Home: a priority task resolved today
   // stays under Today's priorities; once it rolls off (next day) or if it
   // was never a priority, it lives in History instead. No task appears in
   // more than one section.
-  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt)));
+  const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const backlog = tasks.filter(t => !t.isPriority && !isResolvedStatus(t.status));
-  const history = tasks.filter(t => isResolvedStatus(t.status) && !(t.isPriority && isUpdatedToday(t.updatedAt)));
+  const history = tasks.filter(t => isResolvedStatus(t.status) && !(t.isPriority && isUpdatedToday(t.updatedAt, today)));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
