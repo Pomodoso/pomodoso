@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { db } from '@/db/client';
 import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
+import { playSound } from '@/utils/sounds';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
@@ -121,10 +122,17 @@ export function useTimer() {
       // Guard on status too, not just id — if a manual pause/stop already
       // landed between the elapsed check above and this write, this would
       // otherwise overwrite that newer state back to "completed".
-      db.update(pomodoroSession)
+      const result = db
+        .update(pomodoroSession)
         .set({ status: 'completed', endedAt: deadline })
         .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'active')))
         .run();
+      // Only when THIS call actually won the write (see the status guard
+      // above) — otherwise a second reconciliation racing the first would
+      // play the sound twice for one real completion.
+      if (result.changes > 0) {
+        playSound(active.kind === 'focus' ? 'pomo-done' : 'break-done', settings.soundSettings);
+      }
     }
   });
 
@@ -303,6 +311,9 @@ export function useTimer() {
       }
       resolveAllPendingPrompts(); // starting something new supersedes any dangling banner
       setIdleMode(mode); // spec 6.1: "updated on every session start" — only once we know this call won
+      // Matches extension's App.tsx: only pomodoro starts get a sound
+      // (stopwatch doesn't), same event as a follow-up focus after a break.
+      if (mode === 'pomodoro') playSound('focus-start', settings.soundSettings);
     } finally {
       isMutatingRef.current = false;
     }
@@ -335,6 +346,9 @@ export function useTimer() {
         return;
       }
       resolveAllPendingPrompts();
+      // Matches background.ts: 'break-start' when the follow-up is a break,
+      // 'focus-start' when it's the next pomodoro after one.
+      playSound(kind === 'focus' ? 'focus-start' : 'break-start', settings.soundSettings);
     } finally {
       isMutatingRef.current = false;
     }
