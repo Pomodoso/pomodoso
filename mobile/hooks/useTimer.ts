@@ -147,6 +147,15 @@ export function useTimer() {
       new Date(s.startedAt).toLocaleDateString('en-CA') === today,
   ).length;
 
+  // Extension's TodayFooter (HomeState.tsx) sums ALL timeLogs for today
+  // regardless of mode (pomodoro or stopwatch aren't distinguished in the
+  // tracked-time total, only in the separate pomo count above) — matched
+  // here. kind='focus' still excludes breaks, same as pomosToday.
+  const trackedSecondsToday = (sessions ?? [])
+    .filter(s => s.kind === 'focus' && s.status === 'completed' && s.endedAt && new Date(s.startedAt).toLocaleDateString('en-CA') === today)
+    .reduce((sum, s) => sum + secondsBetween(s.startedAt, s.endedAt!), 0);
+  const trackedMinutesToday = Math.floor(trackedSecondsToday / 60);
+
   // The most recently completed session (if any) whose post-session prompt
   // hasn't been resolved yet — at most one of pendingBreak/pendingNextFocus
   // is ever set, whichever this turns out to be. Deriving from real
@@ -428,6 +437,7 @@ export function useTimer() {
     display,
     idleMode,
     setIdleMode,
+    trackedMinutesToday,
     pendingBreak,
     pendingNextFocus,
     startSession,
