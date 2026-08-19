@@ -150,9 +150,22 @@ export function useTimer() {
   // Extension's TodayFooter (HomeState.tsx) sums ALL timeLogs for today
   // regardless of mode (pomodoro or stopwatch aren't distinguished in the
   // tracked-time total, only in the separate pomo count above) — matched
-  // here. kind='focus' still excludes breaks, same as pomosToday.
+  // here. kind='focus' still excludes breaks, same as pomosToday. Unlike
+  // pomosToday, this deliberately includes 'interrupted' too — a stopwatch
+  // session always ends via manual Stop (stopSession sets 'interrupted',
+  // never 'completed', since there's no natural deadline to reconcile
+  // against), and a focus session stopped early still logged real time
+  // (spec 6.1: "marked interrupted with actual accumulated time"). Only
+  // pomosToday needs the strict completed-only gate, since it's counting
+  // whole finished pomodoros, not time spent.
   const trackedSecondsToday = (sessions ?? [])
-    .filter(s => s.kind === 'focus' && s.status === 'completed' && s.endedAt && new Date(s.startedAt).toLocaleDateString('en-CA') === today)
+    .filter(
+      s =>
+        s.kind === 'focus' &&
+        (s.status === 'completed' || s.status === 'interrupted') &&
+        s.endedAt &&
+        new Date(s.startedAt).toLocaleDateString('en-CA') === today,
+    )
     .reduce((sum, s) => sum + secondsBetween(s.startedAt, s.endedAt!), 0);
   const trackedMinutesToday = Math.floor(trackedSecondsToday / 60);
 
