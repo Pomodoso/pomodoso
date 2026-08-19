@@ -68,10 +68,10 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for pomodoro_session's taskTitle ->
-  // taskId change.
+  // taskId change, and later the prompt_resolved column (break flow).
   const hasCurrentSessionSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT task_id FROM pomodoro_session LIMIT 1');
+      expoDb.getFirstSync('SELECT task_id, prompt_resolved FROM pomodoro_session LIMIT 1');
       return true;
     } catch {
       return false;
@@ -122,7 +122,8 @@ function initDb(): void {
       paused_at TEXT,
       ended_at TEXT,
       status TEXT NOT NULL,
-      notification_id TEXT
+      notification_id TEXT,
+      prompt_resolved INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS timer_prefs (
       id TEXT PRIMARY KEY NOT NULL,

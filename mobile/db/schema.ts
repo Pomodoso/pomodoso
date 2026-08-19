@@ -44,6 +44,13 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   endedAt: text('ended_at'),
   status: text('status', { enum: ['active', 'paused', 'completed', 'interrupted'] }).notNull(),
   notificationId: text('notification_id'),
+  // Whether the post-session prompt (offer a break after a completed focus
+  // pomodoro; offer the next focus after a completed break) has been acted
+  // on — started or explicitly skipped/dismissed. Derived from real DB state
+  // rather than an ephemeral in-memory "stage" flag (extension's TimerState
+  // equivalent lives only in chrome.storage.local, see useTimer.ts), so the
+  // prompt survives the app being killed and reopened.
+  promptResolved: integer('prompt_resolved', { mode: 'boolean' }).notNull().default(false),
 });
 
 // Status set matches extension/src/db.ts's TaskStatus exactly, so the
