@@ -91,18 +91,19 @@ export function useTasks() {
   }
 
   // Priority/Today membership mirrors extension's separate taskOrders table
-  // (priorityIds/todayIds) — mutually exclusive. Turning a flag OFF never
-  // touches updatedAt (removal is immediate regardless of that field). But
-  // turning one ON must bump updatedAt when the task is currently resolved
-  // on an earlier day: the "stays visible today" rule
-  // (constants/taskStatus.ts) gates on isUpdatedToday for resolved tasks, so
-  // without this, reopening an old done/cancelled task from History and
-  // marking it Priority/Today would flip the flag but leave it invisible in
-  // Today's priorities/tasks — Task Detail would claim membership while the
-  // task stayed absent everywhere else.
+  // (priorityIds/todayIds) — mutually exclusive, and deliberately NOT
+  // touching updatedAt: that field also drives useTaskHistory's fallback
+  // grouping date for sessionless tasks, and bumping it here (tried and
+  // reverted — see PR #37 review) would silently move a resolved task into
+  // today's History group and leave it stuck there even after the flag is
+  // removed. Instead, adding a resolved task to Priority/Today is simply
+  // blocked — matches the extension, where that action (BacklogRow's
+  // onAddToPriorities/onAddToTasks) only ever exists for backlog (non-
+  // resolved) tasks in the first place. task/[id].tsx disables both rows
+  // when the task is resolved so this UI-unreachable in normal flow.
 
-  // Returns false (no-op) if adding would exceed maxPriorities — caller
-  // decides how to surface that (task/[id].tsx shows an alert).
+  // Returns false (no-op) if adding would exceed maxPriorities, or if the
+  // task is resolved — caller decides how to surface that.
   function togglePriority(id: string, maxPriorities: number): boolean {
     const current = (tasks ?? []).find(t => t.id === id);
     if (!current) return false;
@@ -110,28 +111,26 @@ export function useTasks() {
       db.update(task).set({ isPriority: false }).where(eq(task.id, id)).run();
       return true;
     }
+    if (isResolvedStatus(current.status)) return false;
     const priorityCount = (tasks ?? []).filter(
       t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)),
     ).length;
     if (priorityCount >= maxPriorities) return false;
-    db.update(task)
-      .set({ isPriority: true, isToday: false, updatedAt: new Date().toISOString() })
-      .where(eq(task.id, id))
-      .run();
+    db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
     return true;
   }
 
-  function toggleToday(id: string): void {
+  // Returns false (no-op) if the task is resolved (see togglePriority).
+  function toggleToday(id: string): boolean {
     const current = (tasks ?? []).find(t => t.id === id);
-    if (!current) return;
+    if (!current) return false;
     if (current.isToday) {
       db.update(task).set({ isToday: false }).where(eq(task.id, id)).run();
-    } else {
-      db.update(task)
-        .set({ isToday: true, isPriority: false, updatedAt: new Date().toISOString() })
-        .where(eq(task.id, id))
-        .run();
+      return true;
     }
+    if (isResolvedStatus(current.status)) return false;
+    db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
+    return true;
   }
 
   async function cancelLiveSessionNotifications(id: string): Promise<void> {
