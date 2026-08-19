@@ -2,6 +2,14 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // @pomodoso/api's package.json points straight at its .ts source (no
+    // build step), and its own internal imports use explicit .ts
+    // extensions (bundler-mode convention) — TS applies mobile's own
+    // compilerOptions when it follows that resolution, so this needs to be
+    // on here too, not just in api/'s own tsconfig. Safe: noEmit +
+    // moduleResolution "bundler" (expo/tsconfig.base) are exactly what
+    // this option requires.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./*"
