@@ -59,7 +59,7 @@ export default function TasksScreen() {
                 title={t.title}
                 ticket={t.ticketRef ?? undefined}
                 meta={t.meta ?? ''}
-                onPlayPress={canStart ? () => requestStart(t.title, t.ticketRef) : undefined}
+                onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                 onTogglePress={() => toggleTaskDone(t.id, true)}
               />
             ))}
@@ -75,7 +75,7 @@ export default function TasksScreen() {
                 title={t.title}
                 ticket={t.ticketRef ?? undefined}
                 meta={t.meta ?? ''}
-                onPlayPress={canStart ? () => requestStart(t.title, t.ticketRef) : undefined}
+                onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                 onTogglePress={() => toggleTaskDone(t.id, true)}
               />
             ))}

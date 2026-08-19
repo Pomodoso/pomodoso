@@ -67,6 +67,20 @@ function initDb(): void {
     expoDb.execSync('DROP TABLE IF EXISTS habits; DROP TABLE IF EXISTS habit_history;');
   }
 
+  // Same throwaway-spike migration story for pomodoro_session's taskTitle ->
+  // taskId change.
+  const hasCurrentSessionSchema = (() => {
+    try {
+      expoDb.getFirstSync('SELECT task_id FROM pomodoro_session LIMIT 1');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (!hasCurrentSessionSchema) {
+    expoDb.execSync('DROP TABLE IF EXISTS pomodoro_session;');
+  }
+
   expoDb.execSync(`
     CREATE TABLE IF NOT EXISTS habits (
       id TEXT PRIMARY KEY NOT NULL,
@@ -89,8 +103,7 @@ function initDb(): void {
       id TEXT PRIMARY KEY NOT NULL,
       mode TEXT NOT NULL,
       kind TEXT NOT NULL,
-      task_title TEXT,
-      ticket_ref TEXT,
+      task_id TEXT,
       planned_duration_seconds INTEGER,
       started_at TEXT NOT NULL,
       paused_at TEXT,

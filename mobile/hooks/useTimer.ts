@@ -3,16 +3,14 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
 import { db } from '@/db/client';
-import { pomodoroSession, timerPrefs } from '@/db/schema';
+import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
 
 // Device-local timer state (CLAUDE.md rule 8: server-authoritative only when
 // sync is enabled — mobile free tier stays local, same as the extension).
-// Mirrors extension/src/db.ts's session model loosely: no task table yet, so
-// taskTitle is a plain label, not a real FK (comes with the shared/core
-// extraction). "Mandatory task association" from spec 6.1 is relaxed here —
-// a session can start with taskTitle=null ("unassigned time") — documented
-// deviation, not silently dropped.
+// "Mandatory task association" from spec 6.1 is relaxed here — a session can
+// start with taskId=null ("unassigned time") — documented deviation, not
+// silently dropped.
 
 export type TimerMode = 'pomodoro' | 'stopwatch';
 export type TimerStatus = 'idle' | 'active' | 'paused';
@@ -52,6 +50,9 @@ export function useTimer() {
   const isMutatingRef = useRef(false);
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession).orderBy(desc(pomodoroSession.startedAt)));
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
+  const { data: tasks } = useLiveQuery(db.select().from(task));
+  const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
+
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
   // shared (and persisted) across Home and Tasks, not a per-screen choice.
   const idleMode: TimerMode = prefsRows?.[0]?.lastMode ?? 'pomodoro';
@@ -62,6 +63,7 @@ export function useTimer() {
 
   const active = (sessions ?? []).find(s => s.status === 'active' || s.status === 'paused');
   const isRunning = active?.status === 'active';
+  const activeTask = active?.taskId ? taskById.get(active.taskId) : undefined;
 
   // Live-update the display every second while a pomodoro/stopwatch is
   // actually counting (not while paused/idle — no point burning battery).
@@ -121,8 +123,8 @@ export function useTimer() {
     display = {
       status: active.status as 'active' | 'paused',
       mode: active.mode,
-      taskTitle: active.taskTitle,
-      ticketRef: active.ticketRef,
+      taskTitle: activeTask?.title ?? null,
+      ticketRef: activeTask?.ticketRef ?? null,
       elapsedSeconds: elapsed,
       remainingSeconds: remaining,
       progress: active.plannedDurationSeconds ? Math.min(1, elapsed / active.plannedDurationSeconds) : 0,
@@ -146,12 +148,13 @@ export function useTimer() {
     }
   }
 
-  async function startSession(mode: TimerMode, taskTitle: string | null, ticketRef: string | null): Promise<void> {
+  async function startSession(mode: TimerMode, taskId: string | null): Promise<void> {
     if (active || isMutatingRef.current) return; // fast path: same-instance rapid taps bail here
     isMutatingRef.current = true;
     try {
       const plannedDurationSeconds = mode === 'pomodoro' ? FOCUS_DURATION_SECONDS : null;
       const startedAt = nowIso();
+      const taskTitle = taskId ? (taskById.get(taskId)?.title ?? null) : null;
       let notificationId: string | null = null;
       if (mode === 'pomodoro' && plannedDurationSeconds) {
         notificationId = await tryScheduleNotification(new Date(Date.now() + plannedDurationSeconds * 1000), taskTitle);
@@ -163,8 +166,8 @@ export function useTimer() {
       // concurrent start can ever actually insert a row regardless of how
       // many screens/instances raced to get here.
       const result = db.run(sql`
-        INSERT INTO pomodoro_session (id, mode, kind, task_title, ticket_ref, planned_duration_seconds, started_at, status, notification_id)
-        SELECT ${uid()}, ${mode}, 'focus', ${taskTitle}, ${ticketRef}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
+        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id)
+        SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
       `);
       if (result.changes === 0) {
@@ -237,7 +240,7 @@ export function useTimer() {
       let notificationId: string | null = null;
       if (active.mode === 'pomodoro' && active.plannedDurationSeconds) {
         const endsAt = new Date(new Date(shiftedStartedAt).getTime() + active.plannedDurationSeconds * 1000);
-        notificationId = await tryScheduleNotification(endsAt, active.taskTitle);
+        notificationId = await tryScheduleNotification(endsAt, activeTask?.title ?? null);
       }
 
       const result = db

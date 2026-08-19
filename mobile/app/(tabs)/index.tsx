@@ -68,7 +68,7 @@ export default function HomeScreen() {
 
               <Text style={styles.pomoCount}>Pomo {display.pomosToday} of {POMO_TOTAL_TARGET} today</Text>
 
-              <Pressable style={styles.startBtn} onPress={() => startSession(idleMode, null, null)}>
+              <Pressable style={styles.startBtn} onPress={() => startSession(idleMode, null)}>
                 <Ionicons name="play" size={16} color={colors.surface} />
                 <Text style={styles.startBtnText}>Start {idleMode === 'pomodoro' ? 'focus session' : 'stopwatch'}</Text>
               </Pressable>
@@ -130,7 +130,7 @@ export default function HomeScreen() {
             title={t.title}
             ticket={t.ticketRef ?? undefined}
             meta={t.meta ?? ''}
-            onPlayPress={display.status === 'idle' ? () => requestStart(t.title, t.ticketRef) : undefined}
+            onPlayPress={display.status === 'idle' ? () => requestStart(t.id, t.title) : undefined}
             onTogglePress={() => toggleTaskDone(t.id, true)}
           />
         ))}
