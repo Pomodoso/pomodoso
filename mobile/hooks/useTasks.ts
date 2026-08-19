@@ -1,11 +1,14 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
+import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { secondsBetween } from '@/utils/time';
+
+import { useTodayDate } from './useTodayDate';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -20,6 +23,7 @@ function formatDuration(totalSeconds: number): string {
 }
 
 export function useTasks() {
+  const today = useTodayDate();
   const { data: tasks } = useLiveQuery(db.select().from(task).orderBy(asc(task.sortOrder)));
   const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
 
@@ -67,6 +71,7 @@ export function useTasks() {
         status: 'todo',
         projectId,
         isPriority: false,
+        isToday: false,
         sortOrder: maxSortOrder + 1,
         createdAt: now,
         updatedAt: now,
@@ -78,11 +83,54 @@ export function useTasks() {
     db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
   }
 
-  function updateTask(id: string, updates: { title?: string; projectId?: string | null; isPriority?: boolean }): void {
+  function updateTask(id: string, updates: { title?: string; projectId?: string | null }): void {
     db.update(task)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+  }
+
+  // Priority/Today membership mirrors extension's separate taskOrders table
+  // (priorityIds/todayIds) — mutually exclusive, and deliberately NOT
+  // touching updatedAt: that field also drives useTaskHistory's fallback
+  // grouping date for sessionless tasks, and bumping it here (tried and
+  // reverted — see PR #37 review) would silently move a resolved task into
+  // today's History group and leave it stuck there even after the flag is
+  // removed. Instead, adding a resolved task to Priority/Today is simply
+  // blocked — matches the extension, where that action (BacklogRow's
+  // onAddToPriorities/onAddToTasks) only ever exists for backlog (non-
+  // resolved) tasks in the first place. task/[id].tsx disables both rows
+  // when the task is resolved so this UI-unreachable in normal flow.
+
+  // Returns false (no-op) if adding would exceed maxPriorities, or if the
+  // task is resolved — caller decides how to surface that.
+  function togglePriority(id: string, maxPriorities: number): boolean {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current) return false;
+    if (current.isPriority) {
+      db.update(task).set({ isPriority: false }).where(eq(task.id, id)).run();
+      return true;
+    }
+    if (isResolvedStatus(current.status)) return false;
+    const priorityCount = (tasks ?? []).filter(
+      t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)),
+    ).length;
+    if (priorityCount >= maxPriorities) return false;
+    db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
+    return true;
+  }
+
+  // Returns false (no-op) if the task is resolved (see togglePriority).
+  function toggleToday(id: string): boolean {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current) return false;
+    if (current.isToday) {
+      db.update(task).set({ isToday: false }).where(eq(task.id, id)).run();
+      return true;
+    }
+    if (isResolvedStatus(current.status)) return false;
+    db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
+    return true;
   }
 
   async function cancelLiveSessionNotifications(id: string): Promise<void> {
@@ -117,5 +165,5 @@ export function useTasks() {
     db.delete(task).where(eq(task.id, id)).run();
   }
 
-  return { tasks: withMeta, addTask, setTaskStatus, updateTask, removeTask };
+  return { tasks: withMeta, addTask, setTaskStatus, updateTask, togglePriority, toggleToday, removeTask };
 }

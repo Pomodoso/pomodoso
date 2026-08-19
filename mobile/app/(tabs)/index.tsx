@@ -52,18 +52,18 @@ export default function HomeScreen() {
   const { projects } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
   const today = useTodayDate();
-  // isPriority tasks stay in Today for the rest of the day they were
+  // isPriority/isToday tasks stay in Today for the rest of the day they were
   // resolved on (matches extension's HomeState.tsx completedToday rule) —
   // marking one done/cancelled shouldn't make it vanish immediately.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
+  const todayTasks = tasks.filter(t => t.isToday && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
 
   // Matches extension's TodayFooter (HomeState.tsx) — "X/Y tasks · N pomos ·
-  // Zm tracked". tasksTotal there is scoped to "today's" tasks specifically
-  // (priorities + tasks scheduled today, excluding backlog); mobile has no
-  // separate "scheduled for today" concept on regular tasks yet, so this
-  // counts all tasks instead.
-  const tasksDone = tasks.filter(t => t.status === 'done').length;
-  const tasksTotal = tasks.length;
+  // Zm tracked", scoped to priorities + today's tasks specifically
+  // (excluding backlog), same as todayPriorities/todayTasks there.
+  const todayAll = [...priorities, ...todayTasks];
+  const tasksDone = todayAll.filter(t => t.status === 'done').length;
+  const tasksTotal = todayAll.length;
   const footerText = `${tasksDone}/${tasksTotal} tasks · ${display.pomosToday} pomo${display.pomosToday === 1 ? '' : 's'} · ${formatMinutes(trackedMinutesToday)} tracked`;
 
   const isStopwatch = display.mode === 'stopwatch';
@@ -195,6 +195,25 @@ export default function HomeScreen() {
             onStatusPress={() => requestStatus(t.id, t.title, t.status)}
           />
         ))}
+
+        {todayTasks.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Today&apos;s tasks</Text>
+            {todayTasks.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.meta ?? ''}
+                status={t.status}
+                projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                onPress={() => router.push(`/task/${t.id}`)}
+                onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+              />
+            ))}
+          </>
+        )}
 
         <Text style={styles.sectionTitle}>Habits today</Text>
         {habits.filter(h => h.scheduledToday).map(habit => (

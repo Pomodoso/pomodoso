@@ -21,7 +21,7 @@ import { useTodayDate } from '@/hooks/useTodayDate';
 // both: reassigning a project after creation, and toggling priority.
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, setTaskStatus, updateTask, removeTask } = useTasks();
+  const { tasks, setTaskStatus, updateTask, togglePriority, toggleToday, removeTask } = useTasks();
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const { settings } = useSettings();
   const today = useTodayDate();
@@ -56,20 +56,31 @@ export default function TaskDetailScreen() {
   // priority anywhere, so it shouldn't still occupy one of its slots here.
   const priorityCount = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today))).length;
   const priorityLimitReached = !task.isPriority && priorityCount >= settings.maxPriorities;
+  // A resolved task can't be ADDED to Priority/Today (matches extension —
+  // that action only exists on backlog rows, never on done/cancelled tasks;
+  // see useTasks.ts's togglePriority/toggleToday for why). Removal (already
+  // a member) stays allowed regardless of status.
+  const taskResolved = isResolvedStatus(task.status);
+  const priorityRowDisabled = !task.isPriority && taskResolved;
+  const todayRowDisabled = !task.isToday && taskResolved;
 
-  // Mirrors extension's addToPriorities (App.tsx): prevents growing past
-  // maxPriorities, but never retroactively strips priority from tasks
-  // already marked — only blocks adding new ones once at the cap.
+  // togglePriority enforces the maxPriorities cap itself (mirrors extension's
+  // addToPriorities, App.tsx) and returns false when it refused; this just
+  // decides how to surface that.
   function handleTogglePriority(): void {
     if (!task) return;
-    if (priorityLimitReached) {
+    const ok = togglePriority(task.id, settings.maxPriorities);
+    if (!ok) {
       Alert.alert(
         'Priority limit reached',
         `You can only have ${settings.maxPriorities} priority task${settings.maxPriorities === 1 ? '' : 's'} at once. Remove one first, or raise the limit in Settings.`,
       );
-      return;
     }
-    updateTask(task.id, { isPriority: !task.isPriority });
+  }
+
+  function handleToggleToday(): void {
+    if (!task) return;
+    toggleToday(task.id);
   }
 
   function handleTitleBlur(): void {
@@ -146,14 +157,40 @@ export default function TaskDetailScreen() {
         </Pressable>
 
         <Text style={styles.sectionLabel}>Priority</Text>
-        <Pressable style={[styles.row, priorityLimitReached && styles.rowDisabled]} onPress={handleTogglePriority}>
+        <Pressable
+          style={[styles.row, (priorityLimitReached || priorityRowDisabled) && styles.rowDisabled]}
+          onPress={handleTogglePriority}
+          disabled={priorityRowDisabled}
+        >
           <Ionicons
             name={task.isPriority ? 'star' : 'star-outline'}
             size={18}
             color={task.isPriority ? colors.warning : colors.textTertiary}
           />
           <Text style={styles.rowText}>
-            {task.isPriority ? "Today's priority" : priorityLimitReached ? `Limit reached (${settings.maxPriorities})` : 'Not a priority'}
+            {task.isPriority
+              ? "Today's priority"
+              : priorityRowDisabled
+                ? 'Completed tasks can’t be added'
+                : priorityLimitReached
+                  ? `Limit reached (${settings.maxPriorities})`
+                  : 'Not a priority'}
+          </Text>
+        </Pressable>
+
+        <Text style={styles.sectionLabel}>Today</Text>
+        <Pressable
+          style={[styles.row, todayRowDisabled && styles.rowDisabled]}
+          onPress={handleToggleToday}
+          disabled={todayRowDisabled}
+        >
+          <Ionicons
+            name={task.isToday ? 'today' : 'today-outline'}
+            size={18}
+            color={task.isToday ? colors.info : colors.textTertiary}
+          />
+          <Text style={styles.rowText}>
+            {task.isToday ? "In today's tasks" : todayRowDisabled ? 'Completed tasks can’t be added' : 'Not scheduled for today'}
           </Text>
         </Pressable>
 
