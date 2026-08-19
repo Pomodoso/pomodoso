@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
 import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs } from '@/db/schema';
+import { cancelScheduledNotification } from '@/notifications';
 
 // Ports extension's backup.ts. Simplified for what mobile actually has:
 // no workspaces/taskOrders/meetings/detectionRules (none exist yet), and no
@@ -82,8 +83,23 @@ export function validateBackup(json: string): BackupEnvelope {
 // or partial backup can validly omit any other table — deleting those
 // unconditionally would silently erase local data the backup never meant
 // to touch, while the UI still reported a successful restore.
-export function importBackup(json: string): void {
+export async function importBackup(json: string): Promise<void> {
   const envelope = validateBackup(json);
+
+  // Cancelled before the transaction (notification APIs are async, a
+  // db.transaction callback isn't) — mirrors removeTask's cascade
+  // (useTasks.ts): deleting a live session without cancelling its OS
+  // notification first leaves an orphaned notification that still fires
+  // later, referencing a session the imported database no longer has.
+  const liveSessions = db.select().from(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).all();
+  for (const s of liveSessions) {
+    if (!s.notificationId) continue;
+    const cancelled = await cancelScheduledNotification(s.notificationId);
+    if (!cancelled) {
+      console.warn('Orphaned notification from a session cleared by import could not be cancelled:', s.notificationId);
+    }
+  }
+
   db.transaction(tx => {
     for (const [name, table] of Object.entries(TABLES)) {
       const rows = envelope.data[name];

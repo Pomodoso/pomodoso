@@ -143,15 +143,17 @@ export default function SettingsScreen(): React.JSX.Element {
         text: 'Replace all data',
         style: 'destructive',
         onPress: () => {
-          setImporting(true);
-          try {
-            importBackup(content);
-            Alert.alert('Import complete', 'Your data has been restored.');
-          } catch (err) {
-            Alert.alert('Import failed', err instanceof Error ? err.message : 'Unknown error');
-          } finally {
-            setImporting(false);
-          }
+          void (async () => {
+            setImporting(true);
+            try {
+              await importBackup(content);
+              Alert.alert('Import complete', 'Your data has been restored.');
+            } catch (err) {
+              Alert.alert('Import failed', err instanceof Error ? err.message : 'Unknown error');
+            } finally {
+              setImporting(false);
+            }
+          })();
         },
       },
     ]);
