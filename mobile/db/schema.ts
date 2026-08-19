@@ -27,16 +27,14 @@ export const habitHistory = sqliteTable('habit_history', {
 
 // Mirrors the shape of the real spec's pomodoro_session entity (section 6.1)
 // closely enough for a device-local mobile spike: one row per session,
-// "active" is just the row with status active/paused. No task table yet —
-// taskTitle is a plain label captured from whatever was tapped to start the
-// session, not a real foreign key (that comes with the shared/core
-// extraction and a real Task model).
+// "active" is just the row with status active/paused. taskId is nullable —
+// spec 6.1 says task association is mandatory, relaxed here since a session
+// can be "unassigned time" (documented deviation, see useTimer.ts).
 export const pomodoroSession = sqliteTable('pomodoro_session', {
   id: text('id').primaryKey(),
   mode: text('mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
   kind: text('kind', { enum: ['focus', 'short_break', 'long_break'] }).notNull(),
-  taskTitle: text('task_title'),
-  ticketRef: text('ticket_ref'),
+  taskId: text('task_id'),
   plannedDurationSeconds: integer('planned_duration_seconds'), // null for stopwatch
   // startedAt is shifted forward by the paused duration on every resume, so
   // "elapsed" is always just (now - startedAt) while active — no separate
@@ -51,14 +49,14 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
 // Spike task model — id/title/ticketRef/done/isPriority is enough to back
 // Home's "Today's priorities" and the Tasks tab. No project/workspace yet
 // (comes with the shared/core extraction and a real multi-entity model).
-// pomodoroSession still stores a plain taskTitle/ticketRef text snapshot
-// rather than a taskId FK — keeps this PR from also having to migrate the
-// timer schema; revisit once real task-level time aggregation is needed.
+// pomodoroSession.taskId references this — meta is computed from completed
+// sessions where possible (useTasks.ts), falling back to this stored string
+// only for tasks with no real session history yet ("Not started").
 export const task = sqliteTable('task', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   ticketRef: text('ticket_ref'),
-  meta: text('meta'), // display-only placeholder ("1h 20m", "Not started") until real time aggregation exists
+  meta: text('meta'), // fallback placeholder for tasks with no sessions yet
   done: integer('done', { mode: 'boolean' }).notNull().default(false),
   isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull(),
