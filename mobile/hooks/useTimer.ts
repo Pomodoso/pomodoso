@@ -437,8 +437,13 @@ export function useTimer() {
     isMutatingRef.current = true;
     try {
       const cancelled = await cancelScheduledNotification(active.notificationId);
+      // Stopping from a paused state: no time has elapsed since pausedAt —
+      // using nowIso() here would count the paused interval itself as
+      // tracked/focus time in every downstream aggregation that computes
+      // duration from (startedAt, endedAt).
+      const endedAt = active.status === 'paused' && active.pausedAt ? active.pausedAt : nowIso();
       db.update(pomodoroSession)
-        .set({ status: 'interrupted', endedAt: nowIso(), notificationId: cancelled ? null : active.notificationId })
+        .set({ status: 'interrupted', endedAt, notificationId: cancelled ? null : active.notificationId })
         .where(and(eq(pomodoroSession.id, active.id), inArray(pomodoroSession.status, ['active', 'paused'])))
         .run();
     } finally {
