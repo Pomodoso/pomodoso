@@ -4,6 +4,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { TaskStatus } from '@/db/schema';
+import { cancelScheduledNotification } from '@/notifications';
 import { secondsBetween } from '@/utils/time';
 
 function uid(): string {
@@ -84,7 +85,17 @@ export function useTasks() {
       .run();
   }
 
-  function removeTask(id: string): void {
+  async function removeTask(id: string): Promise<void> {
+    // If a session for this task is still active/paused, it has a live
+    // scheduled notification — cancel it before the row disappears, or it
+    // fires later referencing a session/task that no longer exists.
+    const liveSession = (sessions ?? []).find(s => s.taskId === id && (s.status === 'active' || s.status === 'paused'));
+    if (liveSession?.notificationId) {
+      const cancelled = await cancelScheduledNotification(liveSession.notificationId);
+      if (!cancelled) {
+        console.warn('Orphaned notification from a deleted task could not be cancelled:', liveSession.notificationId);
+      }
+    }
     // Cascade so nothing is left pointing at a task that no longer exists.
     // Matters beyond tidiness: an orphaned row stuck at status
     // active/paused would permanently block every future session start —

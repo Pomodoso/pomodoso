@@ -66,7 +66,7 @@ export default function TaskDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          removeTask(task.id);
+          void removeTask(task.id);
           router.back();
         },
       },
