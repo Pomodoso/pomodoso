@@ -15,6 +15,15 @@ function dateOffset(daysAgo: number): string {
   return d.toLocaleDateString('en-CA');
 }
 
+const SEED_TASKS = [
+  { id: 'task-mpl', title: 'Review MPL 2.0 question rename PR', ticketRef: 'INT-455', meta: '2 pomos · 50m', done: false, isPriority: false, sortOrder: 0 },
+  { id: 'task-flaky', title: 'Fix flaky retry test in sync engine', ticketRef: 'POM-89', meta: '1h 20m', done: false, isPriority: true, sortOrder: 1 },
+  { id: 'task-checklist', title: 'Write launch checklist doc', ticketRef: null, meta: '25m', done: false, isPriority: true, sortOrder: 2 },
+  { id: 'task-appstore', title: 'Reply to App Store review notes', ticketRef: null, meta: 'Not started', done: false, isPriority: false, sortOrder: 3 },
+  { id: 'task-sqlite', title: 'Investigate SQLite adapter perf', ticketRef: 'POM-94', meta: 'Not started', done: false, isPriority: false, sortOrder: 4 },
+  { id: 'task-eas', title: 'Set up EAS Build project', ticketRef: null, meta: '40m · yesterday', done: true, isPriority: false, sortOrder: 5 },
+];
+
 const SEED_HABITS = [
   { id: 'water', name: 'Water', icon: 'water', kind: 'counter' as const, goal: 12, unit: 'ml', unitAmount: 250, sortOrder: 0 },
   { id: 'exercise', name: 'Exercise', icon: 'walk', kind: 'boolean' as const, goal: null, unit: null, unitAmount: null, sortOrder: 1 },
@@ -93,6 +102,16 @@ function initDb(): void {
       id TEXT PRIMARY KEY NOT NULL,
       last_mode TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS task (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      ticket_ref TEXT,
+      meta TEXT,
+      done INTEGER NOT NULL DEFAULT 0,
+      is_priority INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   const existing = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM habits');
@@ -108,6 +127,14 @@ function initDb(): void {
   const hasPrefs = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM timer_prefs');
   if (hasPrefs?.count === 0) {
     db.insert(schema.timerPrefs).values({ id: 'singleton', lastMode: 'pomodoro' }).run();
+  }
+
+  const hasTasks = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM task');
+  if (hasTasks?.count === 0) {
+    const createdAt = new Date().toISOString();
+    for (const seedTask of SEED_TASKS) {
+      db.insert(schema.task).values({ ...seedTask, createdAt }).run();
+    }
   }
 }
 

@@ -9,14 +9,15 @@ interface TaskRowProps {
   meta: string;
   done?: boolean;
   onPlayPress?: () => void;
+  onTogglePress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, done, onPlayPress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, done, onPlayPress, onTogglePress }: TaskRowProps) {
   return (
     <View style={styles.row}>
-      <View style={[styles.checkbox, done && styles.checkboxDone]}>
+      <Pressable style={[styles.checkbox, done && styles.checkboxDone]} onPress={onTogglePress} hitSlop={8}>
         {done && <Ionicons name="checkmark" size={13} color={colors.surface} />}
-      </View>
+      </Pressable>
       <View style={styles.body}>
         <Text style={[styles.title, done && styles.titleDone]} numberOfLines={2}>
           {title}

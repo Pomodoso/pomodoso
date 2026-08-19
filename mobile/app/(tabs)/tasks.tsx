@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AddTaskModal } from '@/components/AddTaskModal';
 import { StartModePicker } from '@/components/StartModePicker';
 import { TaskRow } from '@/components/TaskRow';
 import { colors } from '@/constants/theme';
 import { useStartPicker } from '@/hooks/useStartPicker';
+import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 
 const FILTERS = ['Today', 'In progress', 'All open', 'Done'];
@@ -13,7 +16,14 @@ const FILTERS = ['Today', 'In progress', 'All open', 'Done'];
 export default function TasksScreen() {
   const { display, idleMode, setIdleMode, startSession } = useTimer();
   const { requestStart, pickerProps } = useStartPicker(startSession);
+  const { tasks, addTask, toggleTaskDone } = useTasks();
+  const [addingTask, setAddingTask] = useState(false);
   const canStart = display.status === 'idle';
+
+  const priorities = tasks.filter(t => t.isPriority && !t.done);
+  const backlog = tasks.filter(t => !t.isPriority && !t.done);
+  const done = tasks.filter(t => t.done);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -40,47 +50,68 @@ export default function TasksScreen() {
       </ScrollView>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.groupTitle}>In progress</Text>
-        <TaskRow
-          title="Review MPL 2.0 question rename PR"
-          ticket="INT-455"
-          meta="2 pomos · 50m"
-          onPlayPress={canStart ? () => requestStart('Review MPL 2.0 question rename PR', 'INT-455') : undefined}
-        />
+        {priorities.length > 0 && (
+          <>
+            <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
+            {priorities.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.meta ?? ''}
+                onPlayPress={canStart ? () => requestStart(t.title, t.ticketRef) : undefined}
+                onTogglePress={() => toggleTaskDone(t.id, true)}
+              />
+            ))}
+          </>
+        )}
 
-        <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
-        <TaskRow
-          title="Fix flaky retry test in sync engine"
-          ticket="POM-89"
-          meta="1h 20m"
-          onPlayPress={canStart ? () => requestStart('Fix flaky retry test in sync engine', 'POM-89') : undefined}
-        />
-        <TaskRow
-          title="Write launch checklist doc"
-          meta="25m"
-          onPlayPress={canStart ? () => requestStart('Write launch checklist doc', null) : undefined}
-        />
+        {backlog.length > 0 && (
+          <>
+            <Text style={styles.groupTitle}>Backlog</Text>
+            {backlog.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.meta ?? ''}
+                onPlayPress={canStart ? () => requestStart(t.title, t.ticketRef) : undefined}
+                onTogglePress={() => toggleTaskDone(t.id, true)}
+              />
+            ))}
+          </>
+        )}
 
-        <Text style={styles.groupTitle}>Backlog</Text>
-        <TaskRow
-          title="Reply to App Store review notes"
-          meta="Not started"
-          onPlayPress={canStart ? () => requestStart('Reply to App Store review notes', null) : undefined}
-        />
-        <TaskRow
-          title="Investigate SQLite adapter perf"
-          ticket="POM-94"
-          meta="Not started"
-          onPlayPress={canStart ? () => requestStart('Investigate SQLite adapter perf', 'POM-94') : undefined}
-        />
-        <TaskRow title="Set up EAS Build project" meta="40m · yesterday" done />
+        {done.length > 0 && (
+          <>
+            <Text style={styles.groupTitle}>Done</Text>
+            {done.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.meta ?? ''}
+                done
+                onTogglePress={() => toggleTaskDone(t.id, false)}
+              />
+            ))}
+          </>
+        )}
       </ScrollView>
 
-      <View style={styles.fab}>
+      <Pressable style={styles.fab} onPress={() => setAddingTask(true)}>
         <Ionicons name="add" size={26} color={colors.surface} />
-      </View>
+      </Pressable>
 
       <StartModePicker {...pickerProps} />
+      <AddTaskModal
+        visible={addingTask}
+        onSubmit={title => {
+          addTask(title);
+          setAddingTask(false);
+        }}
+        onCancel={() => setAddingTask(false)}
+      />
     </SafeAreaView>
   );
 }
