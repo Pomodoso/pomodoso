@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -86,6 +87,7 @@ function DurationPicker({ label, presets, value, onChange }: DurationPickerProps
 export default function SettingsScreen(): React.JSX.Element {
   const { settings, update } = useSettings();
   const auth = useAuth();
+  const isPro = auth.entitlements.features.sync;
   const [longEveryStr, setLongEveryStr] = useState(String(settings.longBreakEvery));
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
   const [exporting, setExporting] = useState(false);
@@ -183,17 +185,34 @@ export default function SettingsScreen(): React.JSX.Element {
           <>
             <Text style={styles.sectionTitle}>Account</Text>
             {auth.session ? (
-              <View style={styles.accountRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.accountEmail}>{auth.session.user.email}</Text>
-                  <Text style={styles.hint}>
-                    {auth.entitlements.plan === 'free' ? 'Free · sync is off' : 'Pro · sync coming soon'}
-                  </Text>
+              <>
+                <View style={styles.accountRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.accountEmail}>{auth.session.user.email}</Text>
+                    <Text style={[styles.hint, isPro && styles.proHint]}>{isPro ? '✓ Pro' : 'Free plan'}</Text>
+                  </View>
+                  <Pressable style={styles.actionBtnOutline} onPress={handleSignOut}>
+                    <Text style={styles.actionBtnOutlineText}>Sign out</Text>
+                  </Pressable>
                 </View>
-                <Pressable style={styles.actionBtnOutline} onPress={handleSignOut}>
-                  <Text style={styles.actionBtnOutlineText}>Sign out</Text>
-                </Pressable>
-              </View>
+
+                {!isPro && (
+                  <View style={styles.upgradeCard}>
+                    <Text style={styles.fieldLabel}>Upgrade to Pro</Text>
+                    <Text style={styles.hint}>Sync across devices · Unlimited workspaces · Web dashboard</Text>
+                    <Pressable
+                      style={styles.actionBtn}
+                      onPress={() => {
+                        void WebBrowser.openBrowserAsync('https://pomodoso.com/pricing').catch(() => {
+                          Alert.alert('Could not open pricing page', 'Please try again later.');
+                        });
+                      }}
+                    >
+                      <Text style={styles.actionBtnText}>Upgrade to Pro →</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </>
             ) : (
               <View style={styles.field}>
                 <Text style={styles.hint}>Sign in to unlock sync and paid features once they launch. Your local data works fine without it.</Text>
@@ -443,6 +462,17 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   accountEmail: { fontSize: 13.5, fontWeight: '600', color: colors.text },
+  proHint: { color: colors.accent, fontWeight: '700' },
+  upgradeCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+    gap: 4,
+  },
   field: { marginBottom: 18 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 },
   pillRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
