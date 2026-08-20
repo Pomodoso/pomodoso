@@ -395,7 +395,14 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
   if (h.timeUnit) extra['timeUnit'] = true;
   if (h.endDate) extra['endDate'] = h.endDate;
-  if (h.challengeLengthDays) extra['challengeLengthDays'] = h.challengeLengthDays;
+  // Always present (even null) unlike the fields above — mobile's pull uses
+  // `'challengeLengthDays' in hExtra` to tell "disabled on this device" apart
+  // from "this push predates the field entirely", so omitting the key when
+  // falsy (like the others do) would leave a disabled challenge stuck
+  // showing as active on other devices. This client's own pull doesn't need
+  // the same care (it does a full `put()` per habit, so an omitted key here
+  // already clears the local field), but the wire format has to serve both.
+  extra['challengeLengthDays'] = h.challengeLengthDays ?? null;
   return extra;
 }
 
