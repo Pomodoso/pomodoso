@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/ui": "~57.0.12",
     "@expo/vector-icons": "^15.0.2",
     "@pomodoso/api": "workspace:*",
     "@pomodoso/types": "workspace:*",
@@ -28,6 +29,7 @@
     "expo-symbols": "~57.0.2",
     "expo-task-manager": "~57.0.12",
     "expo-web-browser": "~57.0.2",
+    "expo-widgets": "~57.0.11",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
