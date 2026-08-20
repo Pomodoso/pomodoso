@@ -133,6 +133,19 @@ export async function importBackup(json: string): Promise<void> {
     // render (it throws rather than returning null — see that hook).
     let workspaceId: string | null = null;
 
+    // Seeds a fresh "Personal" workspace and returns its id — the shared
+    // last-resort fallback for every path below that can end up with no
+    // live workspace row (empty `workspace: []`, a backup whose workspace
+    // rows are ALL tombstones — deletedAt set, an easy miss since inserting
+    // *a* row isn't the same as inserting a *live* one, or no live row
+    // already on the device for the legacy no-workspace-key case).
+    function seedFallbackWorkspace(): string {
+      const id = uid();
+      const now = new Date().toISOString();
+      tx.insert(workspace).values({ id, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
+      return id;
+    }
+
     for (const [name, table] of Object.entries(TABLES)) {
       const rows = envelope.data[name];
 
@@ -143,28 +156,19 @@ export async function importBackup(json: string): Promise<void> {
           tx.delete(table).run();
           if (rows.length > 0) {
             tx.insert(table).values(rows as never[]).run();
-            workspaceId = (rows[0] as { id: string }).id;
-          } else {
-            // A backup can validly say "zero workspaces", but every
-            // task/project/session row below (this backup's or the
-            // current device's own) still needs one to point at.
-            workspaceId = uid();
-            const now = new Date().toISOString();
-            tx.insert(workspace).values({ id: workspaceId, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
           }
+          // Re-query rather than trusting rows[0]: every imported row could
+          // be a tombstone (deletedAt set) even though rows.length > 0 —
+          // Greptile P1 on the first version of this fix.
+          const live = tx.select().from(workspace).where(isNull(workspace.deletedAt)).all();
+          workspaceId = live[0] ? live[0].id : seedFallbackWorkspace();
         } else {
           // Not included at all — a legacy pre-workspace backup. Matches
           // every other table's "not included → don't touch" rule: keep
           // the device's current workspace instead of replacing it with a
           // synthetic one.
           const existing = tx.select().from(workspace).where(isNull(workspace.deletedAt)).all();
-          if (existing[0]) {
-            workspaceId = existing[0].id;
-          } else {
-            workspaceId = uid();
-            const now = new Date().toISOString();
-            tx.insert(workspace).values({ id: workspaceId, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
-          }
+          workspaceId = existing[0] ? existing[0].id : seedFallbackWorkspace();
         }
         continue;
       }
