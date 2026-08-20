@@ -3942,10 +3942,16 @@ function computeHabitStreak(
     return habit.kind === 'counter' ? (row.count ?? 0) >= (habit.goal ?? 1) : (row.done ?? false);
   };
 
-  const doneToday = isHabitDone(historyByDate.get(localDate(timezone)));
+  const today = localDate(timezone);
+  const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
+  const scheduledToday = habit.days.length === 0 || habit.days.includes(todayDow);
+  const doneToday = scheduledToday && isHabitDone(historyByDate.get(today));
 
+  // 3650 days (10 years) rather than 365 — a challenge longer than a year is
+  // unusual but not implausible for a habit tracker, and this is a handful
+  // of cheap Map lookups either way, not worth capping tighter.
   let pastStreak = 0;
-  for (let i = 1; i < 365; i++) {
+  for (let i = 1; i < 3650; i++) {
     const dateStr = localDate(timezone, -i);
     const dow = (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7;
     if (habit.days.length > 0 && !habit.days.includes(dow)) continue;
