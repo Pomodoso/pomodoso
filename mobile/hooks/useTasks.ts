@@ -1,5 +1,5 @@
 import type { RecurrenceRule } from '@pomodoso/types';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect } from 'react';
 
@@ -66,8 +66,10 @@ function parseNoteEntries(raw: string): NoteEntry[] {
 export function useTasks() {
   const today = useTodayDate();
   const { settings: settingsValue } = useSettings();
-  const { data: tasks } = useLiveQuery(db.select().from(task).orderBy(asc(task.sortOrder)));
-  const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
+  const { data: tasks } = useLiveQuery(
+    db.select().from(task).where(isNull(task.deletedAt)).orderBy(asc(task.sortOrder)),
+  );
+  const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)));
 
   // Mirrors extension's "Add recurring tasks to Today" effect (App.tsx) —
   // runs whenever tasks/today change, materializing each recurring task's
@@ -260,6 +262,7 @@ export function useTasks() {
         endedAt,
         status: 'completed',
         promptResolved: true,
+        updatedAt: endedAt,
       })
       .run();
   }
@@ -330,13 +333,21 @@ export function useTasks() {
     // away, or the UI would let the user reach a play button for a task
     // that's about to disappear while this is still in flight.
     await cancelLiveSessionNotifications(id);
-    // Cascade so nothing is left pointing at a task that no longer exists.
-    // Matters beyond tidiness: an orphaned row stuck at status
-    // active/paused would permanently block every future session start —
-    // startSession's atomic guard checks for ANY row in that state,
-    // regardless of whether its task still exists.
-    db.delete(pomodoroSession).where(eq(pomodoroSession.taskId, id)).run();
-    db.delete(task).where(eq(task.id, id)).run();
+    // Soft delete (CLAUDE.md rule 4 — sync needs tombstones, never DELETE
+    // FROM directly). Still a real cascade: a still-active/paused session
+    // row left un-tombstoned would permanently block every future session
+    // start regardless of its deletedAt — startSession's atomic guard
+    // checks for ANY row in that state, tombstoned or not. Wrapped in a
+    // transaction (not two separate calls) so a session started for this
+    // task by another mounted timer instance between the two writes can't
+    // slip through untombstoned — SQLite serializes writers, so nothing else
+    // can insert into pomodoro_session for this taskId while this runs
+    // (Greptile P1).
+    const now = new Date().toISOString();
+    db.transaction(tx => {
+      tx.update(pomodoroSession).set({ deletedAt: now, updatedAt: now }).where(eq(pomodoroSession.taskId, id)).run();
+      tx.update(task).set({ deletedAt: now, updatedAt: now }).where(eq(task.id, id)).run();
+    });
   }
 
   return {

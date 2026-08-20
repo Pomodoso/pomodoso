@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm';
+import { inArray, isNull } from 'drizzle-orm';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -32,11 +32,19 @@ export interface BackupEnvelope {
   data: Record<string, unknown[]>;
 }
 
+// Excludes soft-deleted rows (Fase B's deletedAt columns) — a backup is "my
+// current data", not my current data plus a growing pile of tombstones the
+// user already deleted. timerPrefs/settings have no deletedAt, exported as-is.
 export function exportBackup(): string {
-  const data: Record<string, unknown[]> = {};
-  for (const [name, table] of Object.entries(TABLES)) {
-    data[name] = db.select().from(table).all();
-  }
+  const data: Record<string, unknown[]> = {
+    habits: db.select().from(habits).where(isNull(habits.deletedAt)).all(),
+    habitHistory: db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(),
+    pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),
+    project: db.select().from(project).where(isNull(project.deletedAt)).all(),
+    task: db.select().from(task).where(isNull(task.deletedAt)).all(),
+    timerPrefs: db.select().from(timerPrefs).all(),
+    settings: db.select().from(settings).all(),
+  };
   const envelope: BackupEnvelope = { version: '1', exportedAt: new Date().toISOString(), data };
   return JSON.stringify(envelope, null, 2);
 }
@@ -83,6 +91,15 @@ export function validateBackup(json: string): BackupEnvelope {
 // or partial backup can validly omit any other table — deleting those
 // unconditionally would silently erase local data the backup never meant
 // to touch, while the UI still reported a successful restore.
+//
+// The wipe below (tx.delete, not a deletedAt tombstone) is deliberately a
+// real hard delete, unlike every other mutation in the app post-Fase B —
+// this is a full "replace the world" operation behind an explicit
+// destructive confirmation, not a per-row user delete that needs to
+// propagate as a tombstone. Soft-deleting first would leave potentially
+// thousands of tombstones for rows about to be overwritten by the backup's
+// own content anyway, which could then sync as spurious deletions against a
+// device that has genuinely current data.
 export async function importBackup(json: string): Promise<void> {
   const envelope = validateBackup(json);
 

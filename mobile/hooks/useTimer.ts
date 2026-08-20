@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
@@ -78,9 +78,11 @@ export function useTimer() {
   // before any `await`, so a second concurrent call bails out immediately
   // regardless of React's render timing.
   const isMutatingRef = useRef(false);
-  const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession).orderBy(desc(pomodoroSession.startedAt)));
+  const { data: sessions } = useLiveQuery(
+    db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).orderBy(desc(pomodoroSession.startedAt)),
+  );
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
-  const { data: tasks } = useLiveQuery(db.select().from(task));
+  const { data: tasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
   const { settings } = useSettings();
 
@@ -124,7 +126,7 @@ export function useTimer() {
       // otherwise overwrite that newer state back to "completed".
       const result = db
         .update(pomodoroSession)
-        .set({ status: 'completed', endedAt: deadline })
+        .set({ status: 'completed', endedAt: deadline, updatedAt: nowIso() })
         .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'active')))
         .run();
       // Only when THIS call actually won the write (see the status guard
@@ -256,7 +258,7 @@ export function useTimer() {
   // otherwise resurface for a session nobody cares about anymore.
   function resolveAllPendingPrompts(): void {
     db.update(pomodoroSession)
-      .set({ promptResolved: true })
+      .set({ promptResolved: true, updatedAt: nowIso() })
       .where(and(eq(pomodoroSession.status, 'completed'), eq(pomodoroSession.promptResolved, false)))
       .run();
   }
@@ -290,11 +292,25 @@ export function useTimer() {
       // from racing another's. The real guard is this: INSERT ... SELECT ...
       // WHERE NOT EXISTS, a single atomic SQLite statement, so only one
       // concurrent start can ever actually insert a row regardless of how
-      // many screens/instances raced to get here.
+      // many screens/instances raced to get here. deleted_at IS NULL matters
+      // now that removeTask soft-deletes rather than hard-deletes a task's
+      // sessions (Fase B): an active/paused session tombstoned that way
+      // still has its original status, and without this filter it would
+      // silently block every future start forever — invisible in the UI
+      // (which filters deletedAt like everywhere else) with no way to
+      // recover (Greptile P1). The task-existence check closes a second,
+      // narrower race the same fix missed: notification scheduling above is
+      // async, so a task can be deleted while it's in flight — without this,
+      // the INSERT would still land, creating a live session pointing at a
+      // tombstoned task (title/ticket resolving to null everywhere it's
+      // read). Checked atomically in the same statement, not as a separate
+      // await after scheduling, for the same reason the "another session
+      // running" check is inline here rather than a prior read.
       const result = db.run(sql`
-        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id)
-        SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}
-        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
+        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
+        SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
+          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         // Lost the race — another instance's start already landed. Don't
@@ -331,10 +347,14 @@ export function useTimer() {
       const taskTitle = taskId ? (taskById.get(taskId)?.title ?? null) : null;
       const copy = notificationCopyFor(kind, taskTitle);
       const notificationId = await tryScheduleNotification(new Date(Date.now() + durationSeconds * 1000), copy.title, copy.body);
+      // Same two guards as startSession (see its comment): no other live
+      // session, and — since notification scheduling above is async — the
+      // task hasn't been deleted while this was in flight.
       const result = db.run(sql`
-        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id)
-        SELECT ${uid()}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}
-        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
+        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
+        SELECT ${uid()}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
+          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         if (notificationId) {
@@ -383,7 +403,7 @@ export function useTimer() {
         // If cancellation failed, keep the id around instead of discarding
         // it — nulling it here would permanently lose the only reference to
         // a notification that's still actually scheduled.
-        .set({ status: 'paused', pausedAt: nowIso(), notificationId: cancelled ? null : active.notificationId })
+        .set({ status: 'paused', pausedAt: nowIso(), notificationId: cancelled ? null : active.notificationId, updatedAt: nowIso() })
         // Guard on status too, not just id — a stale pause landing after the
         // session already completed/was stopped elsewhere shouldn't
         // resurrect it as "paused".
@@ -431,7 +451,7 @@ export function useTimer() {
 
       const result = db
         .update(pomodoroSession)
-        .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId })
+        .set({ status: 'active', startedAt: shiftedStartedAt, pausedAt: null, notificationId, updatedAt: nowIso() })
         .where(and(eq(pomodoroSession.id, active.id), eq(pomodoroSession.status, 'paused')))
         .run();
       if (result.changes === 0 && notificationId) {
@@ -458,7 +478,7 @@ export function useTimer() {
       // duration from (startedAt, endedAt).
       const endedAt = active.status === 'paused' && active.pausedAt ? active.pausedAt : nowIso();
       db.update(pomodoroSession)
-        .set({ status: 'interrupted', endedAt, notificationId: cancelled ? null : active.notificationId })
+        .set({ status: 'interrupted', endedAt, notificationId: cancelled ? null : active.notificationId, updatedAt: nowIso() })
         .where(and(eq(pomodoroSession.id, active.id), inArray(pomodoroSession.status, ['active', 'paused'])))
         .run();
     } finally {

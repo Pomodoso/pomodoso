@@ -6,6 +6,15 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 // (kind, goal, unit) separate from per-day *progress* (count/done), since
 // "done" resets daily and isn't a property of the habit itself. Still a spike,
 // not the real shared data model — that comes with the shared/core extraction.
+// createdAt/updatedAt/deletedAt/syncedAt on habits+habitHistory are the
+// CLAUDE.md rule 5 foundation for Fase B sync — habits sync user-global
+// (rule 6), not workspace-scoped. updatedAt drives LWW; deletedAt is the
+// tombstone; syncedAt marks what's already been pushed (see useHabits.ts's
+// soft-delete conversion). createdAt on habits specifically mirrors
+// extension's HabitRow.createdAt — immutable, separate from updatedAt.
+// habitHistory has no createdAt: `date` already anchors "when" for a
+// history row, an extra creation timestamp adds nothing extension's own
+// HabitHistoryRow doesn't already skip either.
 export const habits = sqliteTable('habits', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -19,6 +28,10 @@ export const habits = sqliteTable('habits', {
   // the extension's own form always saves length-7 selections as []).
   days: text('days').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
 });
 
 export const habitHistory = sqliteTable('habit_history', {
@@ -27,6 +40,9 @@ export const habitHistory = sqliteTable('habit_history', {
   date: text('date').notNull(), // YYYY-MM-DD, local
   count: integer('count').notNull().default(0),
   done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
 });
 
 // Mirrors the shape of the real spec's pomodoro_session entity (section 6.1)
@@ -58,6 +74,13 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   // equivalent lives only in chrome.storage.local, see useTimer.ts), so the
   // prompt survives the app being killed and reopened.
   promptResolved: integer('prompt_resolved', { mode: 'boolean' }).notNull().default(false),
+  // CLAUDE.md rule 5/7 foundation for Fase B sync — no separate createdAt,
+  // startedAt already anchors "when" for a session the same way habitHistory's
+  // `date` does. updatedAt must be bumped on every mutation (pause/resume/
+  // complete/cancel), not just insert, since LWW compares it.
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
 });
 
 // Mirrors extension/src/db.ts's ProjectRow, minus workspaceId (mobile has
@@ -71,6 +94,8 @@ export const project = sqliteTable('project', {
   color: text('color').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
 });
 
 export type ProjectRow = typeof project.$inferSelect;
@@ -137,6 +162,8 @@ export const task = sqliteTable('task', {
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
 });
 
 // Single row (id always 'singleton'). Spec 6.1: "the last used mode is

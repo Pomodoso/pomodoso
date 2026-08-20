@@ -1,3 +1,4 @@
+import { isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useState } from 'react';
 
@@ -60,8 +61,8 @@ function formatDayLabel(dateStr: string): string {
 export function useTaskHistory() {
   const [range, setRange] = useState<HistoryRange>('week');
   const { settings } = useSettings();
-  const { data: tasks } = useLiveQuery(db.select().from(task));
-  const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession));
+  const { data: tasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
+  const { data: sessions } = useLiveQuery(db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)));
 
   // Only completed/interrupted focus sessions represent real logged time —
   // breaks and never-ended sessions don't belong in a work-history view.

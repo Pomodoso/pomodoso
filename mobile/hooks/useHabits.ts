@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -99,8 +99,10 @@ export interface HabitInput {
 export function useHabits() {
   const today = useTodayDate();
 
-  const { data: habitRows } = useLiveQuery(db.select().from(habits).orderBy(habits.sortOrder));
-  const { data: historyRows } = useLiveQuery(db.select().from(habitHistory));
+  const { data: habitRows } = useLiveQuery(
+    db.select().from(habits).where(isNull(habits.deletedAt)).orderBy(habits.sortOrder),
+  );
+  const { data: historyRows } = useLiveQuery(db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)));
 
   const rowsByHabit = new Map<string, Map<string, { count: number; done: boolean }>>();
   for (const row of historyRows ?? []) {
@@ -133,11 +135,12 @@ export function useHabits() {
     // `today` — a screen left open across local midnight would otherwise
     // keep writing to yesterday's row.
     const day = todayStr();
+    const now = new Date().toISOString();
     db.insert(habitHistory)
-      .values({ id: `${id}-${day}`, habitId: id, date: day, count: 0, done: true })
+      .values({ id: `${id}-${day}`, habitId: id, date: day, count: 0, done: true, updatedAt: now })
       .onConflictDoUpdate({
         target: habitHistory.id,
-        set: { done: sql`NOT ${habitHistory.done}` },
+        set: { done: sql`NOT ${habitHistory.done}`, updatedAt: now },
       })
       .run();
   }
@@ -148,17 +151,19 @@ export function useHabits() {
     // written here: for counter habits it's derived from count/goal (isDone
     // above), not stored.
     const day = todayStr();
+    const now = new Date().toISOString();
     db.insert(habitHistory)
-      .values({ id: `${id}-${day}`, habitId: id, date: day, count: Math.max(0, delta), done: false })
+      .values({ id: `${id}-${day}`, habitId: id, date: day, count: Math.max(0, delta), done: false, updatedAt: now })
       .onConflictDoUpdate({
         target: habitHistory.id,
-        set: { count: sql`max(0, ${habitHistory.count} + ${delta})` },
+        set: { count: sql`max(0, ${habitHistory.count} + ${delta})`, updatedAt: now },
       })
       .run();
   }
 
   function addHabit(input: HabitInput): void {
     const maxSortOrder = (habitRows ?? []).reduce((max, h) => Math.max(max, h.sortOrder), -1);
+    const now = new Date().toISOString();
     db.insert(habits)
       .values({
         id: uid(),
@@ -170,6 +175,8 @@ export function useHabits() {
         unitAmount: input.unitAmount,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
         sortOrder: maxSortOrder + 1,
+        createdAt: now,
+        updatedAt: now,
       })
       .run();
   }
@@ -184,19 +191,21 @@ export function useHabits() {
         unit: input.unit,
         unitAmount: input.unitAmount,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+        updatedAt: new Date().toISOString(),
       })
       .where(eq(habits.id, id))
       .run();
   }
 
   function removeHabit(id: string): void {
-    // Cascade, wrapped in a transaction so the two deletes commit together —
-    // an interruption between them would otherwise leave the habit_history
-    // gone but the habit itself still present, looking like a "brand new"
-    // habit with its whole streak silently erased.
+    // Soft delete (CLAUDE.md rule 4), wrapped in a transaction so both
+    // tombstones commit together — an interruption between them would
+    // otherwise leave habit_history gone-looking but the habit itself still
+    // present, or vice versa.
+    const now = new Date().toISOString();
     db.transaction(tx => {
-      tx.delete(habitHistory).where(eq(habitHistory.habitId, id)).run();
-      tx.delete(habits).where(eq(habits.id, id)).run();
+      tx.update(habitHistory).set({ deletedAt: now, updatedAt: now }).where(eq(habitHistory.habitId, id)).run();
+      tx.update(habits).set({ deletedAt: now, updatedAt: now }).where(eq(habits.id, id)).run();
     });
   }
 
