@@ -337,10 +337,17 @@ export function useTasks() {
     // FROM directly). Still a real cascade: a still-active/paused session
     // row left un-tombstoned would permanently block every future session
     // start regardless of its deletedAt — startSession's atomic guard
-    // checks for ANY row in that state, tombstoned or not.
+    // checks for ANY row in that state, tombstoned or not. Wrapped in a
+    // transaction (not two separate calls) so a session started for this
+    // task by another mounted timer instance between the two writes can't
+    // slip through untombstoned — SQLite serializes writers, so nothing else
+    // can insert into pomodoro_session for this taskId while this runs
+    // (Greptile P1).
     const now = new Date().toISOString();
-    db.update(pomodoroSession).set({ deletedAt: now, updatedAt: now }).where(eq(pomodoroSession.taskId, id)).run();
-    db.update(task).set({ deletedAt: now, updatedAt: now }).where(eq(task.id, id)).run();
+    db.transaction(tx => {
+      tx.update(pomodoroSession).set({ deletedAt: now, updatedAt: now }).where(eq(pomodoroSession.taskId, id)).run();
+      tx.update(task).set({ deletedAt: now, updatedAt: now }).where(eq(task.id, id)).run();
+    });
   }
 
   return {
