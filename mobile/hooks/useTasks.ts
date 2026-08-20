@@ -15,6 +15,7 @@ import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
 import { useTodayDate } from './useTodayDate';
+import { useWorkspace } from './useWorkspace';
 
 function formatDuration(totalSeconds: number): string {
   const totalMinutes = Math.round(totalSeconds / 60);
@@ -63,6 +64,7 @@ function parseNoteEntries(raw: string): NoteEntry[] {
 export function useTasks() {
   const today = useTodayDate();
   const { settings: settingsValue } = useSettings();
+  const { workspaceId } = useWorkspace();
   const { data: tasks } = useLiveQuery(
     db.select().from(task).where(isNull(task.deletedAt)).orderBy(asc(task.sortOrder)),
   );
@@ -132,6 +134,7 @@ export function useTasks() {
     db.insert(task)
       .values({
         id: uid(),
+        workspaceId,
         title: trimmed,
         ticketRef: null,
         meta: 'Not started',
@@ -251,6 +254,7 @@ export function useTasks() {
     db.insert(pomodoroSession)
       .values({
         id: uid(),
+        workspaceId,
         mode: 'manual',
         kind: 'focus',
         taskId,

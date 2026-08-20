@@ -3,18 +3,28 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs } from '@/db/schema';
+import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
+import { uid } from '@/utils/id';
 
-// Ports extension's backup.ts. Simplified for what mobile actually has:
-// no workspaces/taskOrders/meetings/detectionRules (none exist yet), and no
+// Tables whose rows carry a workspaceId FK — need special handling on
+// import (see the "Ensure a workspace exists" block below), unlike the
+// otherwise fully generic per-table loop.
+const WORKSPACE_SCOPED_TABLES = new Set(['task', 'project', 'pomodoroSession']);
+
+// Ports extension's backup.ts. Simplified for what mobile actually has: no
+// taskOrders/meetings/detectionRules (none exist yet), and no
 // EXCLUDED_SETTINGS filtering — mobile has no auth/sync state living in the
 // settings table yet either. Once login/sync land, this needs the same
 // treatment extension's backup.ts gives auth_session/entitlements/device_id/
 // sync state: excluded from export, and cleared (not restored) on import so
 // a restored device re-syncs from scratch instead of inheriting another
 // device's identity.
+//
+// `workspace` listed first so import's Object.entries loop below inserts it
+// before task/project/pomodoroSession, which carry its id as workspaceId.
 const TABLES = {
+  workspace,
   habits,
   habitHistory,
   pomodoroSession,
@@ -37,6 +47,7 @@ export interface BackupEnvelope {
 // user already deleted. timerPrefs/settings have no deletedAt, exported as-is.
 export function exportBackup(): string {
   const data: Record<string, unknown[]> = {
+    workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all(),
     habits: db.select().from(habits).where(isNull(habits.deletedAt)).all(),
     habitHistory: db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(),
     pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),
@@ -112,12 +123,76 @@ export async function importBackup(json: string): Promise<void> {
   const liveSessions = db.select().from(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).all();
 
   db.transaction(tx => {
+    // Resolved below, before task/project/pomodoroSession (which carry it)
+    // are inserted. Two real gaps this closes (Greptile P1): a legacy
+    // pre-workspace backup's task/project/session rows have no workspaceId
+    // key at all, which would otherwise violate the NOT NULL column and
+    // fail the whole import; and a backup that validly includes an empty
+    // `workspace: []` would otherwise leave the device with no workspace
+    // at all afterward, crashing every useWorkspace() consumer on next
+    // render (it throws rather than returning null — see that hook).
+    let workspaceId: string | null = null;
+    // Every genuinely live workspace id after the `workspace` branch below
+    // runs — a task/project/session row keeps its own workspaceId only if
+    // it's in this set, otherwise it gets remapped to the resolved
+    // `workspaceId` fallback. Needed because a row can carry a *present*
+    // workspaceId that still points at a workspace the import just
+    // tombstoned or dropped — "present" isn't the same as "live", and
+    // leaving such a row alone would restore it pointing at a dead
+    // workspace (Greptile P1 on the first version of this fix).
+    let liveWorkspaceIds: Set<string> = new Set();
+
+    // Seeds a fresh "Personal" workspace and returns its id — the shared
+    // last-resort fallback for every path below that can end up with no
+    // live workspace row (empty `workspace: []`, a backup whose workspace
+    // rows are ALL tombstones — deletedAt set, an easy miss since inserting
+    // *a* row isn't the same as inserting a *live* one, or no live row
+    // already on the device for the legacy no-workspace-key case).
+    function seedFallbackWorkspace(): string {
+      const id = uid();
+      const now = new Date().toISOString();
+      tx.insert(workspace).values({ id, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
+      return id;
+    }
+
     for (const [name, table] of Object.entries(TABLES)) {
       const rows = envelope.data[name];
+
+      if (name === 'workspace') {
+        if (Array.isArray(rows)) {
+          // Included (even as an explicit empty array) — matches every
+          // other table's "included → wipe and replace" rule.
+          tx.delete(table).run();
+          if (rows.length > 0) {
+            tx.insert(table).values(rows as never[]).run();
+          }
+        }
+        // Re-query rather than trusting rows[0] either way: every imported
+        // row could be a tombstone (deletedAt set) even though rows.length
+        // > 0. Falls through to the "not included" path's own re-query when
+        // rows isn't an array, so both branches converge on the same
+        // liveWorkspaceIds/fallback logic below.
+        const live = tx.select().from(workspace).where(isNull(workspace.deletedAt)).all();
+        liveWorkspaceIds = new Set(live.map(w => w.id));
+        workspaceId = live[0] ? live[0].id : seedFallbackWorkspace();
+        if (!live[0]) liveWorkspaceIds.add(workspaceId);
+        continue;
+      }
+
       if (!Array.isArray(rows)) continue;
       tx.delete(table).run();
       if (rows.length > 0) {
-        tx.insert(table).values(rows as never[]).run();
+        // A row keeps its own workspaceId only if it's genuinely live (see
+        // liveWorkspaceIds above); otherwise it's remapped to the resolved
+        // fallback, whether its own value was absent (legacy backup) or
+        // present-but-dangling (pointed at a tombstoned/dropped workspace).
+        const values = WORKSPACE_SCOPED_TABLES.has(name)
+          ? rows.map(r => {
+              const row = r as { workspaceId?: string };
+              return liveWorkspaceIds.has(row.workspaceId ?? '') ? row : { ...row, workspaceId };
+            })
+          : rows;
+        tx.insert(table).values(values as never[]).run();
       }
     }
     // Regardless of whether pomodoroSession was itself included above: an

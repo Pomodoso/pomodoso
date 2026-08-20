@@ -1,5 +1,27 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+// Mirrors extension/backend's workspace shape (db.ts WorkspaceRow / backend
+// migration 002+005) minus owner_id — that's implicit for a single local
+// device/user, added server-side once this actually syncs (Fase B4).
+// task/project/pomodoroSession carry a workspaceId FK (CLAUDE.md rule 6);
+// habits/habitHistory don't — user-scoped, sync globally. Exactly one
+// workspace exists for now (seeded on first run, db/client.ts) — no
+// switcher UI yet, that's next (Fase B3). Seeded with a real UUID from day
+// one, not a sentinel string like extension's old 'default' — that sentinel
+// was itself a migration scar (see ADR/research notes), not worth
+// replicating deliberately.
+export const workspace = sqliteTable('workspace', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  color: text('color').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
+});
+
+export type WorkspaceRow = typeof workspace.$inferSelect;
+
 // Spike schema to validate the expo-sqlite + drizzle-orm combo (M0 backlog item
 // in docs/mobile-app-plan.md). Mirrors the real shape from
 // extension/src/db.ts's HabitRow/HabitHistoryRow split — habit *definition*
@@ -52,6 +74,7 @@ export const habitHistory = sqliteTable('habit_history', {
 // can be "unassigned time" (documented deviation, see useTimer.ts).
 export const pomodoroSession = sqliteTable('pomodoro_session', {
   id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
   // 'manual' mirrors extension's TimerMode (@pomodoso/types) — a retroactive
   // time-log entry with no live timer lifecycle, always inserted directly as
   // status='completed'/promptResolved=true (see useTasks.ts's addManualTime).
@@ -83,13 +106,14 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   syncedAt: text('synced_at'),
 });
 
-// Mirrors extension/src/db.ts's ProjectRow, minus workspaceId (mobile has
-// no workspace concept yet — the extension itself treats a project with no
-// workspaceId as global/visible everywhere, so dropping the field entirely
-// is equivalent, not a narrowing) and endDate (extension's "archived after"
-// date — no archival UI ported yet, not needed until projects list grows).
+// Mirrors extension/src/db.ts's ProjectRow, minus endDate (extension's
+// "archived after" date — no archival UI ported yet, not needed until
+// projects list grows). workspaceId added for Fase B (was dropped entirely
+// pre-workspace-model, see #31 — mobile only ever had one implicit
+// workspace, now a real row it can point at).
 export const project = sqliteTable('project', {
   id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
   name: text('name').notNull(),
   color: text('color').notNull(),
   createdAt: text('created_at').notNull(),
@@ -120,14 +144,14 @@ export interface NoteEntry {
 }
 
 // Spike task model — enough to back Home's "Today's priorities" and the Tasks
-// tab. No project/workspace yet (comes with the shared/core extraction and a
-// real multi-entity model). pomodoroSession.taskId references this — meta is
-// computed from completed sessions where possible (useTasks.ts), falling
-// back to this stored string only for tasks with no real session history
-// yet ("Not started"). updatedAt drives the "completed today stays visible
-// in Today, rolls off the next day" rule the extension already has.
+// tab. pomodoroSession.taskId references this — meta is computed from
+// completed sessions where possible (useTasks.ts), falling back to this
+// stored string only for tasks with no real session history yet ("Not
+// started"). updatedAt drives the "completed today stays visible in Today,
+// rolls off the next day" rule the extension already has.
 export const task = sqliteTable('task', {
   id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
   title: text('title').notNull(),
   ticketRef: text('ticket_ref'),
   meta: text('meta'), // fallback placeholder for tasks with no sessions yet
