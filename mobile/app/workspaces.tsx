@@ -17,7 +17,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 // even though it can't actually matter here — db/client.ts's initDb always
 // seeds one before this screen could ever be reached).
 export default function WorkspacesScreen() {
-  const { workspaces, addWorkspace, updateWorkspace, removeWorkspace } = useWorkspace();
+  const { workspaceId, workspaces, addWorkspace, updateWorkspace, removeWorkspace, setActiveWorkspace } = useWorkspace();
   const auth = useAuth();
   const canAddWorkspace = auth.entitlements.features.multi_workspace || workspaces.length < 1;
 
@@ -89,10 +89,13 @@ export default function WorkspacesScreen() {
             </View>
           ) : (
             <View key={ws.id} style={styles.card}>
-              <View style={[styles.dot, { backgroundColor: ws.color }]}>
-                <Text style={styles.dotText}>{ws.name[0]?.toUpperCase()}</Text>
-              </View>
-              <Text style={styles.wsName}>{ws.name}</Text>
+              <Pressable style={styles.wsMain} onPress={() => setActiveWorkspace(ws.id)} disabled={ws.id === workspaceId}>
+                <View style={[styles.dot, { backgroundColor: ws.color }]}>
+                  <Text style={styles.dotText}>{ws.name[0]?.toUpperCase()}</Text>
+                </View>
+                <Text style={styles.wsName}>{ws.name}</Text>
+                {ws.id === workspaceId && <Ionicons name="checkmark" size={16} color={ws.color} />}
+              </Pressable>
               {confirmDeleteId === ws.id ? (
                 <View style={styles.rowGap}>
                   <Text style={styles.confirmLabel}>Delete?</Text>
@@ -189,6 +192,7 @@ const styles = StyleSheet.create({
   cardEditing: { flexDirection: 'column', alignItems: 'stretch', borderColor: colors.borderStrong },
   dot: { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   dotText: { fontSize: 13, fontWeight: '700', color: colors.surface },
+  wsMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   wsName: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.text },
   rowGap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconBtn: {
