@@ -1,6 +1,6 @@
 import type { SyncEntity } from '@pomodoso/api';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
-import { and, eq, inArray, isNull, or, lt, isNotNull } from 'drizzle-orm';
+import { and, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { habits, habitHistory, pomodoroSession, project, settings, task, workspace } from '@/db/schema';
@@ -257,41 +257,49 @@ async function push(client: TokenApiClient): Promise<void> {
   if (entities.length === 0) return;
   await pushEntities(client, { entities });
 
+  // Stamp syncedAt only on rows whose updatedAt still matches what was read
+  // at the top of this function (per-row, not a bulk `id IN (...)`) — a row
+  // edited again while pushEntities' request was in flight now has a newer
+  // updatedAt than its own snapshot, so this condition correctly skips it,
+  // leaving it dirty for the next sync. Stamping unconditionally (matching
+  // extension's own syncEngine.ts, which has this same race) would mark it
+  // synced anyway, silently dropping that edit until the row changes again
+  // (Greptile P1).
   const ts = nowIso();
-  if (workspaces.length) {
+  for (const w of workspaces) {
     db.update(workspace)
       .set({ syncedAt: ts })
-      .where(inArray(workspace.id, workspaces.map(w => w.id)))
+      .where(and(eq(workspace.id, w.id), eq(workspace.updatedAt, w.updatedAt)))
       .run();
   }
-  if (projects.length) {
+  for (const p of projects) {
     db.update(project)
       .set({ syncedAt: ts })
-      .where(inArray(project.id, projects.map(p => p.id)))
+      .where(and(eq(project.id, p.id), eq(project.updatedAt, p.updatedAt)))
       .run();
   }
-  if (tasks.length) {
+  for (const t of tasks) {
     db.update(task)
       .set({ syncedAt: ts })
-      .where(inArray(task.id, tasks.map(t => t.id)))
+      .where(and(eq(task.id, t.id), eq(task.updatedAt, t.updatedAt)))
       .run();
   }
-  if (sessions.length) {
+  for (const s of sessions) {
     db.update(pomodoroSession)
       .set({ syncedAt: ts })
-      .where(inArray(pomodoroSession.id, sessions.map(s => s.id)))
+      .where(and(eq(pomodoroSession.id, s.id), eq(pomodoroSession.updatedAt, s.updatedAt)))
       .run();
   }
-  if (habitRows.length) {
+  for (const h of habitRows) {
     db.update(habits)
       .set({ syncedAt: ts })
-      .where(inArray(habits.id, habitRows.map(h => h.id)))
+      .where(and(eq(habits.id, h.id), eq(habits.updatedAt, h.updatedAt)))
       .run();
   }
-  if (historyRows.length) {
+  for (const r of historyRows) {
     db.update(habitHistory)
       .set({ syncedAt: ts })
-      .where(inArray(habitHistory.id, historyRows.map(r => r.id)))
+      .where(and(eq(habitHistory.id, r.id), eq(habitHistory.updatedAt, r.updatedAt)))
       .run();
   }
 }
@@ -484,12 +492,19 @@ function applyEntity(entity: SyncEntity): void {
       const habitId = String(data.habit_id ?? '');
       const date = String(data.date ?? '');
       if (!habitId || !date) return;
-      const existing = db.select().from(habitHistory).where(eq(habitHistory.id, id)).all()[0];
+      // Looked up by the recomputed deterministic id, not the wire entity's
+      // own `id` — the upsert below always targets habitLogId(habitId,
+      // date) regardless of what the server sent, so the LWW guard has to
+      // check the SAME row it's about to write, or a server id that happens
+      // to differ would miss the real local row entirely and let a stale
+      // server value overwrite newer local progress unchecked (Greptile P1).
+      const localId = habitLogId(habitId, date);
+      const existing = db.select().from(habitHistory).where(eq(habitHistory.id, localId)).all()[0];
       if (existing && existing.updatedAt >= updated_at) return;
       const value = Number(data.value ?? 0);
       db.insert(habitHistory)
         .values({
-          id: habitLogId(habitId, date),
+          id: localId,
           habitId,
           date,
           count: value,
