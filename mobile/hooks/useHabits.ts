@@ -4,6 +4,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { db } from '@/db/client';
 import { habitHistory, habits } from '@/db/schema';
 import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
+import { habitLogId, uid } from '@/utils/id';
 import { useTodayDate } from './useTodayDate';
 
 export interface HabitWithProgress {
@@ -82,10 +83,6 @@ function weekFilled(
   return result;
 }
 
-function uid(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export interface HabitInput {
   name: string;
   icon: string;
@@ -137,7 +134,7 @@ export function useHabits() {
     const day = todayStr();
     const now = new Date().toISOString();
     db.insert(habitHistory)
-      .values({ id: `${id}-${day}`, habitId: id, date: day, count: 0, done: true, updatedAt: now })
+      .values({ id: habitLogId(id, day), habitId: id, date: day, count: 0, done: true, updatedAt: now })
       .onConflictDoUpdate({
         target: habitHistory.id,
         set: { done: sql`NOT ${habitHistory.done}`, updatedAt: now },
@@ -153,7 +150,7 @@ export function useHabits() {
     const day = todayStr();
     const now = new Date().toISOString();
     db.insert(habitHistory)
-      .values({ id: `${id}-${day}`, habitId: id, date: day, count: Math.max(0, delta), done: false, updatedAt: now })
+      .values({ id: habitLogId(id, day), habitId: id, date: day, count: Math.max(0, delta), done: false, updatedAt: now })
       .onConflictDoUpdate({
         target: habitHistory.id,
         set: { count: sql`max(0, ${habitHistory.count} + ${delta})`, updatedAt: now },

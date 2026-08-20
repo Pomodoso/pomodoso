@@ -4,10 +4,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { db } from '@/db/client';
 import { project } from '@/db/schema';
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
-
-function uid(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+import { uid } from '@/utils/id';
 
 export function useProjects() {
   const { data: projects } = useLiveQuery(

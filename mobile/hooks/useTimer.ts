@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { db } from '@/db/client';
 import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
+import { uid } from '@/utils/id';
 import { playSound } from '@/utils/sounds';
 import { secondsBetween } from '@/utils/time';
 
@@ -53,10 +54,6 @@ export interface PendingNextFocus {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function uid(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function notificationCopyFor(kind: SessionKind, taskTitle: string | null): { title: string; body: string } {
