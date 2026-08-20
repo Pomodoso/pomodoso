@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { habitHistory, habits } from '@/db/schema';
 import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
 import { habitLogId, uid } from '@/utils/id';
+import { triggerSync } from '@/utils/sync';
 import { useTodayDate } from './useTodayDate';
 
 export interface HabitWithProgress {
@@ -140,6 +141,7 @@ export function useHabits() {
         set: { done: sql`NOT ${habitHistory.done}`, updatedAt: now },
       })
       .run();
+    triggerSync();
   }
 
   function incrementHabit(id: string, delta: number): void {
@@ -156,6 +158,7 @@ export function useHabits() {
         set: { count: sql`max(0, ${habitHistory.count} + ${delta})`, updatedAt: now },
       })
       .run();
+    triggerSync();
   }
 
   function addHabit(input: HabitInput): void {
@@ -176,6 +179,7 @@ export function useHabits() {
         updatedAt: now,
       })
       .run();
+    triggerSync();
   }
 
   function updateHabit(id: string, input: HabitInput): void {
@@ -192,6 +196,7 @@ export function useHabits() {
       })
       .where(eq(habits.id, id))
       .run();
+    triggerSync();
   }
 
   function removeHabit(id: string): void {
@@ -204,6 +209,7 @@ export function useHabits() {
       tx.update(habitHistory).set({ deletedAt: now, updatedAt: now }).where(eq(habitHistory.habitId, id)).run();
       tx.update(habits).set({ deletedAt: now, updatedAt: now }).where(eq(habits.id, id)).run();
     });
+    triggerSync();
   }
 
   return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit };

@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { project } from '@/db/schema';
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { uid } from '@/utils/id';
+import { triggerSync } from '@/utils/sync';
 
 import { useWorkspace } from './useWorkspace';
 
@@ -18,6 +19,7 @@ export function useProjects() {
     const id = uid();
     const now = new Date().toISOString();
     db.insert(project).values({ id, workspaceId, name: name.trim(), color, createdAt: now, updatedAt: now }).run();
+    triggerSync();
     return id;
   }
 
@@ -26,6 +28,7 @@ export function useProjects() {
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(project.id, id))
       .run();
+    triggerSync();
   }
 
   // Soft delete (CLAUDE.md rule 4) — see schema.ts for the Fase B sync
@@ -35,6 +38,7 @@ export function useProjects() {
   function removeProject(id: string): void {
     const now = new Date().toISOString();
     db.update(project).set({ deletedAt: now, updatedAt: now }).where(eq(project.id, id)).run();
+    triggerSync();
   }
 
   return { projects: projects ?? [], addProject, updateProject, removeProject };

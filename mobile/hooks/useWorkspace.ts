@@ -6,6 +6,7 @@ import { db } from '@/db/client';
 import type { WorkspaceRow } from '@/db/schema';
 import { settings, workspace } from '@/db/schema';
 import { uid } from '@/utils/id';
+import { triggerSync } from '@/utils/sync';
 
 export interface WorkspaceInput {
   name: string;
@@ -80,6 +81,7 @@ export function useWorkspace(): {
     const id = uid();
     const now = new Date().toISOString();
     db.insert(workspace).values({ id, name: input.name.trim(), color: input.color, createdAt: now, updatedAt: now }).run();
+    triggerSync();
     return id;
   }
 
@@ -88,6 +90,7 @@ export function useWorkspace(): {
       .set({ name: input.name.trim(), color: input.color, updatedAt: new Date().toISOString() })
       .where(eq(workspace.id, id))
       .run();
+    triggerSync();
   }
 
   // No cascade to the workspace's own task/project/session rows — matches
@@ -99,6 +102,7 @@ export function useWorkspace(): {
     if (effectiveRows.length <= 1) return;
     const now = new Date().toISOString();
     db.update(workspace).set({ deletedAt: now, updatedAt: now }).where(eq(workspace.id, id)).run();
+    triggerSync();
   }
 
   function setActiveWorkspace(id: string): void {
