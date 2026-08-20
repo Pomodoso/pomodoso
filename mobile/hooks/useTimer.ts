@@ -298,11 +298,19 @@ export function useTimer() {
       // still has its original status, and without this filter it would
       // silently block every future start forever — invisible in the UI
       // (which filters deletedAt like everywhere else) with no way to
-      // recover (Greptile P1).
+      // recover (Greptile P1). The task-existence check closes a second,
+      // narrower race the same fix missed: notification scheduling above is
+      // async, so a task can be deleted while it's in flight — without this,
+      // the INSERT would still land, creating a live session pointing at a
+      // tombstoned task (title/ticket resolving to null everywhere it's
+      // read). Checked atomically in the same statement, not as a separate
+      // await after scheduling, for the same reason the "another session
+      // running" check is inline here rather than a prior read.
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
         SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
+          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         // Lost the race — another instance's start already landed. Don't
@@ -339,10 +347,14 @@ export function useTimer() {
       const taskTitle = taskId ? (taskById.get(taskId)?.title ?? null) : null;
       const copy = notificationCopyFor(kind, taskTitle);
       const notificationId = await tryScheduleNotification(new Date(Date.now() + durationSeconds * 1000), copy.title, copy.body);
+      // Same two guards as startSession (see its comment): no other live
+      // session, and — since notification scheduling above is async — the
+      // task hasn't been deleted while this was in flight.
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
         SELECT ${uid()}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
+          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         if (notificationId) {
