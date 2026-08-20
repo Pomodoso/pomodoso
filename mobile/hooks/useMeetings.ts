@@ -38,6 +38,7 @@ export function useMeetings(): { meetings: TodayMeeting[] } {
   const { workspaceId } = useWorkspace();
   const { data: rows } = useLiveQuery(
     db.select().from(meeting).where(and(isNull(meeting.deletedAt), eq(meeting.workspaceId, workspaceId))),
+    [workspaceId],
   );
 
   const todayStr = new Date().toLocaleDateString('en-CA');
