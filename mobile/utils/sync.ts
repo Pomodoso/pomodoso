@@ -115,6 +115,7 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   if (h.createdAt) extra.createdAt = h.createdAt;
   if (h.unit != null) extra.unit = h.unit;
   if (h.unitAmount != null) extra.unitAmount = h.unitAmount;
+  if (h.challengeLengthDays != null) extra.challengeLengthDays = h.challengeLengthDays;
   return extra;
 }
 
@@ -522,6 +523,7 @@ function applyEntity(entity: SyncEntity): void {
         goal: data.target_count != null ? (data.target_count as number) : null,
         unit: 'unit' in hExtra ? (hExtra.unit as string | null) : (existing?.unit ?? null),
         unitAmount: 'unitAmount' in hExtra ? (hExtra.unitAmount as number | null) : (existing?.unitAmount ?? null),
+        challengeLengthDays: 'challengeLengthDays' in hExtra ? (hExtra.challengeLengthDays as number | null) : (existing?.challengeLengthDays ?? null),
         days: JSON.stringify(days),
         sortOrder: existing?.sortOrder ?? 0,
         // Immutable, so unlike the other extras it falls back to the

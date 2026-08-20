@@ -17,6 +17,7 @@ export default function HabitsScreen() {
   const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
+  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
 
   function openCreate(): void {
     setEditingHabit(null);
@@ -38,18 +39,33 @@ export default function HabitsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.sectionTitle}>21-Day challenge</Text>
-        <View style={styles.challengeCard}>
-          <View style={styles.challengeTitleRow}>
-            <Ionicons name="flame" size={16} color={colors.accent} />
-            <Text style={styles.challengeTitle}>No sugar</Text>
-          </View>
-          <Text style={styles.challengeDesc}>Día 7 de 21. Un día a la vez.</Text>
-          <View style={styles.challengeProgress}>
-            <View style={styles.challengeProgressFill} />
-          </View>
-          <Text style={styles.challengeMeta}>7 / 21 días · racha activa</Text>
-        </View>
+        {challengeHabits.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>21-Day challenge</Text>
+            {challengeHabits.map(habit => {
+              const length = habit.challengeLengthDays ?? 21;
+              const clamped = Math.min(habit.daysDone, length);
+              const complete = clamped >= length;
+              return (
+                <View key={habit.id} style={styles.challengeCard}>
+                  <View style={styles.challengeTitleRow}>
+                    <Ionicons name={habit.icon as ComponentProps<typeof Ionicons>['name']} size={16} color={colors.accent} />
+                    <Text style={styles.challengeTitle}>{habit.name}</Text>
+                  </View>
+                  <Text style={styles.challengeDesc}>
+                    {complete ? `¡Completado! ${length}/${length} días` : `Día ${clamped} de ${length}. Un día a la vez.`}
+                  </Text>
+                  <View style={styles.challengeProgress}>
+                    <View style={[styles.challengeProgressFill, { width: `${(clamped / length) * 100}%` }]} />
+                  </View>
+                  <Text style={styles.challengeMeta}>
+                    {clamped}/{length} días · {clamped > 0 ? 'racha activa' : 'sin racha'}
+                  </Text>
+                </View>
+              );
+            })}
+          </>
+        )}
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Today</Text>
@@ -143,6 +159,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accentSoft,
     borderRadius: 14,
     padding: 16,
+    marginBottom: 10,
   },
   challengeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   challengeTitle: { fontSize: 14, fontWeight: '700', color: colors.text },

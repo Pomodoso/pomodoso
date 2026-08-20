@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { DAY_LABELS } from '@/constants/habitDays';
 import { HABIT_ICON_OPTIONS } from '@/constants/habitIcons';
@@ -30,6 +30,8 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   const [unit, setUnit] = useState('');
   const [unitAmount, setUnitAmount] = useState('');
   const [days, setDays] = useState<number[]>(ALL_DAYS);
+  const [isChallenge, setIsChallenge] = useState(false);
+  const [challengeLengthDays, setChallengeLengthDays] = useState('21');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
@@ -42,6 +44,8 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setUnit(initialHabit.unit ?? '');
       setUnitAmount(initialHabit.unitAmount?.toString() ?? '');
       setDays(initialHabit.days.length === 0 ? ALL_DAYS : initialHabit.days);
+      setIsChallenge((initialHabit.challengeLengthDays ?? 0) > 0);
+      setChallengeLengthDays((initialHabit.challengeLengthDays ?? 21).toString());
     } else {
       setName('');
       setIcon(HABIT_ICON_OPTIONS[0]);
@@ -50,6 +54,8 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setUnit('');
       setUnitAmount('');
       setDays(ALL_DAYS);
+      setIsChallenge(false);
+      setChallengeLengthDays('21');
     }
     setConfirmingDelete(false);
   }, [visible, initialHabit]);
@@ -69,9 +75,12 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   const parsedGoal = parseInt(goal, 10);
   const goalValid = kind === 'boolean' || (!isNaN(parsedGoal) && parsedGoal > 0);
 
+  const parsedChallengeLength = parseInt(challengeLengthDays, 10);
+  const challengeLengthValid = !isChallenge || (!isNaN(parsedChallengeLength) && parsedChallengeLength > 0);
+
   function handleSave(): void {
     const trimmed = name.trim();
-    if (!trimmed || !goalValid) return;
+    if (!trimmed || !goalValid || !challengeLengthValid) return;
     const parsedUnitAmount = parseInt(unitAmount, 10);
     onSave({
       name: trimmed,
@@ -85,6 +94,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       unit: kind === 'counter' && unit.trim() ? unit.trim() : null,
       unitAmount: kind === 'counter' && !isNaN(parsedUnitAmount) ? parsedUnitAmount : null,
       days,
+      challengeLengthDays: isChallenge ? parsedChallengeLength : null,
     });
   }
 
@@ -183,10 +193,31 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
             </View>
             {days.length === 7 && <Text style={styles.everyDayHint}>Every day. Tap a day to customize.</Text>}
 
+            <View style={styles.challengeHeader}>
+              <Text style={styles.label}>21-day challenge</Text>
+              <Switch value={isChallenge} onValueChange={setIsChallenge} trackColor={{ true: colors.accent }} />
+            </View>
+            {isChallenge && (
+              <>
+                <View style={[styles.counterRow, { alignItems: 'center' }]}>
+                  <TextInput
+                    style={[styles.input, styles.counterInput, { flex: 0, width: 70, marginBottom: 0 }]}
+                    value={challengeLengthDays}
+                    onChangeText={setChallengeLengthDays}
+                    keyboardType="number-pad"
+                  />
+                  <Text style={styles.everyDayHint}>days</Text>
+                </View>
+                <Text style={styles.everyDayHint}>
+                  Shows a progress card counting today&apos;s active streak toward the goal. Missing a scheduled day resets it.
+                </Text>
+              </>
+            )}
+
             <Pressable
-              style={[styles.saveBtn, (!name.trim() || !goalValid) && styles.saveBtnDisabled]}
+              style={[styles.saveBtn, (!name.trim() || !goalValid || !challengeLengthValid) && styles.saveBtnDisabled]}
               onPress={handleSave}
-              disabled={!name.trim() || !goalValid}
+              disabled={!name.trim() || !goalValid || !challengeLengthValid}
             >
               <Text style={styles.saveBtnText}>Save</Text>
             </Pressable>
@@ -286,6 +317,7 @@ const styles = StyleSheet.create({
   dayBtnText: { fontSize: 12, fontWeight: '700', color: colors.textTertiary },
   dayBtnTextActive: { color: colors.accent },
   everyDayHint: { fontSize: 11, color: colors.textTertiary, marginTop: 6 },
+  challengeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 },
   saveBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 18 },
   saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: colors.surface },

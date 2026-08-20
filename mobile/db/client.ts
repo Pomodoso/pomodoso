@@ -106,7 +106,9 @@ function initDb(): void {
   // fresh duplicate instead of updating the existing one.
   const hasCurrentSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT kind, days, created_at, updated_at, deleted_at, synced_at FROM habits LIMIT 1');
+      expoDb.getFirstSync(
+        'SELECT kind, days, created_at, updated_at, deleted_at, synced_at, challenge_length_days FROM habits LIMIT 1',
+      );
       return !hasStaleId('habits');
     } catch {
       return false;
@@ -186,6 +188,7 @@ function initDb(): void {
       unit TEXT,
       unit_amount INTEGER,
       days TEXT NOT NULL DEFAULT '[]',
+      challenge_length_days INTEGER,
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
