@@ -253,94 +253,126 @@ export async function syncTodayMeetings(wsId: string): Promise<void> {
   const timeMax = todayEnd.toISOString();
 
   const seenGoogleIds = new Set<string>();
+  // Calendars whose fetch didn't fully succeed this cycle (an HTTP error on
+  // any page, so seenGoogleIds is incomplete for it) — the stale-deletion
+  // pass below must skip these calendars' meetings entirely, or an
+  // incomplete seenGoogleIds would make every one of their still-real
+  // events look "no longer returned" and get wrongly soft-deleted.
+  const failedCalendarIds = new Set<string>();
   let wroteAny = false;
 
   for (const calendarId of conn.selectedCalendarIds) {
-    const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
-    url.searchParams.set('timeMin', timeMin);
-    url.searchParams.set('timeMax', timeMax);
-    url.searchParams.set('singleEvents', 'true');
-    url.searchParams.set('orderBy', 'startTime');
-    url.searchParams.set('maxResults', '50');
+    let pageToken: string | undefined;
+    let calendarFailed = false;
 
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) continue;
+    do {
+      const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
+      url.searchParams.set('timeMin', timeMin);
+      url.searchParams.set('timeMax', timeMax);
+      url.searchParams.set('singleEvents', 'true');
+      url.searchParams.set('orderBy', 'startTime');
+      url.searchParams.set('maxResults', '50');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-    const data = (await res.json()) as { items?: GoogleEventItem[] };
-    for (const item of data.items ?? []) {
-      if (item.status === 'cancelled') continue;
-      const googleEventId = item.id;
-      seenGoogleIds.add(googleEventId);
-
-      const startStr = item.start?.dateTime ?? item.start?.date ?? timeMin;
-      const endStr = item.end?.dateTime ?? item.end?.date ?? startStr;
-      const durationMinutes = Math.round((parseMeetingTime(endStr).getTime() - parseMeetingTime(startStr).getTime()) / 60_000);
-      const recurringEventId = item.recurringEventId;
-      const cal = calInfo.get(calendarId);
-      const nowIso = new Date().toISOString();
-
-      const existing = db.select().from(meeting).where(eq(meeting.googleEventId, googleEventId)).all()[0];
-      wroteAny = true;
-
-      if (existing) {
-        db.update(meeting)
-          .set({
-            title: item.summary ?? '(no title)',
-            time: startStr,
-            durationMinutes,
-            description: item.description ?? null,
-            calendarId,
-            // Only overwrite the cached name/color when the calendar list
-            // actually resolved this cycle — a momentarily-missing
-            // calendar_lists entry shouldn't clobber a previously-good
-            // cached name with the raw id (matches extension's own guard).
-            ...(cal ? { calendarName: cal.summary, ...(cal.backgroundColor ? { calendarColor: cal.backgroundColor } : {}) } : {}),
-            ...(recurringEventId ? { recurringEventId } : {}),
-            deletedAt: null,
-            updatedAt: nowIso,
-          })
-          .where(eq(meeting.id, existing.id))
-          .run();
-      } else {
-        let inheritedTrackMode: MeetingTrackMode = 'off';
-        if (recurringEventId) {
-          const priorOccurrences = db
-            .select()
-            .from(meeting)
-            .where(and(eq(meeting.recurringEventId, recurringEventId), isNull(meeting.deletedAt), eq(meeting.workspaceId, wsId)))
-            .all();
-          const mostRecent = priorOccurrences.sort((a, b) => b.time.localeCompare(a.time))[0];
-          if (mostRecent?.trackMode === 'always') inheritedTrackMode = 'always';
-        }
-        db.insert(meeting)
-          .values({
-            id: uid(),
-            workspaceId: wsId,
-            title: item.summary ?? '(no title)',
-            time: startStr,
-            durationMinutes,
-            description: item.description ?? null,
-            trackMode: inheritedTrackMode,
-            logged: false,
-            notes: '',
-            projectId: null,
-            googleEventId,
-            recurringEventId: recurringEventId ?? null,
-            calendarId,
-            calendarName: cal?.summary ?? calendarId,
-            calendarColor: cal?.backgroundColor ?? null,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          })
-          .run();
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        calendarFailed = true;
+        break;
       }
-    }
+
+      const data = (await res.json()) as { items?: GoogleEventItem[]; nextPageToken?: string };
+      for (const item of data.items ?? []) {
+        if (item.status === 'cancelled') continue;
+        const googleEventId = item.id;
+        seenGoogleIds.add(googleEventId);
+
+        const startStr = item.start?.dateTime ?? item.start?.date ?? timeMin;
+        const endStr = item.end?.dateTime ?? item.end?.date ?? startStr;
+        const durationMinutes = Math.round((parseMeetingTime(endStr).getTime() - parseMeetingTime(startStr).getTime()) / 60_000);
+        const recurringEventId = item.recurringEventId;
+        const cal = calInfo.get(calendarId);
+        const nowIso = new Date().toISOString();
+
+        // Scoped by workspaceId too, not just googleEventId — the same
+        // Google event could otherwise be visible to (and get imported
+        // into) two different workspaces if the same calendar were ever
+        // selected in both, and an unscoped lookup would let the second
+        // workspace's sync overwrite the first's row instead of creating
+        // its own (Greptile P1, security).
+        const existing = db
+          .select()
+          .from(meeting)
+          .where(and(eq(meeting.workspaceId, wsId), eq(meeting.googleEventId, googleEventId)))
+          .all()[0];
+        wroteAny = true;
+
+        if (existing) {
+          db.update(meeting)
+            .set({
+              title: item.summary ?? '(no title)',
+              time: startStr,
+              durationMinutes,
+              description: item.description ?? null,
+              calendarId,
+              // Only overwrite the cached name/color when the calendar list
+              // actually resolved this cycle — a momentarily-missing
+              // calendar_lists entry shouldn't clobber a previously-good
+              // cached name with the raw id (matches extension's own guard).
+              ...(cal ? { calendarName: cal.summary, ...(cal.backgroundColor ? { calendarColor: cal.backgroundColor } : {}) } : {}),
+              ...(recurringEventId ? { recurringEventId } : {}),
+              deletedAt: null,
+              updatedAt: nowIso,
+            })
+            .where(eq(meeting.id, existing.id))
+            .run();
+        } else {
+          let inheritedTrackMode: MeetingTrackMode = 'off';
+          if (recurringEventId) {
+            const priorOccurrences = db
+              .select()
+              .from(meeting)
+              .where(and(eq(meeting.recurringEventId, recurringEventId), isNull(meeting.deletedAt), eq(meeting.workspaceId, wsId)))
+              .all();
+            const mostRecent = priorOccurrences.sort((a, b) => b.time.localeCompare(a.time))[0];
+            if (mostRecent?.trackMode === 'always') inheritedTrackMode = 'always';
+          }
+          db.insert(meeting)
+            .values({
+              id: uid(),
+              workspaceId: wsId,
+              title: item.summary ?? '(no title)',
+              time: startStr,
+              durationMinutes,
+              description: item.description ?? null,
+              trackMode: inheritedTrackMode,
+              logged: false,
+              notes: '',
+              projectId: null,
+              googleEventId,
+              recurringEventId: recurringEventId ?? null,
+              calendarId,
+              calendarName: cal?.summary ?? calendarId,
+              calendarColor: cal?.backgroundColor ?? null,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            })
+            .run();
+        }
+      }
+
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
+    if (calendarFailed) failedCalendarIds.add(calendarId);
   }
 
   // Soft-delete Google-sourced meetings for today that are no longer
   // returned (cancelled/moved off today) — parseMeetingTime handles the
   // bare all-day-date case the same way the fetch itself does, so a
-  // same-day all-day event isn't spuriously treated as "gone".
+  // same-day all-day event isn't spuriously treated as "gone". Meetings
+  // from a calendar whose fetch failed this cycle are skipped entirely —
+  // seenGoogleIds is necessarily incomplete for that calendar, so treating
+  // its absence-from-the-set as "deleted on Google" would be wrong.
   const candidates = db
     .select()
     .from(meeting)
@@ -349,6 +381,7 @@ export async function syncTodayMeetings(wsId: string): Promise<void> {
   const staleNowIso = new Date().toISOString();
   for (const m of candidates) {
     if (!m.googleEventId || seenGoogleIds.has(m.googleEventId)) continue;
+    if (m.calendarId && failedCalendarIds.has(m.calendarId)) continue;
     const t = parseMeetingTime(m.time);
     if (t < todayStart || t > todayEnd) continue;
     db.update(meeting).set({ deletedAt: staleNowIso, updatedAt: staleNowIso }).where(eq(meeting.id, m.id)).run();
