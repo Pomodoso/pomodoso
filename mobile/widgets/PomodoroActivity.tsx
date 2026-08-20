@@ -32,10 +32,15 @@ function kindIcon(kind: PomodoroActivityProps['kind']): string {
 }
 
 // STOPWATCH_HORIZON: Text's timerInterval needs a real upper bound even for
-// an open-ended stopwatch (SwiftUI has no "count up forever" mode) — 24h is
-// far beyond any realistic single session, so countsDown=false effectively
-// shows unbounded elapsed time in practice.
-const STOPWATCH_HORIZON_MS = 24 * 60 * 60 * 1000;
+// an open-ended stopwatch (SwiftUI has no "count up forever" mode). Past
+// this bound the native timer stops advancing while the app's own timer
+// keeps going, visibly desyncing the Lock Screen/Dynamic Island — an
+// earlier version of this used 24h, which Greptile correctly flagged as
+// reachable by a real (if unusual) continuously-running stopwatch session.
+// 30 days is comfortably beyond any plausible single session without
+// adding the complexity of periodically reissuing update() to push the
+// horizon forward — nobody runs one uninterrupted stopwatch for a month.
+const STOPWATCH_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
 
 const PomodoroActivity = (props: PomodoroActivityProps, environment: LiveActivityEnvironment) => {
   'widget';
