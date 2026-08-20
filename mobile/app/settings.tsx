@@ -13,6 +13,7 @@ import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
 import type { AppSettings } from '@/hooks/useSettings';
 import { useSettings } from '@/hooks/useSettings';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { importBackup, shareBackup } from '@/utils/backup';
 import { playSound } from '@/utils/sounds';
 
@@ -87,6 +88,7 @@ function DurationPicker({ label, presets, value, onChange }: DurationPickerProps
 export default function SettingsScreen(): React.JSX.Element {
   const { settings, update } = useSettings();
   const auth = useAuth();
+  const { workspace } = useWorkspace();
   const isPro = auth.entitlements.features.sync;
   const [longEveryStr, setLongEveryStr] = useState(String(settings.longBreakEvery));
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
@@ -224,6 +226,15 @@ export default function SettingsScreen(): React.JSX.Element {
             )}
           </>
         )}
+
+        <Text style={styles.sectionTitle}>Workspace</Text>
+        <Pressable style={styles.accountRow} onPress={() => router.push('/workspaces')}>
+          <View style={[styles.workspaceDot, { backgroundColor: workspace.color }]}>
+            <Text style={styles.workspaceDotText}>{workspace.name[0]?.toUpperCase()}</Text>
+          </View>
+          <Text style={[styles.wsName, { flex: 1 }]}>{workspace.name}</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </Pressable>
 
         <Text style={styles.sectionTitle}>Timer defaults</Text>
 
@@ -462,6 +473,9 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   accountEmail: { fontSize: 13.5, fontWeight: '600', color: colors.text },
+  workspaceDot: { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  workspaceDotText: { color: colors.surface, fontSize: 13, fontWeight: '700' },
+  wsName: { fontSize: 14.5, fontWeight: '600', color: colors.text },
   proHint: { color: colors.accent, fontWeight: '700' },
   upgradeCard: {
     backgroundColor: colors.surface,

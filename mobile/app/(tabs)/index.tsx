@@ -19,6 +19,7 @@ import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
 import { useTimer } from '@/hooks/useTimer';
 import { useTodayDate } from '@/hooks/useTodayDate';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { formatRecurrenceLabel } from '@/utils/recurrence';
 import { formatMinutes } from '@/utils/time';
 
@@ -30,6 +31,7 @@ function formatTime(totalSeconds: number): string {
 }
 
 export default function HomeScreen() {
+  const { workspace } = useWorkspace();
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const {
     display,
@@ -80,13 +82,13 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <View style={styles.workspace}>
-          <View style={styles.workspaceDot}>
-            <Text style={styles.workspaceDotText}>W</Text>
+        <Pressable style={styles.workspace} onPress={() => router.push('/workspaces')}>
+          <View style={[styles.workspaceDot, { backgroundColor: workspace.color }]}>
+            <Text style={styles.workspaceDotText}>{workspace.name[0]?.toUpperCase()}</Text>
           </View>
-          <Text style={styles.workspaceName}>Work</Text>
+          <Text style={styles.workspaceName}>{workspace.name}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.textTertiary} />
-        </View>
+        </Pressable>
         <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
           <Ionicons name="settings-outline" size={20} color={colors.textTertiary} />
         </Pressable>
