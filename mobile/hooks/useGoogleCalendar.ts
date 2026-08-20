@@ -84,43 +84,51 @@ export function useGoogleCalendar(): {
     }
   }
 
-  // Tracks the most recently computed selectedCalendarIds, including ones
-  // from toggles still mid-flight — a second row tapped before the first
-  // toggle's write+refresh resolves would otherwise both compute their new
-  // array from the same stale `connection` snapshot, so the later write
-  // (a full-array replace) silently discards the earlier tap (Greptile
-  // P1). Only reset from a fresh `connection` while no toggle is
-  // in-flight — otherwise a mid-chain refresh() (from an earlier toggle in
-  // the same rapid-tap burst) would reset this to a snapshot that doesn't
-  // yet include a later, still-queued toggle's change, corrupting the very
-  // chain it's meant to protect.
-  const pendingIdsRef = useRef<string[] | null>(null);
-  const togglesInFlightRef = useRef(0);
+  // A rapid burst of taps across several calendar rows needs: (1) each
+  // toggle to compute its new array on top of the PREVIOUS toggle's
+  // change, not a stale `connection` snapshot from before any of them
+  // landed; (2) writes to land in the same order the taps happened; (3)
+  // exactly one re-sync with real on-disk state once the whole burst
+  // settles — not one per toggle, since independent per-toggle refreshes
+  // can resolve out of order and let an earlier (slower) one's older
+  // snapshot clobber a later toggle's already-persisted change; and (4) a
+  // toggle whose write actually failed to leave the UI showing what's
+  // really on disk, not the optimistic guess. All four fall out of one
+  // design: track a synchronous ref for "next array to write" (React
+  // state alone can't serve this — a second tap fired before re-render
+  // wouldn't see the first tap's update), apply it to `connection`
+  // immediately for responsive UI, chain the actual writes so they can
+  // never reorder or get skipped by an earlier rejection, and defer
+  // `refresh()` until the in-flight count drops to zero — which also
+  // naturally corrects any optimistic state a failed write never actually
+  // persisted, without needing separate rollback logic.
+  const selectedIdsRef = useRef<string[] | null>(null);
   useEffect(() => {
-    if (togglesInFlightRef.current === 0) {
-      pendingIdsRef.current = connection?.selectedCalendarIds ?? null;
-    }
+    selectedIdsRef.current = connection?.selectedCalendarIds ?? null;
   }, [connection]);
   const toggleChainRef = useRef<Promise<void>>(Promise.resolve());
+  const togglesInFlightRef = useRef(0);
 
   async function toggleCalendar(id: string): Promise<void> {
     if (!connection) return;
-    const current = pendingIdsRef.current ?? connection.selectedCalendarIds;
+    const current = selectedIdsRef.current ?? connection.selectedCalendarIds;
     const next = current.includes(id) ? current.filter(c => c !== id) : [...current, id];
-    pendingIdsRef.current = next;
+    selectedIdsRef.current = next;
+    setConnection(prev => (prev ? { ...prev, selectedCalendarIds: next } : prev));
+
     togglesInFlightRef.current++;
     const writePromise = toggleChainRef.current.then(() => updateSelectedCalendars(workspaceId, next));
     // The chain itself must never carry a rejection forward — if it did,
     // every later `.then` (i.e. every subsequent toggle's write) would be
     // silently skipped once one write failed, permanently until the
-    // screen remounts (Greptile P1, follow-up round). This toggle's own
-    // caller still observes a real failure via `await writePromise` below.
+    // screen remounts. This toggle's own caller still observes a real
+    // failure via `await writePromise` below.
     toggleChainRef.current = writePromise.catch(() => {});
     try {
       await writePromise;
-      await refresh();
     } finally {
       togglesInFlightRef.current--;
+      if (togglesInFlightRef.current === 0) await refresh();
     }
   }
 
