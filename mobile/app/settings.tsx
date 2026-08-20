@@ -16,6 +16,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { importBackup, shareBackup } from '@/utils/backup';
 import { playSound } from '@/utils/sounds';
+import { syncNow } from '@/utils/sync';
 
 const SOUND_EVENTS: { event: SoundEvent; key: keyof SoundSettings['events']; label: string; description: string }[] = [
   { event: 'pomo-done', key: 'pomoDone', label: 'Pomodoro done', description: 'When a focus session ends' },
@@ -94,12 +95,24 @@ export default function SettingsScreen(): React.JSX.Element {
   const [goalStr, setGoalStr] = useState(String(settings.dailyGoal));
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   function handleSignOut(): void {
     Alert.alert('Sign out?', 'Sync stays off either way — this device keeps all its local data.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => void auth.signOut() },
     ]);
+  }
+
+  async function handleSyncNow(): Promise<void> {
+    setSyncing(true);
+    try {
+      await syncNow();
+    } catch (err) {
+      Alert.alert('Sync failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSyncing(false);
+    }
   }
 
   useEffect(() => {
@@ -198,7 +211,18 @@ export default function SettingsScreen(): React.JSX.Element {
                   </Pressable>
                 </View>
 
-                {!isPro && (
+                {isPro ? (
+                  <Pressable style={[styles.actionBtnOutlineFull, syncing && styles.actionBtnDisabled]} onPress={handleSyncNow} disabled={syncing}>
+                    {syncing ? (
+                      <ActivityIndicator color={colors.text} size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="sync-outline" size={15} color={colors.text} />
+                        <Text style={styles.actionBtnOutlineText}>Sync now</Text>
+                      </>
+                    )}
+                  </Pressable>
+                ) : (
                   <View style={styles.upgradeCard}>
                     <Text style={styles.fieldLabel}>Upgrade to Pro</Text>
                     <Text style={styles.hint}>Sync across devices · Unlimited workspaces · Web dashboard</Text>
@@ -605,4 +629,17 @@ const styles = StyleSheet.create({
   },
   actionBtnOutlineText: { fontSize: 13.5, fontWeight: '700', color: colors.text },
   actionBtnDisabled: { opacity: 0.6 },
+  actionBtnOutlineFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
 });
