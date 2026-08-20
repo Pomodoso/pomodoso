@@ -292,11 +292,17 @@ export function useTimer() {
       // from racing another's. The real guard is this: INSERT ... SELECT ...
       // WHERE NOT EXISTS, a single atomic SQLite statement, so only one
       // concurrent start can ever actually insert a row regardless of how
-      // many screens/instances raced to get here.
+      // many screens/instances raced to get here. deleted_at IS NULL matters
+      // now that removeTask soft-deletes rather than hard-deletes a task's
+      // sessions (Fase B): an active/paused session tombstoned that way
+      // still has its original status, and without this filter it would
+      // silently block every future start forever — invisible in the UI
+      // (which filters deletedAt like everywhere else) with no way to
+      // recover (Greptile P1).
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
         SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
-        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
+        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
       `);
       if (result.changes === 0) {
         // Lost the race — another instance's start already landed. Don't
@@ -336,7 +342,7 @@ export function useTimer() {
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
         SELECT ${uid()}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
-        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused'))
+        WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
       `);
       if (result.changes === 0) {
         if (notificationId) {
