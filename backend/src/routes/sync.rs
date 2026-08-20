@@ -57,13 +57,13 @@ pub async fn push(
     Extension(auth): Extension<AuthUser>,
     Json(body): Json<PushBody>,
 ) -> Result<Json<Value>> {
-    require_sync_entitlement(&state, auth.id).await?;
+    let features = require_sync_entitlement(&state, auth.id).await?;
 
     let mut accepted = 0usize;
 
     // Pass 1: workspaces first — bootstraps membership so later access checks work
     for entity in body.entities.iter().filter(|e| e.table == "workspace") {
-        push_workspace(&state, auth.id, entity).await?;
+        push_workspace(&state, auth.id, entity, &features).await?;
         accepted += 1;
     }
 
@@ -124,7 +124,15 @@ pub async fn push(
                 .await
                 .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
-            "meeting" => push_meeting(&state, ws, &allowed_vec, entity).await.is_ok(),
+            // No entitlement field gated calendar/meetings before this — every
+            // user could push/pull meeting rows regardless of plan, even
+            // though calendar is meant to be a paid feature. This is the
+            // only real backend touchpoint for calendar (OAuth/Calendar-API
+            // calls are 100% client-to-Google, see ADR 0002), so it's the
+            // only place a server-side gate can meaningfully exist.
+            "meeting" => {
+                features.calendar && push_meeting(&state, ws, &allowed_vec, entity).await.is_ok()
+            }
             _ => false,
         };
         if ok {
@@ -153,7 +161,12 @@ async fn user_workspace_ids(state: &AppState, user_id: uuid::Uuid) -> Result<Has
     Ok(rows.into_iter().collect())
 }
 
-async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_workspace(
+    state: &AppState,
+    user_id: uuid::Uuid,
+    e: &SyncEntity,
+    features: &crate::models::EntitlementFeatures,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -169,6 +182,23 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
         .await?;
     if matches!(existing_owner, Some(owner) if owner != user_id) {
         return Ok(());
+    }
+
+    // max_workspaces only gates creating a NEW live workspace — never
+    // editing/renaming/soft-deleting one that already exists server-side, and
+    // never a push that's itself a delete (deleted_at set), so a Pro user who
+    // downgrades doesn't get locked out of cleaning up their existing ones.
+    if existing_owner.is_none() && e.deleted_at.is_none() {
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM workspace WHERE owner_id = $1 AND deleted_at IS NULL",
+            user_id,
+        )
+        .fetch_one(&state.pool)
+        .await?
+        .unwrap_or(0);
+        if count >= features.max_workspaces as i64 {
+            return Ok(());
+        }
     }
 
     sqlx::query!(
@@ -723,7 +753,7 @@ pub async fn pull(
     Extension(auth): Extension<AuthUser>,
     Query(q): Query<PullQuery>,
 ) -> Result<Json<PullResponse>> {
-    require_sync_entitlement(&state, auth.id).await?;
+    let features = require_sync_entitlement(&state, auth.id).await?;
 
     let mut entities: Vec<SyncEntity> = Vec::new();
     let server_time = Utc::now();
@@ -912,33 +942,36 @@ pub async fn pull(
         });
     }
 
-    // Meetings
-    for row in sqlx::query!(
-        r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
-                  track_mode, project_id, google_event_id, extra, updated_at, deleted_at
-           FROM meeting
-           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
-        &ws_ids,
-        q.since,
-    )
-    .fetch_all(&state.pool)
-    .await?
-    {
-        entities.push(SyncEntity {
-            table: "meeting".into(),
-            id: row.id.to_string(),
-            data: serde_json::json!({
-                "workspace_id": row.workspace_id,
-                "title": row.title, "time": row.time,
-                "duration_minutes": row.duration_minutes,
-                "logged_minutes": row.logged_minutes, "logged": row.logged,
-                "track_mode": row.track_mode, "project_id": row.project_id,
-                "google_event_id": row.google_event_id,
-                "extra": row.extra,
-            }),
-            updated_at: row.updated_at,
-            deleted_at: row.deleted_at,
-        });
+    // Meetings — gated on entitlements.features.calendar (see push()'s "meeting"
+    // arm for why this is the only backend touchpoint calendar has at all).
+    if features.calendar {
+        for row in sqlx::query!(
+            r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
+                      track_mode, project_id, google_event_id, extra, updated_at, deleted_at
+               FROM meeting
+               WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+            &ws_ids,
+            q.since,
+        )
+        .fetch_all(&state.pool)
+        .await?
+        {
+            entities.push(SyncEntity {
+                table: "meeting".into(),
+                id: row.id.to_string(),
+                data: serde_json::json!({
+                    "workspace_id": row.workspace_id,
+                    "title": row.title, "time": row.time,
+                    "duration_minutes": row.duration_minutes,
+                    "logged_minutes": row.logged_minutes, "logged": row.logged,
+                    "track_mode": row.track_mode, "project_id": row.project_id,
+                    "google_event_id": row.google_event_id,
+                    "extra": row.extra,
+                }),
+                updated_at: row.updated_at,
+                deleted_at: row.deleted_at,
+            });
+        }
     }
 
     // Pomodoro sessions
@@ -1000,7 +1033,13 @@ pub async fn pull(
 
 // ─── Guards ───────────────────────────────────────────────────────────────────
 
-async fn require_sync_entitlement(state: &AppState, user_id: uuid::Uuid) -> Result<()> {
+// Returns the resolved features alongside the pass/fail check so callers
+// (push/pull) don't need a second query to gate other per-feature behavior
+// (max_workspaces, calendar) within the same request.
+async fn require_sync_entitlement(
+    state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<crate::models::EntitlementFeatures> {
     let sub = sqlx::query!(
         "SELECT plan, feature_overrides FROM subscription WHERE user_id = $1",
         user_id
@@ -1009,18 +1048,12 @@ async fn require_sync_entitlement(state: &AppState, user_id: uuid::Uuid) -> Resu
     .await?
     .ok_or(AppError::Forbidden)?;
 
-    let is_paid = matches!(sub.plan.as_str(), "pro" | "founder_lifetime");
-    let override_sync = sub
-        .feature_overrides
-        .as_ref()
-        .and_then(|v| v.get("sync"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    if !is_paid && !override_sync {
+    let features =
+        crate::models::EntitlementFeatures::resolve(&sub.plan, sub.feature_overrides.as_ref());
+    if !features.sync {
         return Err(AppError::Forbidden);
     }
-    Ok(())
+    Ok(features)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
