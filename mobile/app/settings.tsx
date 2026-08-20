@@ -260,6 +260,13 @@ export default function SettingsScreen(): React.JSX.Element {
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </Pressable>
 
+        <Text style={styles.sectionTitle}>Calendar</Text>
+        <Pressable style={styles.accountRow} onPress={() => router.push('/calendar')}>
+          <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+          <Text style={[styles.wsName, { flex: 1 }]}>Google Calendar</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </Pressable>
+
         <Text style={styles.sectionTitle}>Timer defaults</Text>
 
         <DurationPicker
