@@ -8,16 +8,13 @@ import { db } from '@/db/client';
 import { pomodoroSession, task } from '@/db/schema';
 import type { NoteEntry, TaskLink, TaskStatus } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
+import { uid } from '@/utils/id';
 import { activeOccurrence } from '@/utils/recurrence';
 import { playSound } from '@/utils/sounds';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
 import { useTodayDate } from './useTodayDate';
-
-function uid(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
 
 function formatDuration(totalSeconds: number): string {
   const totalMinutes = Math.round(totalSeconds / 60);

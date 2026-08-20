@@ -3,14 +3,11 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
 import type { NoteEntry } from '@/db/schema';
+import { uid } from '@/utils/id';
 
 interface NotesEditorProps {
   notes: NoteEntry[];
   onChange: (notes: NoteEntry[]) => void;
-}
-
-function uid(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // Ports extension's noteEntries (TaskDetailState.tsx's handleAddNote et al)
