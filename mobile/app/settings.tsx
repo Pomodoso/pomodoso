@@ -202,7 +202,11 @@ export default function SettingsScreen(): React.JSX.Element {
                     <Text style={styles.hint}>Sync across devices · Unlimited workspaces · Web dashboard</Text>
                     <Pressable
                       style={styles.actionBtn}
-                      onPress={() => void WebBrowser.openBrowserAsync('https://pomodoso.com/pricing')}
+                      onPress={() => {
+                        void WebBrowser.openBrowserAsync('https://pomodoso.com/pricing').catch(() => {
+                          Alert.alert('Could not open pricing page', 'Please try again later.');
+                        });
+                      }}
                     >
                       <Text style={styles.actionBtnText}>Upgrade to Pro →</Text>
                     </Pressable>

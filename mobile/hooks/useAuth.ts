@@ -103,11 +103,18 @@ export function useAuth(): AuthState {
     const supabase = getMobileSupabase();
     let mounted = true;
 
-    void supabase.auth.getSession().then(({ data }) => {
+    void supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
       setSession(data.session);
-      setLoading(false);
-      if (data.session) void fetchEntitlements(data.session.access_token);
+      // Wait for entitlements too (fetchEntitlements never throws — it
+      // warns and keeps the current value on failure) before flipping
+      // loading off. Otherwise a signed-in Pro user briefly reads as
+      // "Free" the moment Settings mounts: loading would go false right
+      // after getSession resolves, while entitlements are still sitting
+      // on the FREE_ENTITLEMENTS default until the separate /me call
+      // finishes.
+      if (data.session) await fetchEntitlements(data.session.access_token);
+      if (mounted) setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
