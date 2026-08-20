@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,\n                      track_mode, project_id, google_event_id, extra, updated_at, deleted_at\n               FROM meeting\n               WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
+  "query": "SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,\n                  track_mode, project_id, google_event_id, extra, updated_at, deleted_at\n           FROM meeting\n           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
   "describe": {
     "columns": [
       {
@@ -91,5 +91,5 @@
       true
     ]
   },
-  "hash": "62fb607684cfca481bf20e58fb6e2628ce38a038a2c2590ed45df391d65bbf01"
+  "hash": "f5f7f4753314571e23621b434249647ab2a7b8e92e7650cb77fae5124069a025"
 }

@@ -124,18 +124,16 @@ pub async fn push(
                 .await
                 .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
-            // Deliberately NOT gated on features.calendar here, only on pull
-            // (below) — the client stamps synced_at on every entity it just
-            // pushed unconditionally, with no per-entity ack from `accepted`
-            // (a plain count). Rejecting a meeting write here would make the
-            // client believe it synced when it never reached the server,
-            // silently and permanently losing that update/deletion with no
-            // retry path (Greptile P1 on the first version of this change).
-            // Storing the write is harmless either way — it grants no
-            // calendar *access*, since the OAuth/Calendar-API calls that
-            // produce meeting data are 100% client-to-Google (ADR 0002), and
-            // it means data isn't lost if the account had Pro when it
-            // connected Calendar and later downgraded.
+            // Deliberately NOT gated on features.calendar (nor is pull's
+            // meeting query — see the "Meetings" block in pull() for the
+            // full reasoning, a structural cursor problem on the read side
+            // as well as this one on the write side: the client stamps
+            // synced_at on every entity it just pushed unconditionally, with
+            // no per-entity ack from `accepted` — rejecting a meeting write
+            // here would make the client believe it synced when it never
+            // reached the server, silently and permanently losing that
+            // update/deletion with no retry path (Greptile P1, first version
+            // of this change).
             "meeting" => push_meeting(&state, ws, &allowed_vec, entity).await.is_ok(),
             _ => false,
         };
@@ -199,18 +197,28 @@ async fn push_workspace(
     // Never adopt a workspace that already belongs to someone else. Without this,
     // pushing a workspace entity with a known foreign id would self-grant an
     // 'owner' membership row below and expose that account's data via pull.
-    let existing_owner = sqlx::query_scalar!("SELECT owner_id FROM workspace WHERE id = $1", id,)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if matches!(existing_owner, Some(owner) if owner != user_id) {
+    let existing = sqlx::query!(
+        "SELECT owner_id, deleted_at FROM workspace WHERE id = $1",
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    if matches!(&existing, Some(row) if row.owner_id != user_id) {
         return Ok(()); // tx drops here — rolls back (nothing was written) and releases the lock
     }
 
-    // max_workspaces only gates creating a NEW live workspace — never
-    // editing/renaming/soft-deleting one that already exists server-side, and
-    // never a push that's itself a delete (deleted_at set), so a Pro user who
-    // downgrades doesn't get locked out of cleaning up their existing ones.
-    if existing_owner.is_none() && e.deleted_at.is_none() {
+    // max_workspaces gates any push that makes a workspace LIVE when it
+    // wasn't already — not just brand new ids. Originally this only checked
+    // existing.is_none(), which missed restoring a soft-deleted workspace
+    // (a real row, but not currently live) back to live by clearing
+    // deleted_at — that path skipped the cap entirely (Greptile P1).
+    // Editing/renaming an already-live workspace, or soft-deleting one,
+    // never hits this: the live count doesn't increase either way.
+    let was_live = existing
+        .as_ref()
+        .is_some_and(|row| row.deleted_at.is_none());
+    let will_be_live = e.deleted_at.is_none();
+    if !was_live && will_be_live {
         let count = sqlx::query_scalar!(
             "SELECT COUNT(*) FROM workspace WHERE owner_id = $1 AND deleted_at IS NULL",
             user_id,
@@ -776,7 +784,10 @@ pub async fn pull(
     Extension(auth): Extension<AuthUser>,
     Query(q): Query<PullQuery>,
 ) -> Result<Json<PullResponse>> {
-    let features = require_sync_entitlement(&state, auth.id).await?;
+    // Sync-gate only — the resolved features aren't otherwise used on the
+    // pull path (see the "Meetings" block below for why calendar isn't
+    // gated here).
+    require_sync_entitlement(&state, auth.id).await?;
 
     let mut entities: Vec<SyncEntity> = Vec::new();
     let server_time = Utc::now();
@@ -965,39 +976,47 @@ pub async fn pull(
         });
     }
 
-    // Meetings — gated on entitlements.features.calendar. Only gated here, on
-    // pull, not on push (see push()'s "meeting" arm for why): a read can
-    // safely come back empty for a non-calendar account with no data-loss
-    // risk, unlike a silently-rejected write the client would still believe
-    // succeeded.
-    if features.calendar {
-        for row in sqlx::query!(
-            r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
-                      track_mode, project_id, google_event_id, extra, updated_at, deleted_at
-               FROM meeting
-               WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
-            &ws_ids,
-            q.since,
-        )
-        .fetch_all(&state.pool)
-        .await?
-        {
-            entities.push(SyncEntity {
-                table: "meeting".into(),
-                id: row.id.to_string(),
-                data: serde_json::json!({
-                    "workspace_id": row.workspace_id,
-                    "title": row.title, "time": row.time,
-                    "duration_minutes": row.duration_minutes,
-                    "logged_minutes": row.logged_minutes, "logged": row.logged,
-                    "track_mode": row.track_mode, "project_id": row.project_id,
-                    "google_event_id": row.google_event_id,
-                    "extra": row.extra,
-                }),
-                updated_at: row.updated_at,
-                deleted_at: row.deleted_at,
-            });
-        }
+    // Meetings — NOT gated on entitlements.features.calendar, deliberately
+    // (reverted after Greptile caught a second, structural problem with
+    // trying to). pull's cursor is a single server_time covering every
+    // table in one response; the client unconditionally advances its stored
+    // `since` to that value regardless of what was actually included. Omit
+    // a meeting here for a non-calendar account and it's gone from every
+    // future pull too — `since` has already moved past its updated_at — even
+    // after the account gains calendar access. Push isn't gated for the
+    // same class of reason (see push()'s "meeting" arm). Properly enforcing
+    // calendar at the sync layer needs per-table cursors or an equivalent
+    // protocol change (touches the wire format and extension's syncEngine.ts
+    // too) — real scope beyond hardening what already exists, not done here.
+    // Calendar access itself still isn't exposed anywhere without a paid
+    // OAuth connect flow the client has to build (none exists yet, extension
+    // or mobile), so this isn't a live hole today, just not newly closed.
+    for row in sqlx::query!(
+        r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
+                  track_mode, project_id, google_event_id, extra, updated_at, deleted_at
+           FROM meeting
+           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        &ws_ids,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "meeting".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "workspace_id": row.workspace_id,
+                "title": row.title, "time": row.time,
+                "duration_minutes": row.duration_minutes,
+                "logged_minutes": row.logged_minutes, "logged": row.logged,
+                "track_mode": row.track_mode, "project_id": row.project_id,
+                "google_event_id": row.google_event_id,
+                "extra": row.extra,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
     }
 
     // Pomodoro sessions
