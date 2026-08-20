@@ -223,6 +223,26 @@ export default function HomeScreen() {
           </>
         )}
 
+        {recurringTemplates.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Recurring</Text>
+            {recurringTemplates.map(t => (
+              <TaskRow
+                key={t.id}
+                title={t.title}
+                ticket={t.ticketRef ?? undefined}
+                meta={t.recurrenceRule ? formatRecurrenceLabel(t.recurrenceRule) : ''}
+                status={t.status}
+                projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                onPress={() => router.push(`/task/${t.id}`)}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Order: tasks, recurring, habits, then meetings (once B6 adds a
+            meetings section here) — recurring sits above habits/meetings,
+            below the task sections. */}
         <Text style={styles.sectionTitle}>Habits today</Text>
         {habits.filter(h => h.scheduledToday).map(habit => (
           <View key={habit.id} style={styles.habitRow}>
@@ -252,23 +272,6 @@ export default function HomeScreen() {
             />
           </View>
         ))}
-
-        {recurringTemplates.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Recurring</Text>
-            {recurringTemplates.map(t => (
-              <TaskRow
-                key={t.id}
-                title={t.title}
-                ticket={t.ticketRef ?? undefined}
-                meta={t.recurrenceRule ? formatRecurrenceLabel(t.recurrenceRule) : ''}
-                status={t.status}
-                projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-                onPress={() => router.push(`/task/${t.id}`)}
-              />
-            ))}
-          </>
-        )}
 
         <Text style={styles.footer}>{footerText}</Text>
       </ScrollView>
