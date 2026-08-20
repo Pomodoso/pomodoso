@@ -3,18 +3,22 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs } from '@/db/schema';
+import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 
-// Ports extension's backup.ts. Simplified for what mobile actually has:
-// no workspaces/taskOrders/meetings/detectionRules (none exist yet), and no
+// Ports extension's backup.ts. Simplified for what mobile actually has: no
+// taskOrders/meetings/detectionRules (none exist yet), and no
 // EXCLUDED_SETTINGS filtering — mobile has no auth/sync state living in the
 // settings table yet either. Once login/sync land, this needs the same
 // treatment extension's backup.ts gives auth_session/entitlements/device_id/
 // sync state: excluded from export, and cleared (not restored) on import so
 // a restored device re-syncs from scratch instead of inheriting another
 // device's identity.
+//
+// `workspace` listed first so import's Object.entries loop below inserts it
+// before task/project/pomodoroSession, which carry its id as workspaceId.
 const TABLES = {
+  workspace,
   habits,
   habitHistory,
   pomodoroSession,
@@ -37,6 +41,7 @@ export interface BackupEnvelope {
 // user already deleted. timerPrefs/settings have no deletedAt, exported as-is.
 export function exportBackup(): string {
   const data: Record<string, unknown[]> = {
+    workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all(),
     habits: db.select().from(habits).where(isNull(habits.deletedAt)).all(),
     habitHistory: db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(),
     pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),

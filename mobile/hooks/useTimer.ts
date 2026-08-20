@@ -10,6 +10,7 @@ import { playSound } from '@/utils/sounds';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
+import { useWorkspace } from './useWorkspace';
 
 // Device-local timer state (CLAUDE.md rule 8: server-authoritative only when
 // sync is enabled — mobile free tier stays local, same as the extension).
@@ -82,6 +83,7 @@ export function useTimer() {
   const { data: tasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
   const { settings } = useSettings();
+  const { workspaceId } = useWorkspace();
 
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
   // shared (and persisted) across Home and Tasks, not a per-screen choice.
@@ -304,8 +306,8 @@ export function useTimer() {
       // await after scheduling, for the same reason the "another session
       // running" check is inline here rather than a prior read.
       const result = db.run(sql`
-        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
-        SELECT ${uid()}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        INSERT INTO pomodoro_session (id, workspace_id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
+        SELECT ${uid()}, ${workspaceId}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
           AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
@@ -348,8 +350,8 @@ export function useTimer() {
       // session, and — since notification scheduling above is async — the
       // task hasn't been deleted while this was in flight.
       const result = db.run(sql`
-        INSERT INTO pomodoro_session (id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
-        SELECT ${uid()}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        INSERT INTO pomodoro_session (id, workspace_id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
+        SELECT ${uid()}, ${workspaceId}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
           AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
       `);

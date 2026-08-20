@@ -118,10 +118,13 @@ function initDb(): void {
 
   // Same throwaway-spike migration story for pomodoro_session's taskTitle ->
   // taskId change, later the prompt_resolved column (break flow), and now
-  // the Fase B sync columns + the rule-3 UUID id fix (see hasStaleId).
+  // the Fase B sync columns + the rule-3 UUID id fix (see hasStaleId) + the
+  // new workspace_id FK.
   const hasCurrentSessionSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT task_id, prompt_resolved, updated_at, deleted_at, synced_at FROM pomodoro_session LIMIT 1');
+      expoDb.getFirstSync(
+        'SELECT task_id, prompt_resolved, updated_at, deleted_at, synced_at, workspace_id FROM pomodoro_session LIMIT 1',
+      );
       return !hasStaleId('pomodoro_session');
     } catch {
       return false;
@@ -134,11 +137,11 @@ function initDb(): void {
   // Same throwaway-spike migration story for task's done -> status change,
   // later the project_id, is_today, recurrence/completed_dates, and
   // description/links/note_entries columns, and now the Fase B sync columns
-  // + the rule-3 UUID id fix (see hasStaleId).
+  // + the rule-3 UUID id fix (see hasStaleId) + the new workspace_id FK.
   const hasCurrentTaskSchema = (() => {
     try {
       expoDb.getFirstSync(
-        'SELECT status, project_id, is_today, recurrence, completed_dates, description, links, note_entries, deleted_at, synced_at FROM task LIMIT 1',
+        'SELECT status, project_id, is_today, recurrence, completed_dates, description, links, note_entries, deleted_at, synced_at, workspace_id FROM task LIMIT 1',
       );
       return !hasStaleId('task');
     } catch {
@@ -151,10 +154,10 @@ function initDb(): void {
 
   // Project didn't need a schema-version probe before (no shape changes
   // since #31) — Fase B's deleted_at/synced_at is its first one, plus the
-  // rule-3 UUID id fix (see hasStaleId).
+  // rule-3 UUID id fix (see hasStaleId) and the new workspace_id FK.
   const hasCurrentProjectSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT deleted_at, synced_at FROM project LIMIT 1');
+      expoDb.getFirstSync('SELECT deleted_at, synced_at, workspace_id FROM project LIMIT 1');
       return !hasStaleId('project');
     } catch {
       return false;
@@ -165,6 +168,15 @@ function initDb(): void {
   }
 
   expoDb.execSync(`
+    CREATE TABLE IF NOT EXISTS workspace (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS habits (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -192,6 +204,7 @@ function initDb(): void {
     );
     CREATE TABLE IF NOT EXISTS pomodoro_session (
       id TEXT PRIMARY KEY NOT NULL,
+      workspace_id TEXT NOT NULL,
       mode TEXT NOT NULL,
       kind TEXT NOT NULL,
       task_id TEXT,
@@ -216,6 +229,7 @@ function initDb(): void {
     );
     CREATE TABLE IF NOT EXISTS task (
       id TEXT PRIMARY KEY NOT NULL,
+      workspace_id TEXT NOT NULL,
       title TEXT NOT NULL,
       ticket_ref TEXT,
       meta TEXT,
@@ -236,6 +250,7 @@ function initDb(): void {
     );
     CREATE TABLE IF NOT EXISTS project (
       id TEXT PRIMARY KEY NOT NULL,
+      workspace_id TEXT NOT NULL,
       name TEXT NOT NULL,
       color TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -244,6 +259,22 @@ function initDb(): void {
       synced_at TEXT
     );
   `);
+
+  // Seeds one real-UUID workspace on first run — not a sentinel string id
+  // like extension's old 'default' (a migration scar there, not a design
+  // choice worth replicating, see schema.ts's workspace comment). Resolved
+  // before any task/project/session seeding below, all of which need a
+  // workspaceId. Independent of the habits/tasks empty-table checks further
+  // down — this only ever runs its own insert once, on whichever app run
+  // first creates the workspace table.
+  let workspaceRow = expoDb.getFirstSync<{ id: string }>('SELECT id FROM workspace WHERE deleted_at IS NULL LIMIT 1');
+  if (!workspaceRow) {
+    const now = new Date().toISOString();
+    const id = uid();
+    db.insert(schema.workspace).values({ id, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
+    workspaceRow = { id };
+  }
+  const workspaceId = workspaceRow.id;
 
   const existing = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM habits');
   if (existing?.count === 0) {
@@ -268,7 +299,7 @@ function initDb(): void {
   if (hasTasks?.count === 0) {
     const createdAt = new Date().toISOString();
     for (const seedTask of SEED_TASKS) {
-      db.insert(schema.task).values({ ...seedTask, id: uid(), createdAt, updatedAt: createdAt }).run();
+      db.insert(schema.task).values({ ...seedTask, id: uid(), workspaceId, createdAt, updatedAt: createdAt }).run();
     }
   }
 }

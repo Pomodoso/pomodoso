@@ -6,7 +6,10 @@ import { project } from '@/db/schema';
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { uid } from '@/utils/id';
 
+import { useWorkspace } from './useWorkspace';
+
 export function useProjects() {
+  const { workspaceId } = useWorkspace();
   const { data: projects } = useLiveQuery(
     db.select().from(project).where(isNull(project.deletedAt)).orderBy(asc(project.name)),
   );
@@ -14,7 +17,7 @@ export function useProjects() {
   function addProject(name: string, color: string = PROJECT_PALETTE[0]): string {
     const id = uid();
     const now = new Date().toISOString();
-    db.insert(project).values({ id, name: name.trim(), color, createdAt: now, updatedAt: now }).run();
+    db.insert(project).values({ id, workspaceId, name: name.trim(), color, createdAt: now, updatedAt: now }).run();
     return id;
   }
 
