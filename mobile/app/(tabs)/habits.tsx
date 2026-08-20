@@ -10,9 +10,11 @@ import { toMondayFirstDow } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
 import { useHabits } from '@/hooks/useHabits';
+import { useSettings } from '@/hooks/useSettings';
 
 export default function HabitsScreen() {
   const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit } = useHabits();
+  const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
 
@@ -49,7 +51,19 @@ export default function HabitsScreen() {
           <Text style={styles.challengeMeta}>7 / 21 días · racha activa</Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Today</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Today</Text>
+          <Pressable
+            style={[styles.pinButton, settings.showHabitsInToday && styles.pinButtonActive]}
+            onPress={() => update('showHabitsInToday', !settings.showHabitsInToday)}
+            hitSlop={6}
+          >
+            <Ionicons name="pin" size={11} color={settings.showHabitsInToday ? colors.accent : colors.textTertiary} />
+            <Text style={[styles.pinButtonText, settings.showHabitsInToday && styles.pinButtonTextActive]}>
+              {settings.showHabitsInToday ? 'In Today' : 'Show in Today'}
+            </Text>
+          </Pressable>
+        </View>
 
         {habits.map(habit => (
           <HabitRow
@@ -109,6 +123,20 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 10,
   },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  pinButtonActive: { borderColor: colors.accent },
+  pinButtonText: { fontSize: 10, fontWeight: '400', color: colors.textTertiary },
+  pinButtonTextActive: { fontWeight: '600', color: colors.accent },
   challengeCard: {
     backgroundColor: colors.accentSoft,
     borderWidth: 1,
