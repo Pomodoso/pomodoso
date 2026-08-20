@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
@@ -37,10 +37,13 @@ function useNotificationPermission() {
 export default function MoreScreen() {
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const notificationsGranted = useNotificationPermission();
-  const { data: allTasks } = useLiveQuery(db.select().from(task));
-  const { data: allHabits } = useLiveQuery(db.select().from(habits));
+  const { data: allTasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
+  const { data: allHabits } = useLiveQuery(db.select().from(habits).where(isNull(habits.deletedAt)));
   const { data: completedSessions } = useLiveQuery(
-    db.select().from(pomodoroSession).where(eq(pomodoroSession.status, 'completed')),
+    db
+      .select()
+      .from(pomodoroSession)
+      .where(and(eq(pomodoroSession.status, 'completed'), isNull(pomodoroSession.deletedAt))),
   );
 
   async function handleTestNotification(seconds: number): Promise<void> {

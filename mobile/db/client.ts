@@ -70,7 +70,7 @@ function initDb(): void {
   // needs to keep.
   const hasCurrentSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT kind, days FROM habits LIMIT 1');
+      expoDb.getFirstSync('SELECT kind, days, created_at, updated_at, deleted_at, synced_at FROM habits LIMIT 1');
       return true;
     } catch {
       return false;
@@ -81,10 +81,11 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for pomodoro_session's taskTitle ->
-  // taskId change, and later the prompt_resolved column (break flow).
+  // taskId change, later the prompt_resolved column (break flow), and now
+  // the Fase B sync columns.
   const hasCurrentSessionSchema = (() => {
     try {
-      expoDb.getFirstSync('SELECT task_id, prompt_resolved FROM pomodoro_session LIMIT 1');
+      expoDb.getFirstSync('SELECT task_id, prompt_resolved, updated_at, deleted_at, synced_at FROM pomodoro_session LIMIT 1');
       return true;
     } catch {
       return false;
@@ -95,12 +96,12 @@ function initDb(): void {
   }
 
   // Same throwaway-spike migration story for task's done -> status change,
-  // and later the project_id, is_today, recurrence/completed_dates, and
-  // description/links/note_entries columns.
+  // later the project_id, is_today, recurrence/completed_dates, and
+  // description/links/note_entries columns, and now the Fase B sync columns.
   const hasCurrentTaskSchema = (() => {
     try {
       expoDb.getFirstSync(
-        'SELECT status, project_id, is_today, recurrence, completed_dates, description, links, note_entries FROM task LIMIT 1',
+        'SELECT status, project_id, is_today, recurrence, completed_dates, description, links, note_entries, deleted_at, synced_at FROM task LIMIT 1',
       );
       return true;
     } catch {
@@ -109,6 +110,20 @@ function initDb(): void {
   })();
   if (!hasCurrentTaskSchema) {
     expoDb.execSync('DROP TABLE IF EXISTS task;');
+  }
+
+  // Project didn't need a schema-version probe before (no shape changes
+  // since #31) — Fase B's deleted_at/synced_at is its first one.
+  const hasCurrentProjectSchema = (() => {
+    try {
+      expoDb.getFirstSync('SELECT deleted_at, synced_at FROM project LIMIT 1');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (!hasCurrentProjectSchema) {
+    expoDb.execSync('DROP TABLE IF EXISTS project;');
   }
 
   expoDb.execSync(`
@@ -121,14 +136,21 @@ function initDb(): void {
       unit TEXT,
       unit_amount INTEGER,
       days TEXT NOT NULL DEFAULT '[]',
-      sort_order INTEGER NOT NULL
+      sort_order INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
     );
     CREATE TABLE IF NOT EXISTS habit_history (
       id TEXT PRIMARY KEY NOT NULL,
       habit_id TEXT NOT NULL,
       date TEXT NOT NULL,
       count INTEGER NOT NULL DEFAULT 0,
-      done INTEGER NOT NULL DEFAULT 0
+      done INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
     );
     CREATE TABLE IF NOT EXISTS pomodoro_session (
       id TEXT PRIMARY KEY NOT NULL,
@@ -141,7 +163,10 @@ function initDb(): void {
       ended_at TEXT,
       status TEXT NOT NULL,
       notification_id TEXT,
-      prompt_resolved INTEGER NOT NULL DEFAULT 0
+      prompt_resolved INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
     );
     CREATE TABLE IF NOT EXISTS timer_prefs (
       id TEXT PRIMARY KEY NOT NULL,
@@ -167,24 +192,29 @@ function initDb(): void {
       note_entries TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
     );
     CREATE TABLE IF NOT EXISTS project (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
       color TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
     );
   `);
 
   const existing = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM habits');
   if (existing?.count === 0) {
+    const now = new Date().toISOString();
     for (const habit of SEED_HABITS) {
-      db.insert(schema.habits).values(habit).run();
+      db.insert(schema.habits).values({ ...habit, createdAt: now, updatedAt: now }).run();
     }
     for (const row of seedHistory()) {
-      db.insert(schema.habitHistory).values(row).run();
+      db.insert(schema.habitHistory).values({ ...row, updatedAt: now }).run();
     }
   }
 
