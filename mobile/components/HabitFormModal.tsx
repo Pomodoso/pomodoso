@@ -18,6 +18,11 @@ interface HabitFormModalProps {
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
+// Must not exceed useHabits.ts's computeStreak scan bound (3650) — a longer
+// challenge would be accepted here but could never reach 100% since the
+// streak calculation itself can't count past that many days.
+const MAX_CHALLENGE_LENGTH_DAYS = 3650;
+
 // Mirrors extension's habit form (HomeState.tsx): name, icon, boolean/counter
 // kind, days-of-week toggle row defaulting to every day, no separate
 // "weekdays" preset — just per-day toggles, same as the extension actually
@@ -76,7 +81,8 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   const goalValid = kind === 'boolean' || (!isNaN(parsedGoal) && parsedGoal > 0);
 
   const parsedChallengeLength = parseInt(challengeLengthDays, 10);
-  const challengeLengthValid = !isChallenge || (!isNaN(parsedChallengeLength) && parsedChallengeLength > 0);
+  const challengeLengthValid =
+    !isChallenge || (!isNaN(parsedChallengeLength) && parsedChallengeLength > 0 && parsedChallengeLength <= MAX_CHALLENGE_LENGTH_DAYS);
 
   function handleSave(): void {
     const trimmed = name.trim();
@@ -211,6 +217,11 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
                 <Text style={styles.everyDayHint}>
                   Shows a progress card counting today&apos;s active streak toward the goal. Missing a scheduled day resets it.
                 </Text>
+                {!challengeLengthValid && (
+                  <Text style={[styles.everyDayHint, styles.challengeLengthError]}>
+                    Enter a number from 1 to {MAX_CHALLENGE_LENGTH_DAYS}.
+                  </Text>
+                )}
               </>
             )}
 
@@ -318,6 +329,7 @@ const styles = StyleSheet.create({
   dayBtnTextActive: { color: colors.accent },
   everyDayHint: { fontSize: 11, color: colors.textTertiary, marginTop: 6 },
   challengeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 },
+  challengeLengthError: { color: colors.accent },
   saveBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 18 },
   saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: colors.surface },

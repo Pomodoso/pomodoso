@@ -115,7 +115,12 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   if (h.createdAt) extra.createdAt = h.createdAt;
   if (h.unit != null) extra.unit = h.unit;
   if (h.unitAmount != null) extra.unitAmount = h.unitAmount;
-  if (h.challengeLengthDays != null) extra.challengeLengthDays = h.challengeLengthDays;
+  // Always present (even null) unlike the two fields above — pull's
+  // `'challengeLengthDays' in hExtra` check relies on the key actually being
+  // there to tell "disabled" apart from "the pushing client doesn't know
+  // about this field yet". Omitting it when null (like unit/unitAmount do)
+  // would make a disabled-on-this-device challenge never clear on others.
+  extra.challengeLengthDays = h.challengeLengthDays;
   return extra;
 }
 
