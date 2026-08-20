@@ -101,6 +101,7 @@ export interface HabitRow extends SyncMeta {
   unitAmount?: number;
   timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
   endDate?: string;         // YYYY-MM-DD — hidden from Today after this date
+  challengeLengthDays?: number; // e.g. 21 — renders a "Day N of length" challenge card
   streakLabel: string;
   days: number[];
   workspaceId?: string | null;

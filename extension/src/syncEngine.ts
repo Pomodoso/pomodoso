@@ -395,6 +395,7 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
   if (h.timeUnit) extra['timeUnit'] = true;
   if (h.endDate) extra['endDate'] = h.endDate;
+  if (h.challengeLengthDays) extra['challengeLengthDays'] = h.challengeLengthDays;
   return extra;
 }
 
@@ -563,6 +564,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(hExtra['unitAmount'] !== undefined ? { unitAmount: hExtra['unitAmount'] as number } : {}),
         ...(hExtra['timeUnit'] ? { timeUnit: true } : {}),
         ...(hExtra['endDate'] ? { endDate: hExtra['endDate'] as string } : {}),
+        ...(hExtra['challengeLengthDays'] ? { challengeLengthDays: hExtra['challengeLengthDays'] as number } : {}),
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
       await db.habits.put(row);

@@ -3927,6 +3927,74 @@ function IconButton({ children, title, onClick }: { children: React.ReactNode; t
 
 // ── Habits components ─────────────────────────────────────────────────────────
 
+// pastStreak = consecutive scheduled days completed up to (not including)
+// today, matching the flame streakLabel's existing "don't count today until
+// it's actually done" semantics. daysDone adds today back in once it's
+// done — used for the 21-day challenge counter, which should tick up the
+// moment today is completed rather than waiting until tomorrow.
+function computeHabitStreak(
+  habit: Pick<HabitDef, 'kind' | 'goal' | 'days'>,
+  historyByDate: Map<string, HabitHistoryRow>,
+  timezone: string,
+): { pastStreak: number; doneToday: boolean; daysDone: number } {
+  const isHabitDone = (row: HabitHistoryRow | undefined): boolean => {
+    if (!row) return false;
+    return habit.kind === 'counter' ? (row.count ?? 0) >= (habit.goal ?? 1) : (row.done ?? false);
+  };
+
+  const today = localDate(timezone);
+  const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
+  const scheduledToday = habit.days.length === 0 || habit.days.includes(todayDow);
+  const doneToday = scheduledToday && isHabitDone(historyByDate.get(today));
+
+  // 3650 days (10 years) rather than 365 — a challenge longer than a year is
+  // unusual but not implausible for a habit tracker, and this is a handful
+  // of cheap Map lookups either way, not worth capping tighter.
+  let pastStreak = 0;
+  for (let i = 1; i < 3650; i++) {
+    const dateStr = localDate(timezone, -i);
+    const dow = (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7;
+    if (habit.days.length > 0 && !habit.days.includes(dow)) continue;
+    if (isHabitDone(historyByDate.get(dateStr))) pastStreak++;
+    else break;
+  }
+
+  return { pastStreak, doneToday, daysDone: pastStreak + (doneToday ? 1 : 0) };
+}
+
+function habitStreakLabel(pastStreak: number): string {
+  return pastStreak > 0 ? `🔥 ${pastStreak} day streak` : 'No streak yet';
+}
+
+function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number }) {
+  const length = habit.challengeLengthDays ?? 21;
+  const clamped = Math.min(daysDone, length);
+  const complete = clamped >= length;
+  return (
+    <div style={{
+      background: 'var(--color-accent-bg, rgba(200,85,61,0.08))',
+      border: '1px solid var(--color-accent)',
+      borderRadius: 'var(--radius-md)',
+      padding: '12px 14px',
+      marginBottom: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <HabitIcon kind={habit.icon} size={16} />
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{habit.name}</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
+        {complete ? `¡Completado! ${length}/${length} días` : `Día ${clamped} de ${length}. Un día a la vez.`}
+      </div>
+      <div style={{ height: 6, borderRadius: 3, background: 'var(--color-border)', overflow: 'hidden' }}>
+        <div style={{ width: `${(clamped / length) * 100}%`, height: '100%', background: 'var(--color-accent)' }} />
+      </div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 6 }}>
+        {clamped}/{length} días · {clamped > 0 ? 'racha activa' : 'sin racha'}
+      </div>
+    </div>
+  );
+}
+
 interface HabitsContentProps {
   habits: HabitDef[];
   habitCounters: Record<string, number>;
@@ -3954,6 +4022,21 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
   const closedHabits = habits.filter(h => h.endDate && todayStr > h.endDate);
   const [showClosed, setShowClosed] = useState(false);
 
+  // Self-contained full-history query (same pattern HabitHistoryView already
+  // uses) — HabitsContent is the only place that needs per-habit streaks
+  // (Today's habit rows just show done/count, no streak), so no reason to
+  // hoist this up to HomeState and prop-drill it down.
+  const allHistory: HabitHistoryRow[] = useLiveQuery(() => db.habitHistory.toArray(), []) ?? [];
+  const historyByHabit = new Map<string, Map<string, HabitHistoryRow>>();
+  for (const r of allHistory) {
+    if (!historyByHabit.has(r.habitId)) historyByHabit.set(r.habitId, new Map());
+    historyByHabit.get(r.habitId)!.set(r.date, r);
+  }
+  const streaksById = new Map(
+    activeHabits.map(h => [h.id, computeHabitStreak(h, historyByHabit.get(h.id) ?? new Map(), timezone)]),
+  );
+  const challengeHabits = activeHabits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+
   const doneCount = activeHabits.filter(h =>
     h.kind === 'boolean' ? (habitDone[h.id] ?? false) : (habitCounters[h.id] ?? 0) >= (h.goal ?? 1)
   ).length;
@@ -3980,6 +4063,14 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
           {doneCount}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--color-text-muted)' }}>/{activeHabits.length}</span>
         </div>
       </div>
+
+      {challengeHabits.length > 0 && (
+        <div style={{ marginBottom: 4 }}>
+          {challengeHabits.map(h => (
+            <ChallengeCard key={h.id} habit={h} daysDone={streaksById.get(h.id)?.daysDone ?? 0} />
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Habits</span>
@@ -4017,6 +4108,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
               count={habitCounters[habit.id] ?? 0}
               checked={habitDone[habit.id] ?? false}
               isDone={isDone}
+              streakLabel={habitStreakLabel(streaksById.get(habit.id)?.pastStreak ?? 0)}
               onCounterChange={(delta) => onCounterChange(habit.id, delta)}
               onToggle={() => onToggle(habit.id)}
               onEdit={() => onEditHabit(habit)}
@@ -4045,6 +4137,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
             checked={false}
             isDone={false}
             readOnly
+            streakLabel={habitStreakLabel(computeHabitStreak(habit, historyByHabit.get(habit.id) ?? new Map(), timezone).pastStreak)}
             onCounterChange={() => {}}
             onToggle={() => {}}
             onEdit={() => onEditHabit(habit)}
@@ -4058,12 +4151,13 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
   );
 }
 
-function HabitRow({ habit, count, checked, isDone, readOnly, onCounterChange, onToggle, onEdit, onDelete }: {
+function HabitRow({ habit, count, checked, isDone, readOnly, streakLabel, onCounterChange, onToggle, onEdit, onDelete }: {
   habit: HabitDef;
   count: number;
   checked: boolean;
   isDone: boolean;
   readOnly?: boolean;
+  streakLabel: string;
   onCounterChange: (delta: number) => void;
   onToggle: () => void;
   onEdit: () => void;
@@ -4120,7 +4214,7 @@ function HabitRow({ habit, count, checked, isDone, readOnly, onCounterChange, on
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{habit.name}</div>
         <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-          {habit.streakLabel}
+          {streakLabel}
           {habit.unit && habit.unitAmount && (
             <span style={{ marginLeft: 6, color: 'var(--color-text-faint)' }}>
               · {habit.kind === 'counter'
@@ -4423,6 +4517,8 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
     initialHabit?.timeUnit ? fmtHabitTime(initialHabit.unitAmount || 60) : '1:00',
   );
   const [endDate, setEndDate] = useState(initialHabit?.endDate ?? '');
+  const [isChallenge, setIsChallenge] = useState((initialHabit?.challengeLengthDays ?? 0) > 0);
+  const [challengeLengthDays, setChallengeLengthDays] = useState((initialHabit?.challengeLengthDays ?? 21).toString());
   const [selectedDays, setSelectedDays] = useState<number[]>(
     initialHabit ? (initialHabit.days.length === 0 ? [0,1,2,3,4,5,6] : initialHabit.days) : [0,1,2,3,4,5,6]
   );
@@ -4441,6 +4537,8 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
     const hasUnit = effUnit.length > 0;
     const parsedUnitAmount = parseInt(unitAmount, 10);
     const hasUnitAmount = !isTime && hasUnit && !isNaN(parsedUnitAmount) && parsedUnitAmount > 0;
+    const parsedChallengeLength = parseInt(challengeLengthDays, 10);
+    const hasChallenge = isChallenge && !isNaN(parsedChallengeLength) && parsedChallengeLength > 0;
     onSave({
       id: initialHabit?.id ?? crypto.randomUUID(),
       createdAt: initialHabit?.createdAt ?? now(),
@@ -4454,6 +4552,7 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       ...(hasUnit ? { unit: effUnit } : {}),
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
       ...(endDate ? { endDate } : {}),
+      ...(hasChallenge ? { challengeLengthDays: parsedChallengeLength } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global
@@ -4647,6 +4746,30 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
           <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
             Stops appearing in Today after this date — history is kept.
           </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: isChallenge ? 8 : 0 }}>
+          <input type="checkbox" checked={isChallenge} onChange={e => setIsChallenge(e.target.checked)} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>21-day challenge</span>
+        </label>
+        {isChallenge && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number"
+                min={1}
+                value={challengeLengthDays}
+                onChange={e => setChallengeLengthDays(e.target.value)}
+                style={{ ...FORM_INPUT_STYLE, width: 60 }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--color-text-faint)' }}>days</span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
+              Shows a progress card counting today's active streak toward the goal. Missing a scheduled day resets it.
+            </div>
+          </>
         )}
       </div>
 
