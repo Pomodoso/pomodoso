@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
+import { registerBackgroundSync } from '@/utils/backgroundSync';
 import { syncNow } from '@/utils/sync';
 
 // Matches extension's chrome.alarms('periodic-sync') cadence (background.ts)
@@ -24,6 +25,11 @@ export function useSyncLifecycle(): void {
     // sync immediately" behavior on load (App.tsx), rather than waiting for
     // the first foreground transition or poll tick.
     syncSilently('initial sync');
+
+    // Fase B5b: best-effort OS-scheduled catch-up sync for when the app is
+    // backgrounded/killed — see backgroundSync.ts for why this is only a
+    // supplement to, not a replacement for, the foreground triggers below.
+    registerBackgroundSync().catch(err => console.warn('[sync] background registration failed', err));
 
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') syncSilently('foreground sync');
