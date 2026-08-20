@@ -6,6 +6,7 @@ import { db } from '@/db/client';
 import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
+import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
 import { playSound } from '@/utils/sounds';
 import { triggerSync } from '@/utils/sync';
 import { secondsBetween } from '@/utils/time';
@@ -105,6 +106,30 @@ export function useTimer() {
     const interval = setInterval(() => forceTick(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, [isRunning]);
+
+  // Live Activity (Lock Screen / Dynamic Island) reconciliation — one
+  // effect deriving "what should be showing" from the active session row
+  // and syncing to it, rather than separate start/update/end calls
+  // scattered across startSession/pauseSession/resumeSession/stopSession
+  // below (see utils/liveActivity.ts's comment for why). Home and Tasks
+  // each mount their own useTimer() instance, so this can fire from more
+  // than one place when both happen to be mounted — harmless, since
+  // syncPomodoroActivity just reconciles to the same target state either
+  // way, not a toggle/mutation that could race destructively.
+  useEffect(() => {
+    if (!active) {
+      endPomodoroActivity();
+      return;
+    }
+    syncPomodoroActivity(active.id, {
+      mode: active.mode as TimerMode,
+      kind: active.kind,
+      taskTitle: activeTask?.title ?? null,
+      startedAtMs: new Date(active.startedAt).getTime(),
+      plannedDurationSeconds: active.plannedDurationSeconds,
+      pausedAtMs: active.status === 'paused' && active.pausedAt ? new Date(active.pausedAt).getTime() : null,
+    });
+  }, [active?.id, active?.status, active?.startedAt, active?.pausedAt, active?.kind, active?.mode, active?.plannedDurationSeconds, activeTask?.title]);
 
   // Reaching the end naturally (app stayed foregrounded) transitions the
   // session to completed — the notification itself already fired via the OS

@@ -5,7 +5,10 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": ["pomodoso", "com.googleusercontent.apps.997845471451-gquehumm6i8mb8cpg95m36f57gf4v643"],
+    "scheme": [
+      "pomodoso",
+      "com.googleusercontent.apps.997845471451-gquehumm6i8mb8cpg95m36f57gf4v643"
+    ],
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
@@ -40,7 +43,20 @@
       "expo-audio",
       "expo-sharing",
       "expo-secure-store",
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "expo-widgets",
+        {
+          "widgets": [
+            {
+              "name": "PomodoroActivity",
+              "displayName": "Pomodoro Timer",
+              "description": "Shows the running focus session or break on the Lock Screen and Dynamic Island.",
+              "supportedFamilies": ["accessoryCircular", "accessoryRectangular"]
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
