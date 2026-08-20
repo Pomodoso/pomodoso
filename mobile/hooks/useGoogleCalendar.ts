@@ -109,10 +109,15 @@ export function useGoogleCalendar(): {
     const next = current.includes(id) ? current.filter(c => c !== id) : [...current, id];
     pendingIdsRef.current = next;
     togglesInFlightRef.current++;
-    const chained = toggleChainRef.current.then(() => updateSelectedCalendars(workspaceId, next));
-    toggleChainRef.current = chained;
+    const writePromise = toggleChainRef.current.then(() => updateSelectedCalendars(workspaceId, next));
+    // The chain itself must never carry a rejection forward — if it did,
+    // every later `.then` (i.e. every subsequent toggle's write) would be
+    // silently skipped once one write failed, permanently until the
+    // screen remounts (Greptile P1, follow-up round). This toggle's own
+    // caller still observes a real failure via `await writePromise` below.
+    toggleChainRef.current = writePromise.catch(() => {});
     try {
-      await chained;
+      await writePromise;
       await refresh();
     } finally {
       togglesInFlightRef.current--;

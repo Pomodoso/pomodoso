@@ -23,22 +23,15 @@ function syncSilently(reason: string): void {
 // either, only the generic entity sync; a connected calendar refreshes on
 // app-open/foreground, the manual Sync now button, or right after connect.
 //
-// Module-level in-flight guard — a cold-start sync overlapping a near-
-// immediate foreground transition (or two rapid foreground transitions)
-// would otherwise run two uncoordinated read-check-insert passes over the
-// same Google events; googleEventId has no uniqueness constraint, so both
-// passes could see the same event as "not yet imported" and insert two
-// rows for it (Greptile P1). syncTodayMeetings has no reentrancy guard of
-// its own, so it's enforced here instead.
-let calendarSyncInFlight = false;
+// De-duping overlapping calls (e.g. a cold-start sync racing a near-
+// immediate foreground transition) is handled inside
+// syncTodayMeetings/syncAllConnectedWorkspaces itself (googleCalendar.ts),
+// not here — a guard local to this file wouldn't cover connect()'s or the
+// manual Sync now button's own direct calls to the same underlying
+// non-atomic import (Greptile P1, follow-up round after an earlier version
+// of this fix only guarded this file's two call sites).
 function syncCalendarSilently(reason: string): void {
-  if (calendarSyncInFlight) return;
-  calendarSyncInFlight = true;
-  syncAllConnectedWorkspaces()
-    .catch(err => console.warn(`[calendar] ${reason} failed`, err))
-    .finally(() => {
-      calendarSyncInFlight = false;
-    });
+  syncAllConnectedWorkspaces().catch(err => console.warn(`[calendar] ${reason} failed`, err));
 }
 
 // Mounted once at the app root (_layout.tsx). syncNow() itself no-ops

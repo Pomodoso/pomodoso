@@ -251,7 +251,7 @@ interface GoogleEventItem {
 // notes on re-import" rule, same soft-delete-if-no-longer-returned pass.
 // Local device timezone (not a stored setting — mobile has no per-workspace
 // timezone field the extension does) determines "today"'s boundaries.
-export async function syncTodayMeetings(wsId: string): Promise<void> {
+async function syncTodayMeetingsImpl(wsId: string): Promise<void> {
   const token = await getValidToken(wsId);
   if (!token) return;
 
@@ -405,6 +405,31 @@ export async function syncTodayMeetings(wsId: string): Promise<void> {
 
   await writeRecord('calendar_last_synced', wsId, new Date().toISOString());
   if (wroteAny) triggerSync();
+}
+
+// Per-workspace de-dupe guard, at the engine level rather than in any one
+// caller — syncTodayMeetingsImpl does a non-atomic read-check-insert over
+// googleEventId (no uniqueness constraint backing it), so two overlapping
+// passes for the same workspace can each see the same Google event as
+// "not yet imported" and insert duplicate rows. Callers include
+// useSyncLifecycle's cold-start/foreground triggers, useGoogleCalendar's
+// connect() (immediate first sync) and manual syncNow() button, and the
+// extension-mirroring syncAllConnectedWorkspaces below — a guard living in
+// just one of those call sites (as an earlier version of this PR had, in
+// useSyncLifecycle only) would still leave the others racing each other
+// (Greptile P1, follow-up round). An overlapping call for the SAME
+// workspace returns the in-flight promise instead of starting a fresh
+// pass; different workspaces still run independently/in parallel, since
+// they touch disjoint sets of `meeting` rows.
+const syncInFlightByWorkspace = new Map<string, Promise<void>>();
+export function syncTodayMeetings(wsId: string): Promise<void> {
+  const existing = syncInFlightByWorkspace.get(wsId);
+  if (existing) return existing;
+  const promise = syncTodayMeetingsImpl(wsId).finally(() => {
+    syncInFlightByWorkspace.delete(wsId);
+  });
+  syncInFlightByWorkspace.set(wsId, promise);
+  return promise;
 }
 
 // Syncs every workspace that has a calendar connection — call on app
