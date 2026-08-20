@@ -57,13 +57,13 @@ pub async fn push(
     Extension(auth): Extension<AuthUser>,
     Json(body): Json<PushBody>,
 ) -> Result<Json<Value>> {
-    require_sync_entitlement(&state, auth.id).await?;
+    let features = require_sync_entitlement(&state, auth.id).await?;
 
     let mut accepted = 0usize;
 
     // Pass 1: workspaces first — bootstraps membership so later access checks work
     for entity in body.entities.iter().filter(|e| e.table == "workspace") {
-        push_workspace(&state, auth.id, entity).await?;
+        push_workspace(&state, auth.id, entity, &features).await?;
         accepted += 1;
     }
 
@@ -124,6 +124,16 @@ pub async fn push(
                 .await
                 .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
+            // Deliberately NOT gated on features.calendar (nor is pull's
+            // meeting query — see the "Meetings" block in pull() for the
+            // full reasoning, a structural cursor problem on the read side
+            // as well as this one on the write side: the client stamps
+            // synced_at on every entity it just pushed unconditionally, with
+            // no per-entity ack from `accepted` — rejecting a meeting write
+            // here would make the client believe it synced when it never
+            // reached the server, silently and permanently losing that
+            // update/deletion with no retry path (Greptile P1, first version
+            // of this change).
             "meeting" => push_meeting(&state, ws, &allowed_vec, entity).await.is_ok(),
             _ => false,
         };
@@ -153,7 +163,12 @@ async fn user_workspace_ids(state: &AppState, user_id: uuid::Uuid) -> Result<Has
     Ok(rows.into_iter().collect())
 }
 
-async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+async fn push_workspace(
+    state: &AppState,
+    user_id: uuid::Uuid,
+    e: &SyncEntity,
+    features: &crate::models::EntitlementFeatures,
+) -> Result<()> {
     let id = match parse_entity_id(e) {
         Some(v) => v,
         None => return Ok(()),
@@ -161,14 +176,59 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
     let name = e.data["name"].as_str().unwrap_or("Workspace").to_owned();
     let color = e.data["color"].as_str().unwrap_or("#6366f1").to_owned();
 
+    let mut tx = state.pool.begin().await?;
+
+    // Serializes the whole check-then-write section below across concurrent
+    // pushes for the same user (e.g. two devices creating a workspace at
+    // nearly the same time) — without this, two overlapping requests could
+    // each read a count under max_workspaces before either INSERT lands,
+    // letting both through and exceeding the cap (Greptile P1, security:
+    // count and insert were separate unlocked queries). hashtext() maps the
+    // user id to the bigint key pg_advisory_xact_lock wants; the lock is
+    // scoped to this transaction and releases automatically on commit or
+    // rollback, so an early return below never leaks it. Plain runtime
+    // `query` (not the `query!` macro) — a `SELECT void_fn()` result isn't a
+    // type sqlx's compile-time check needs to care about here.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
     // Never adopt a workspace that already belongs to someone else. Without this,
     // pushing a workspace entity with a known foreign id would self-grant an
     // 'owner' membership row below and expose that account's data via pull.
-    let existing_owner = sqlx::query_scalar!("SELECT owner_id FROM workspace WHERE id = $1", id,)
-        .fetch_optional(&state.pool)
-        .await?;
-    if matches!(existing_owner, Some(owner) if owner != user_id) {
-        return Ok(());
+    let existing = sqlx::query!(
+        "SELECT owner_id, deleted_at FROM workspace WHERE id = $1",
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    if matches!(&existing, Some(row) if row.owner_id != user_id) {
+        return Ok(()); // tx drops here — rolls back (nothing was written) and releases the lock
+    }
+
+    // max_workspaces gates any push that makes a workspace LIVE when it
+    // wasn't already — not just brand new ids. Originally this only checked
+    // existing.is_none(), which missed restoring a soft-deleted workspace
+    // (a real row, but not currently live) back to live by clearing
+    // deleted_at — that path skipped the cap entirely (Greptile P1).
+    // Editing/renaming an already-live workspace, or soft-deleting one,
+    // never hits this: the live count doesn't increase either way.
+    let was_live = existing
+        .as_ref()
+        .is_some_and(|row| row.deleted_at.is_none());
+    let will_be_live = e.deleted_at.is_none();
+    if !was_live && will_be_live {
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM workspace WHERE owner_id = $1 AND deleted_at IS NULL",
+            user_id,
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .unwrap_or(0);
+        if count >= features.max_workspaces as i64 {
+            return Ok(());
+        }
     }
 
     sqlx::query!(
@@ -190,7 +250,7 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
         e.updated_at,
         e.deleted_at,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query!(
@@ -202,9 +262,10 @@ async fn push_workspace(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
         id,
         user_id,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
@@ -723,6 +784,9 @@ pub async fn pull(
     Extension(auth): Extension<AuthUser>,
     Query(q): Query<PullQuery>,
 ) -> Result<Json<PullResponse>> {
+    // Sync-gate only — the resolved features aren't otherwise used on the
+    // pull path (see the "Meetings" block below for why calendar isn't
+    // gated here).
     require_sync_entitlement(&state, auth.id).await?;
 
     let mut entities: Vec<SyncEntity> = Vec::new();
@@ -912,7 +976,21 @@ pub async fn pull(
         });
     }
 
-    // Meetings
+    // Meetings — NOT gated on entitlements.features.calendar, deliberately
+    // (reverted after Greptile caught a second, structural problem with
+    // trying to). pull's cursor is a single server_time covering every
+    // table in one response; the client unconditionally advances its stored
+    // `since` to that value regardless of what was actually included. Omit
+    // a meeting here for a non-calendar account and it's gone from every
+    // future pull too — `since` has already moved past its updated_at — even
+    // after the account gains calendar access. Push isn't gated for the
+    // same class of reason (see push()'s "meeting" arm). Properly enforcing
+    // calendar at the sync layer needs per-table cursors or an equivalent
+    // protocol change (touches the wire format and extension's syncEngine.ts
+    // too) — real scope beyond hardening what already exists, not done here.
+    // Calendar access itself still isn't exposed anywhere without a paid
+    // OAuth connect flow the client has to build (none exists yet, extension
+    // or mobile), so this isn't a live hole today, just not newly closed.
     for row in sqlx::query!(
         r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
                   track_mode, project_id, google_event_id, extra, updated_at, deleted_at
@@ -1000,7 +1078,13 @@ pub async fn pull(
 
 // ─── Guards ───────────────────────────────────────────────────────────────────
 
-async fn require_sync_entitlement(state: &AppState, user_id: uuid::Uuid) -> Result<()> {
+// Returns the resolved features alongside the pass/fail check so callers
+// (push/pull) don't need a second query to gate other per-feature behavior
+// (max_workspaces, calendar) within the same request.
+async fn require_sync_entitlement(
+    state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<crate::models::EntitlementFeatures> {
     let sub = sqlx::query!(
         "SELECT plan, feature_overrides FROM subscription WHERE user_id = $1",
         user_id
@@ -1009,18 +1093,12 @@ async fn require_sync_entitlement(state: &AppState, user_id: uuid::Uuid) -> Resu
     .await?
     .ok_or(AppError::Forbidden)?;
 
-    let is_paid = matches!(sub.plan.as_str(), "pro" | "founder_lifetime");
-    let override_sync = sub
-        .feature_overrides
-        .as_ref()
-        .and_then(|v| v.get("sync"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    if !is_paid && !override_sync {
+    let features =
+        crate::models::EntitlementFeatures::resolve(&sub.plan, sub.feature_overrides.as_ref());
+    if !features.sync {
         return Err(AppError::Forbidden);
     }
-    Ok(())
+    Ok(features)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

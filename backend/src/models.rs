@@ -88,6 +88,21 @@ impl EntitlementFeatures {
             history_days: 9999,
         }
     }
+
+    /// Resolves a plan string + optional per-user overrides straight into
+    /// features, without needing a full `Subscription` row — callers that
+    /// only fetched `plan`/`feature_overrides` (e.g. sync.rs's entitlement
+    /// guards) can use this instead of constructing a fake `Subscription`.
+    pub fn resolve(plan: &str, overrides: Option<&serde_json::Value>) -> Self {
+        let base = match plan {
+            "pro" | "founder_lifetime" => Self::pro(),
+            _ => Self::free(),
+        };
+        match overrides {
+            Some(o) => apply_overrides(base, o),
+            None => base,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,21 +113,9 @@ pub struct Entitlements {
 
 impl Entitlements {
     pub fn from_subscription(sub: &Subscription) -> Self {
-        let base = match sub.plan.as_str() {
-            "pro" | "founder_lifetime" => EntitlementFeatures::pro(),
-            _ => EntitlementFeatures::free(),
-        };
-
-        // Apply per-user feature_overrides (for dev/testing)
-        let features = if let Some(overrides) = &sub.feature_overrides {
-            apply_overrides(base, overrides)
-        } else {
-            base
-        };
-
         Self {
             plan: sub.plan.clone(),
-            features,
+            features: EntitlementFeatures::resolve(&sub.plan, sub.feature_overrides.as_ref()),
         }
     }
 }
