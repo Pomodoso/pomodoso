@@ -15,6 +15,7 @@ import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
 import { isAllDayMeetingTime, parseMeetingTime, useMeetings } from '@/hooks/useMeetings';
 import { useProjects } from '@/hooks/useProjects';
+import { useSettings } from '@/hooks/useSettings';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
@@ -34,6 +35,7 @@ export default function HomeScreen() {
   const { workspace } = useWorkspace();
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const { meetings } = useMeetings();
+  const { settings } = useSettings();
   const {
     display,
     idleMode,
@@ -219,37 +221,41 @@ export default function HomeScreen() {
           </>
         )}
 
-        <Text style={styles.sectionTitle}>Habits today</Text>
-        {habits.filter(h => h.scheduledToday).map(habit => (
-          <View key={habit.id} style={styles.habitRow}>
-            <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
-              <Ionicons
-                name={habit.icon as ComponentProps<typeof Ionicons>['name']}
-                size={18}
-                color={habit.done ? colors.success : colors.textTertiary}
-              />
-            </View>
-            <View style={styles.habitNameBlock}>
-              <Text style={styles.habitName}>{habit.name}</Text>
-              {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
-                <Text style={styles.habitSubtext}>
-                  {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
-                  {habit.unit}
-                </Text>
-              )}
-            </View>
-            <HabitControl
-              kind={habit.kind}
-              done={habit.done}
-              count={habit.count}
-              goal={habit.goal}
-              onToggle={() => toggleHabit(habit.id)}
-              onIncrement={delta => incrementHabit(habit.id, delta)}
-            />
-          </View>
-        ))}
+        {settings.showHabitsInToday && (
+          <>
+            <Text style={styles.sectionTitle}>Habits today</Text>
+            {habits.filter(h => h.scheduledToday).map(habit => (
+              <View key={habit.id} style={styles.habitRow}>
+                <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
+                  <Ionicons
+                    name={habit.icon as ComponentProps<typeof Ionicons>['name']}
+                    size={18}
+                    color={habit.done ? colors.success : colors.textTertiary}
+                  />
+                </View>
+                <View style={styles.habitNameBlock}>
+                  <Text style={styles.habitName}>{habit.name}</Text>
+                  {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
+                    <Text style={styles.habitSubtext}>
+                      {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
+                      {habit.unit}
+                    </Text>
+                  )}
+                </View>
+                <HabitControl
+                  kind={habit.kind}
+                  done={habit.done}
+                  count={habit.count}
+                  goal={habit.goal}
+                  onToggle={() => toggleHabit(habit.id)}
+                  onIncrement={delta => incrementHabit(habit.id, delta)}
+                />
+              </View>
+            ))}
+          </>
+        )}
 
-        {meetings.length > 0 && (
+        {settings.showMeetingsInToday && meetings.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Meetings today</Text>
             {meetings.map(m => (

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
 import { useGoogleCalendar } from '@/hooks/useGoogleCalendar';
+import { useSettings } from '@/hooks/useSettings';
 
 // Mirrors extension's WorkspaceCalendarSection (SettingsState.tsx):
 // disconnected state has marketing copy + a Connect button; connected state
@@ -23,6 +24,7 @@ import { useGoogleCalendar } from '@/hooks/useGoogleCalendar';
 export default function CalendarScreen(): React.JSX.Element {
   const { connection, calendars, lastSynced, loading, connecting, syncing, connect, disconnect, syncNow, toggleCalendar } =
     useGoogleCalendar();
+  const { settings, update } = useSettings();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleConnect(): Promise<void> {
@@ -90,6 +92,20 @@ export default function CalendarScreen(): React.JSX.Element {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.pinRow}>
+          <Text style={styles.pinRowLabel}>Meetings today section on Home</Text>
+          <Pressable
+            style={[styles.pinButton, settings.showMeetingsInToday && styles.pinButtonActive]}
+            onPress={() => update('showMeetingsInToday', !settings.showMeetingsInToday)}
+            hitSlop={6}
+          >
+            <Ionicons name="pin" size={11} color={settings.showMeetingsInToday ? colors.accent : colors.textTertiary} />
+            <Text style={[styles.pinButtonText, settings.showMeetingsInToday && styles.pinButtonTextActive]}>
+              {settings.showMeetingsInToday ? 'In Today' : 'Show in Today'}
+            </Text>
+          </Pressable>
+        </View>
+
         {loading ? (
           <ActivityIndicator color={colors.textTertiary} style={{ marginTop: 40 }} />
         ) : connection ? (
@@ -175,6 +191,27 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  pinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 14,
+  },
+  pinRowLabel: { flex: 1, fontSize: 11.5, color: colors.textTertiary },
+  pinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  pinButtonActive: { borderColor: colors.accent },
+  pinButtonText: { fontSize: 10, fontWeight: '400', color: colors.textTertiary },
+  pinButtonTextActive: { fontWeight: '600', color: colors.accent },
   card: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -19,6 +19,16 @@ export interface AppSettings {
   // key exactly (db.ts), and the shape is already cohesive from
   // @pomodoso/types, so there's nothing to gain from splitting it up.
   soundSettings: SoundSettings;
+  // Mirrors the extension's Habits/Schedule tab "📌 Show in Today" pin
+  // (HomeState.tsx's showHabitsInToday/showScheduleInToday) — pins the whole
+  // section off Home rather than per-item. Unlike the extension's
+  // showHabitsInToday (unpersisted React state, resets true every popup
+  // open), both are persisted here: mobile stays foregrounded/backgrounded
+  // far more than a popup gets reopened, so resetting on every launch would
+  // make the toggle nearly useless. Default true, same as both extension
+  // toggles.
+  showHabitsInToday: boolean;
+  showMeetingsInToday: boolean;
 }
 
 // Matches @pomodoso/types' DEFAULT_SOUND_SETTINGS exactly (kept as a literal
@@ -52,6 +62,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   weekStart: 0,
   workDays: [0, 1, 2, 3, 4],
   soundSettings: DEFAULT_SOUND_SETTINGS,
+  showHabitsInToday: true,
+  showMeetingsInToday: true,
 };
 
 const KEYS: Record<keyof AppSettings, string> = {
@@ -64,6 +76,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   weekStart: 'week_start',
   workDays: 'work_days',
   soundSettings: 'sound_settings',
+  showHabitsInToday: 'show_habits_in_today',
+  showMeetingsInToday: 'show_meetings_in_today',
 };
 
 export function useSettings() {
@@ -102,6 +116,8 @@ export function useSettings() {
     weekStart: get('weekStart'),
     workDays: get('workDays'),
     soundSettings: get('soundSettings'),
+    showHabitsInToday: get('showHabitsInToday'),
+    showMeetingsInToday: get('showMeetingsInToday'),
   };
 
   function update<K extends keyof AppSettings>(field: K, next: AppSettings[K]): void {
