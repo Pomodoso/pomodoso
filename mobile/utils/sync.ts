@@ -548,3 +548,23 @@ export async function syncNow(): Promise<void> {
   await push(client);
   await pull(client);
 }
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced, error-swallowing trigger for automatic sync points (every
+ *  mutation call site, matching extension's own ~25 triggerSync() calls
+ *  throughout App.tsx; also foreground/background-fetch triggers, Fase
+ *  B5b). Same 1.5s window as extension's triggerSync — batches rapid
+ *  changes (e.g. typing in a text field) into one push instead of one per
+ *  keystroke. Deliberately silent on failure (network offline, not signed
+ *  in, not entitled) — an automatic background trigger popping an error
+ *  Alert would be wrong UX; the manual "Sync now" button in Settings calls
+ *  syncNow() directly instead, so it can surface a real failure to the user
+ *  who explicitly asked for it. */
+export function triggerSync(debounceMs = 1500): void {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    syncNow().catch(err => console.warn('[sync] triggerSync failed', err));
+  }, debounceMs);
+}

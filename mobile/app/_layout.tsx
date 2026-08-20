@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { colors } from '@/constants/theme';
+import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -22,6 +23,8 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     'SpaceMono-Regular': require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  useSyncLifecycle();
 
   useEffect(() => {
     if (error) throw error;

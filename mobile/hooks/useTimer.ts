@@ -7,6 +7,7 @@ import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { playSound } from '@/utils/sounds';
+import { triggerSync } from '@/utils/sync';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
@@ -133,6 +134,7 @@ export function useTimer() {
       // play the sound twice for one real completion.
       if (result.changes > 0) {
         playSound(active.kind === 'focus' ? 'pomo-done' : 'break-done', settings.soundSettings);
+        triggerSync();
       }
     }
   });
@@ -329,6 +331,10 @@ export function useTimer() {
       // Matches extension's App.tsx: only pomodoro starts get a sound
       // (stopwatch doesn't), same event as a follow-up focus after a break.
       if (mode === 'pomodoro') playSound('focus-start', settings.soundSettings);
+      // No triggerSync() here — an 'active' session is never itself pushed
+      // (only completed focus sessions are, per push()'s filter); that
+      // happens at the completion effect above. Firing it here would just
+      // reset the shared debounce window for nothing new to send.
     } finally {
       isMutatingRef.current = false;
     }
@@ -368,6 +374,7 @@ export function useTimer() {
       // Matches background.ts: 'break-start' when the follow-up is a break,
       // 'focus-start' when it's the next pomodoro after one.
       playSound(kind === 'focus' ? 'focus-start' : 'break-start', settings.soundSettings);
+      // No triggerSync() — same reasoning as startSession.
     } finally {
       isMutatingRef.current = false;
     }

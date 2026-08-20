@@ -11,6 +11,7 @@ import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { activeOccurrence } from '@/utils/recurrence';
 import { playSound } from '@/utils/sounds';
+import { triggerSync } from '@/utils/sync';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
@@ -147,6 +148,7 @@ export function useTasks() {
         updatedAt: now,
       })
       .run();
+    triggerSync();
   }
 
   // Mirrors extension's updateTask intercept (App.tsx), extended to cover
@@ -170,6 +172,7 @@ export function useTasks() {
     // the recurring or one-off path handled it above, but only for 'done' —
     // 'cancelled' never gets a sound in the extension either.
     if (status === 'done') playSound('task-done', settingsValue.soundSettings);
+    triggerSync();
   }
 
   function resolveRecurringOccurrence(id: string): void {
@@ -215,6 +218,7 @@ export function useTasks() {
       })
       .where(eq(task.id, id))
       .run();
+    triggerSync();
   }
 
   function updateTask(
@@ -225,6 +229,7 @@ export function useTasks() {
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+    triggerSync();
   }
 
   function setLinks(id: string, links: TaskLink[]): void {
@@ -232,6 +237,7 @@ export function useTasks() {
       .set({ links: JSON.stringify(links), updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+    triggerSync();
   }
 
   function setNoteEntries(id: string, noteEntries: NoteEntry[]): void {
@@ -239,6 +245,7 @@ export function useTasks() {
       .set({ noteEntries: JSON.stringify(noteEntries), updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+    triggerSync();
   }
 
   // Retroactive time log, not a live timer session — mirrors extension's
@@ -266,6 +273,7 @@ export function useTasks() {
         updatedAt: endedAt,
       })
       .run();
+    triggerSync();
   }
 
   // Priority/Today membership mirrors extension's separate taskOrders table
@@ -282,6 +290,12 @@ export function useTasks() {
 
   // Returns false (no-op) if adding would exceed maxPriorities, or if the
   // task is resolved — caller decides how to surface that.
+  // No triggerSync() calls here — isPriority/isToday aren't part of what
+  // push() sends for a task (Fase B4's documented task_order gap), and this
+  // deliberately doesn't bump updatedAt either (see the comment above), so
+  // there's nothing that would ever become dirty from this write. Calling
+  // triggerSync() anyway would just reset the shared debounce window and
+  // delay whatever else is actually pending, for no benefit.
   function togglePriority(id: string, maxPriorities: number): boolean {
     const current = (tasks ?? []).find(t => t.id === id);
     if (!current) return false;
@@ -349,6 +363,7 @@ export function useTasks() {
       tx.update(pomodoroSession).set({ deletedAt: now, updatedAt: now }).where(eq(pomodoroSession.taskId, id)).run();
       tx.update(task).set({ deletedAt: now, updatedAt: now }).where(eq(task.id, id)).run();
     });
+    triggerSync();
   }
 
   return {
