@@ -124,15 +124,19 @@ pub async fn push(
                 .await
                 .is_ok(),
             "task_order" => push_task_order(&state, ws, entity).await.is_ok(),
-            // No entitlement field gated calendar/meetings before this — every
-            // user could push/pull meeting rows regardless of plan, even
-            // though calendar is meant to be a paid feature. This is the
-            // only real backend touchpoint for calendar (OAuth/Calendar-API
-            // calls are 100% client-to-Google, see ADR 0002), so it's the
-            // only place a server-side gate can meaningfully exist.
-            "meeting" => {
-                features.calendar && push_meeting(&state, ws, &allowed_vec, entity).await.is_ok()
-            }
+            // Deliberately NOT gated on features.calendar here, only on pull
+            // (below) — the client stamps synced_at on every entity it just
+            // pushed unconditionally, with no per-entity ack from `accepted`
+            // (a plain count). Rejecting a meeting write here would make the
+            // client believe it synced when it never reached the server,
+            // silently and permanently losing that update/deletion with no
+            // retry path (Greptile P1 on the first version of this change).
+            // Storing the write is harmless either way — it grants no
+            // calendar *access*, since the OAuth/Calendar-API calls that
+            // produce meeting data are 100% client-to-Google (ADR 0002), and
+            // it means data isn't lost if the account had Pro when it
+            // connected Calendar and later downgraded.
+            "meeting" => push_meeting(&state, ws, &allowed_vec, entity).await.is_ok(),
             _ => false,
         };
         if ok {
@@ -174,14 +178,32 @@ async fn push_workspace(
     let name = e.data["name"].as_str().unwrap_or("Workspace").to_owned();
     let color = e.data["color"].as_str().unwrap_or("#6366f1").to_owned();
 
+    let mut tx = state.pool.begin().await?;
+
+    // Serializes the whole check-then-write section below across concurrent
+    // pushes for the same user (e.g. two devices creating a workspace at
+    // nearly the same time) — without this, two overlapping requests could
+    // each read a count under max_workspaces before either INSERT lands,
+    // letting both through and exceeding the cap (Greptile P1, security:
+    // count and insert were separate unlocked queries). hashtext() maps the
+    // user id to the bigint key pg_advisory_xact_lock wants; the lock is
+    // scoped to this transaction and releases automatically on commit or
+    // rollback, so an early return below never leaks it. Plain runtime
+    // `query` (not the `query!` macro) — a `SELECT void_fn()` result isn't a
+    // type sqlx's compile-time check needs to care about here.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
     // Never adopt a workspace that already belongs to someone else. Without this,
     // pushing a workspace entity with a known foreign id would self-grant an
     // 'owner' membership row below and expose that account's data via pull.
     let existing_owner = sqlx::query_scalar!("SELECT owner_id FROM workspace WHERE id = $1", id,)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await?;
     if matches!(existing_owner, Some(owner) if owner != user_id) {
-        return Ok(());
+        return Ok(()); // tx drops here — rolls back (nothing was written) and releases the lock
     }
 
     // max_workspaces only gates creating a NEW live workspace — never
@@ -193,7 +215,7 @@ async fn push_workspace(
             "SELECT COUNT(*) FROM workspace WHERE owner_id = $1 AND deleted_at IS NULL",
             user_id,
         )
-        .fetch_one(&state.pool)
+        .fetch_one(&mut *tx)
         .await?
         .unwrap_or(0);
         if count >= features.max_workspaces as i64 {
@@ -220,7 +242,7 @@ async fn push_workspace(
         e.updated_at,
         e.deleted_at,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query!(
@@ -232,9 +254,10 @@ async fn push_workspace(
         id,
         user_id,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
@@ -942,8 +965,11 @@ pub async fn pull(
         });
     }
 
-    // Meetings — gated on entitlements.features.calendar (see push()'s "meeting"
-    // arm for why this is the only backend touchpoint calendar has at all).
+    // Meetings — gated on entitlements.features.calendar. Only gated here, on
+    // pull, not on push (see push()'s "meeting" arm for why): a read can
+    // safely come back empty for a non-calendar account with no data-loss
+    // risk, unlike a silently-rejected write the client would still believe
+    // succeeded.
     if features.calendar {
         for row in sqlx::query!(
             r#"SELECT id, workspace_id, title, time, duration_minutes, logged_minutes, logged,
