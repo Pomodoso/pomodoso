@@ -13,7 +13,7 @@ import { TimerRing } from '@/components/TimerRing';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
-import { useMeetings } from '@/hooks/useMeetings';
+import { isAllDayMeetingTime, parseMeetingTime, useMeetings } from '@/hooks/useMeetings';
 import { useProjects } from '@/hooks/useProjects';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
@@ -285,7 +285,9 @@ export default function HomeScreen() {
                     {m.title || 'Meeting'}
                   </Text>
                   <Text style={styles.meetingMeta}>
-                    {new Date(m.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {m.durationMinutes}m
+                    {isAllDayMeetingTime(m.time)
+                      ? 'All day'
+                      : `${parseMeetingTime(m.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${m.durationMinutes}m`}
                   </Text>
                 </View>
               </View>
