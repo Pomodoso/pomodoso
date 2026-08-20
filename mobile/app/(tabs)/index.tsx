@@ -13,6 +13,7 @@ import { TimerRing } from '@/components/TimerRing';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
+import { useMeetings } from '@/hooks/useMeetings';
 import { useProjects } from '@/hooks/useProjects';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
@@ -33,6 +34,7 @@ function formatTime(totalSeconds: number): string {
 export default function HomeScreen() {
   const { workspace } = useWorkspace();
   const { habits, toggleHabit, incrementHabit } = useHabits();
+  const { meetings } = useMeetings();
   const {
     display,
     idleMode,
@@ -240,9 +242,8 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Order: tasks, recurring, habits, then meetings (once B6 adds a
-            meetings section here) — recurring sits above habits/meetings,
-            below the task sections. */}
+        {/* Order: tasks, recurring, habits, then meetings — recurring sits
+            above habits/meetings, below the task sections. */}
         <Text style={styles.sectionTitle}>Habits today</Text>
         {habits.filter(h => h.scheduledToday).map(habit => (
           <View key={habit.id} style={styles.habitRow}>
@@ -272,6 +273,25 @@ export default function HomeScreen() {
             />
           </View>
         ))}
+
+        {meetings.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Meetings today</Text>
+            {meetings.map(m => (
+              <View key={m.id} style={[styles.meetingRow, m.past && styles.meetingRowPast]}>
+                <View style={[styles.meetingDot, { backgroundColor: m.calendarColor ?? colors.textTertiary }]} />
+                <View style={styles.meetingBody}>
+                  <Text style={[styles.meetingTitle, m.past && styles.meetingTitlePast]} numberOfLines={1}>
+                    {m.title || 'Meeting'}
+                  </Text>
+                  <Text style={styles.meetingMeta}>
+                    {new Date(m.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {m.durationMinutes}m
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
 
         <Text style={styles.footer}>{footerText}</Text>
       </ScrollView>
@@ -409,6 +429,20 @@ const styles = StyleSheet.create({
   habitNameBlock: { flex: 1, minWidth: 0 },
   habitName: { fontSize: 14.5, fontWeight: '500', color: colors.text },
   habitSubtext: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
+  meetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  meetingRowPast: { opacity: 0.5 },
+  meetingDot: { width: 8, height: 8, borderRadius: 4 },
+  meetingBody: { flex: 1, minWidth: 0 },
+  meetingTitle: { fontSize: 14.5, fontWeight: '500', color: colors.text },
+  meetingTitlePast: { textDecorationLine: 'line-through' },
+  meetingMeta: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
   footer: {
     marginTop: 18,
     paddingTop: 12,

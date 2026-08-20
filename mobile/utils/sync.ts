@@ -3,7 +3,8 @@ import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
 import { and, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { habits, habitHistory, pomodoroSession, project, settings, task, workspace } from '@/db/schema';
+import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, workspace } from '@/db/schema';
+import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
 
@@ -114,6 +115,21 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   if (h.createdAt) extra.createdAt = h.createdAt;
   if (h.unit != null) extra.unit = h.unit;
   if (h.unitAmount != null) extra.unitAmount = h.unitAmount;
+  return extra;
+}
+
+// Ported verbatim from extension's syncEngine.ts meetingExtra — same key
+// names, same "omit if falsy" shape, since the backend's `extra` column is
+// an opaque passthrough blob any client can read.
+function meetingExtra(m: MeetingRow): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  if (m.notes) extra.notes = m.notes;
+  if (m.description != null) extra.description = m.description;
+  if (m.recurringEventId) extra.recurringEventId = m.recurringEventId;
+  if (m.recurringLabel) extra.recurringLabel = m.recurringLabel;
+  if (m.calendarId) extra.calendarId = m.calendarId;
+  if (m.calendarName) extra.calendarName = m.calendarName;
+  if (m.calendarColor) extra.calendarColor = m.calendarColor;
   return extra;
 }
 
@@ -243,6 +259,34 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
+  // Workspace-scoped, like tasks (CLAUDE.md rule 6) — the one part of
+  // calendar integration (Fase B6) that's genuinely cross-device. The
+  // Google OAuth connection itself is deliberately NOT synced (see
+  // backgroundSync-adjacent calendar utils, once B6b lands) — matches the
+  // extension's real behavior, not ADR 0002's stale claim that
+  // calendar_connections round-trips through SYNCED_SETTINGS.
+  const meetings = db
+    .select()
+    .from(meeting)
+    .where(or(isNull(meeting.syncedAt), lt(meeting.syncedAt, meeting.updatedAt)))
+    .all();
+  for (const m of meetings) {
+    entities.push(
+      toEntity('meeting', m.id, m.updatedAt, m.deletedAt, {
+        workspace_id: m.workspaceId,
+        title: m.title,
+        time: m.time,
+        duration_minutes: m.durationMinutes,
+        logged_minutes: m.loggedMinutes,
+        logged: m.logged,
+        track_mode: m.trackMode,
+        project_id: m.projectId,
+        google_event_id: m.googleEventId,
+        extra: meetingExtra(m),
+      }),
+    );
+  }
+
   // Device heartbeat — registers this install, same pattern as extension's.
   entities.push(
     toEntity('device', deviceId, nowIso(), null, {
@@ -300,6 +344,12 @@ async function push(client: TokenApiClient): Promise<void> {
     db.update(habitHistory)
       .set({ syncedAt: ts })
       .where(and(eq(habitHistory.id, r.id), eq(habitHistory.updatedAt, r.updatedAt)))
+      .run();
+  }
+  for (const m of meetings) {
+    db.update(meeting)
+      .set({ syncedAt: ts })
+      .where(and(eq(meeting.id, m.id), eq(meeting.updatedAt, m.updatedAt)))
       .run();
   }
 }
@@ -521,10 +571,46 @@ function applyEntity(entity: SyncEntity): void {
       break;
     }
 
-    // 'device', 'user_setting', 'task_order', 'meeting', 'detection_rule':
-    // no local table/handling for these yet (device is push-only even on
-    // extension; the rest are documented gaps at the top of this file) —
-    // ignored, not an error.
+    case 'meeting': {
+      const existing = db.select().from(meeting).where(eq(meeting.id, id)).all()[0];
+      if (existing && existing.updatedAt >= updated_at) return;
+      const workspaceId = (data.workspace_id as string | null) ?? existing?.workspaceId;
+      if (!workspaceId) return; // can't satisfy the NOT NULL FK — skip rather than crash
+      const mExtra = (data.extra ?? {}) as Record<string, unknown>;
+      const row = {
+        id,
+        workspaceId,
+        title: String(data.title ?? ''),
+        time: String(data.time ?? updated_at),
+        durationMinutes: Number(data.duration_minutes ?? 0),
+        trackMode: (data.track_mode as MeetingRow['trackMode']) ?? 'once',
+        logged: Boolean(data.logged ?? false),
+        loggedMinutes: data.logged_minutes != null ? Number(data.logged_minutes) : null,
+        projectId: (data.project_id as string | null) ?? null,
+        notes: String(mExtra.notes ?? ''),
+        description: mExtra.description !== undefined ? String(mExtra.description) : null,
+        recurringLabel: mExtra.recurringLabel ? String(mExtra.recurringLabel) : null,
+        googleEventId: (data.google_event_id as string | null) ?? null,
+        recurringEventId: mExtra.recurringEventId ? String(mExtra.recurringEventId) : null,
+        calendarId: mExtra.calendarId ? String(mExtra.calendarId) : null,
+        calendarName: mExtra.calendarName ? String(mExtra.calendarName) : null,
+        calendarColor: mExtra.calendarColor ? String(mExtra.calendarColor) : null,
+        createdAt: existing?.createdAt ?? updated_at,
+        updatedAt: updated_at,
+        deletedAt: deleted_at,
+        syncedAt,
+      };
+      db.insert(meeting)
+        .values(row)
+        .onConflictDoUpdate({ target: meeting.id, set: { ...row, id: undefined, createdAt: undefined } as never })
+        .run();
+      break;
+    }
+
+    // 'device', 'user_setting', 'task_order', 'detection_rule': no local
+    // table/handling for these yet (device is push-only even on extension;
+    // the rest are documented gaps at the top of this file) — ignored, not
+    // an error.
     default:
       break;
   }

@@ -258,6 +258,29 @@ function initDb(): void {
       deleted_at TEXT,
       synced_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS meeting (
+      id TEXT PRIMARY KEY NOT NULL,
+      workspace_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      time TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 0,
+      track_mode TEXT NOT NULL DEFAULT 'off',
+      logged INTEGER NOT NULL DEFAULT 0,
+      logged_minutes INTEGER,
+      project_id TEXT,
+      notes TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      recurring_label TEXT,
+      google_event_id TEXT,
+      recurring_event_id TEXT,
+      calendar_id TEXT,
+      calendar_name TEXT,
+      calendar_color TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
+    );
   `);
 
   // Seeds one real-UUID workspace on first run — not a sentinel string id

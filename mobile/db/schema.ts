@@ -200,6 +200,50 @@ export const timerPrefs = sqliteTable('timer_prefs', {
   lastMode: text('last_mode', { enum: ['pomodoro', 'stopwatch'] }).notNull(),
 });
 
+export type MeetingTrackMode = 'once' | 'always' | 'off';
+
+// Mirrors extension/src/db.ts's MeetingRow + backend migration 011 — the one
+// part of Fase B6 (calendar) that's genuinely cross-device: a Google
+// Calendar event imported by ANY client (extension or mobile) syncs to every
+// other client via the normal push/pull engine, same as task/project. The
+// OAuth CONNECTION itself (calendar_connections/calendar_lists) does NOT —
+// per real (not ADR-0002-claimed) extension behavior, that's per-device
+// local storage, never wired into SYNCED_SETTINGS. `past`/`minutesUntil`
+// from extension's local row are deliberately NOT persisted here — they're
+// pure functions of (time, durationMinutes) at read time, no reason to let
+// them go stale between syncs. `description`/`recurringLabel` mirror what
+// the backend folds into `extra` JSONB on the wire (see sync.ts's
+// meetingExtra); calendarId/calendarName/calendarColor round-trip the same
+// way but get their own columns here since mobile filters/displays by them.
+export const meeting = sqliteTable('meeting', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  title: text('title').notNull(),
+  time: text('time').notNull(), // ISO timestamp
+  durationMinutes: integer('duration_minutes').notNull().default(0),
+  // Set by the user (extension's Schedule tab equivalent, not built on
+  // mobile yet in B6a) — 'off' means invisible on Home, matching a freshly
+  // imported event's default. Never overwritten by a re-import.
+  trackMode: text('track_mode', { enum: ['once', 'always', 'off'] }).notNull().default('off'),
+  logged: integer('logged', { mode: 'boolean' }).notNull().default(false),
+  loggedMinutes: integer('logged_minutes'),
+  projectId: text('project_id'),
+  notes: text('notes').notNull().default(''),
+  description: text('description'),
+  recurringLabel: text('recurring_label'),
+  googleEventId: text('google_event_id'),
+  recurringEventId: text('recurring_event_id'),
+  calendarId: text('calendar_id'),
+  calendarName: text('calendar_name'),
+  calendarColor: text('calendar_color'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
+});
+
+export type MeetingRow = typeof meeting.$inferSelect;
+
 // Generic key-value store, matching extension/src/db.ts's own `settings`
 // table (SettingRow { key, value }) — same pattern, not a bespoke one.
 // Values are JSON-stringified. Keys used: focus_seconds, short_break_seconds,
