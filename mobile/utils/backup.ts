@@ -5,6 +5,12 @@ import * as Sharing from 'expo-sharing';
 import { db } from '@/db/client';
 import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
+import { uid } from '@/utils/id';
+
+// Tables whose rows carry a workspaceId FK — need special handling on
+// import (see the "Ensure a workspace exists" block below), unlike the
+// otherwise fully generic per-table loop.
+const WORKSPACE_SCOPED_TABLES = new Set(['task', 'project', 'pomodoroSession']);
 
 // Ports extension's backup.ts. Simplified for what mobile actually has: no
 // taskOrders/meetings/detectionRules (none exist yet), and no
@@ -117,12 +123,60 @@ export async function importBackup(json: string): Promise<void> {
   const liveSessions = db.select().from(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).all();
 
   db.transaction(tx => {
+    // Resolved below, before task/project/pomodoroSession (which carry it)
+    // are inserted. Two real gaps this closes (Greptile P1): a legacy
+    // pre-workspace backup's task/project/session rows have no workspaceId
+    // key at all, which would otherwise violate the NOT NULL column and
+    // fail the whole import; and a backup that validly includes an empty
+    // `workspace: []` would otherwise leave the device with no workspace
+    // at all afterward, crashing every useWorkspace() consumer on next
+    // render (it throws rather than returning null — see that hook).
+    let workspaceId: string | null = null;
+
     for (const [name, table] of Object.entries(TABLES)) {
       const rows = envelope.data[name];
+
+      if (name === 'workspace') {
+        if (Array.isArray(rows)) {
+          // Included (even as an explicit empty array) — matches every
+          // other table's "included → wipe and replace" rule.
+          tx.delete(table).run();
+          if (rows.length > 0) {
+            tx.insert(table).values(rows as never[]).run();
+            workspaceId = (rows[0] as { id: string }).id;
+          } else {
+            // A backup can validly say "zero workspaces", but every
+            // task/project/session row below (this backup's or the
+            // current device's own) still needs one to point at.
+            workspaceId = uid();
+            const now = new Date().toISOString();
+            tx.insert(workspace).values({ id: workspaceId, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
+          }
+        } else {
+          // Not included at all — a legacy pre-workspace backup. Matches
+          // every other table's "not included → don't touch" rule: keep
+          // the device's current workspace instead of replacing it with a
+          // synthetic one.
+          const existing = tx.select().from(workspace).where(isNull(workspace.deletedAt)).all();
+          if (existing[0]) {
+            workspaceId = existing[0].id;
+          } else {
+            workspaceId = uid();
+            const now = new Date().toISOString();
+            tx.insert(workspace).values({ id: workspaceId, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
+          }
+        }
+        continue;
+      }
+
       if (!Array.isArray(rows)) continue;
       tx.delete(table).run();
       if (rows.length > 0) {
-        tx.insert(table).values(rows as never[]).run();
+        // Backfill only rows that don't already carry a workspaceId — the
+        // object-spread order means a genuine value from the row always
+        // wins over this fallback.
+        const values = WORKSPACE_SCOPED_TABLES.has(name) ? rows.map(r => ({ workspaceId, ...(r as object) })) : rows;
+        tx.insert(table).values(values as never[]).run();
       }
     }
     // Regardless of whether pomodoroSession was itself included above: an
