@@ -4,36 +4,23 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { db } from '@/db/client';
 import { meeting } from '@/db/schema';
 import type { MeetingRow } from '@/db/schema';
+import { parseMeetingTime } from '@/utils/meetingTime';
 
 import { useWorkspace } from './useWorkspace';
+
+export { isAllDayMeetingTime, parseMeetingTime } from '@/utils/meetingTime';
 
 export interface TodayMeeting extends MeetingRow {
   past: boolean;
 }
 
-// A synced all-day Google event carries a bare YYYY-MM-DD `time` (Google's
-// own `event.start.date` shape for all-day events, no `dateTime`) — parsing
-// that with `new Date()` reads it as UTC midnight, which lands on the wrong
-// local calendar day for any timezone behind UTC. Anything else (a real
-// ISO datetime) parses normally.
-export function isAllDayMeetingTime(time: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(time);
-}
-
-export function parseMeetingTime(time: string): Date {
-  if (isAllDayMeetingTime(time)) {
-    const [y, m, d] = time.split('-').map(Number);
-    return new Date(y, m - 1, d);
-  }
-  return new Date(time);
-}
-
-// Read-only for now (Fase B6a) — meetings arrive purely via sync (from the
-// extension or another mobile device that's connected Google Calendar);
-// mobile's own connect flow lands in a later B6 PR. `past` is computed here
-// rather than stored (unlike the extension's local row, which persists it)
-// — it's a pure function of `time`/`durationMinutes`, no reason to let it
-// go stale between renders.
+// Read-only for now (Fase B6b-1 adds the actual connect flow, still not
+// wired into the UI here) — meetings arrive via sync (from the extension or
+// another mobile device that's connected Google Calendar) or, once B6b-2
+// ships, mobile's own connect flow too. `past` is computed here rather than
+// stored (unlike the extension's local row, which persists it) — it's a
+// pure function of `time`/`durationMinutes`, no reason to let it go stale
+// between renders.
 export function useMeetings(): { meetings: TodayMeeting[] } {
   const { workspaceId } = useWorkspace();
   const { data: rows } = useLiveQuery(

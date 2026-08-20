@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "pomodoso",
+    "scheme": ["pomodoso", "com.googleusercontent.apps.997845471451-gquehumm6i8mb8cpg95m36f57gf4v643"],
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
