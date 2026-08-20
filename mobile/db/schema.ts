@@ -49,6 +49,12 @@ export const habits = sqliteTable('habits', {
   // exactly: 0=Mon..6=Sun, [] means "every day" (canonical form for daily —
   // the extension's own form always saves length-7 selections as []).
   days: text('days').notNull().default('[]'),
+  // Set (preset 21, editable) to render this habit as a "Day N of length"
+  // challenge card on the Habits tab instead of a plain streak. No separate
+  // start-date bookkeeping — the displayed day count IS the habit's own
+  // current streak (see useHabits.ts's daysDone), capped at this length.
+  // Missing a scheduled day resets it to zero like any other streak.
+  challengeLengthDays: integer('challenge_length_days'),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

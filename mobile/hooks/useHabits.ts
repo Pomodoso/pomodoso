@@ -17,11 +17,16 @@ export interface HabitWithProgress {
   unit: string | null;
   unitAmount: number | null;
   days: number[];
+  challengeLengthDays: number | null;
   sortOrder: number;
   count: number;
   done: boolean;
   scheduledToday: boolean;
   streakLabel: string;
+  // Days completed toward challengeLengthDays, counting today once it's
+  // done — see computeStreak's doc comment for why this differs from the
+  // "past streak" the flame streakLabel shows.
+  daysDone: number;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
 }
 
@@ -42,26 +47,43 @@ function isDone(kind: 'boolean' | 'counter', goal: number | null, row: { count: 
   return kind === 'counter' ? row.count >= (goal ?? 0) : row.done;
 }
 
-function streakLabel(
+// pastStreak = consecutive scheduled days completed up to (not including)
+// today — the flame streakLabel's semantics, so a habit isn't "missed" the
+// moment midnight hits before today's been done yet. daysDone adds today
+// back in once it's actually done, so a 21-day challenge card ticks up the
+// moment today is completed instead of waiting until tomorrow.
+function computeStreak(
   kind: 'boolean' | 'counter',
   goal: number | null,
   days: number[],
   historyByDate: Map<string, { count: number; done: boolean }>,
-): string {
-  let streak = 0;
-  for (let i = 1; i < 365; i++) {
+): { pastStreak: number; daysDone: number } {
+  const today = dateOffset(0);
+  const scheduledToday = days.length === 0 || days.includes(today.dow);
+  const doneToday = scheduledToday && isDone(kind, goal, historyByDate.get(today.date));
+
+  // 3650 days (10 years), not 365 — a challenge longer than a year is
+  // unusual but not implausible, and this is a handful of cheap Map lookups
+  // either way, not worth capping tighter (mirrors extension's
+  // computeHabitStreak, which hit the same off-by-a-year cap in review).
+  let pastStreak = 0;
+  for (let i = 1; i < 3650; i++) {
     const { date, dow } = dateOffset(i);
     // Not scheduled that day — skip without breaking the streak, matching
     // the extension's "every day" default semantics of [] and the general
     // expectation that a Mon/Wed/Fri habit isn't "missed" on a Tuesday.
     if (days.length > 0 && !days.includes(dow)) continue;
     if (isDone(kind, goal, historyByDate.get(date))) {
-      streak++;
+      pastStreak++;
     } else {
       break;
     }
   }
-  return streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet';
+  return { pastStreak, daysDone: pastStreak + (doneToday ? 1 : 0) };
+}
+
+function formatStreakLabel(pastStreak: number): string {
+  return pastStreak > 0 ? `🔥 ${pastStreak} day streak` : 'No streak yet';
 }
 
 function weekFilled(
@@ -92,6 +114,7 @@ export interface HabitInput {
   unit: string | null;
   unitAmount: number | null;
   days: number[];
+  challengeLengthDays: number | null;
 }
 
 export function useHabits() {
@@ -112,13 +135,15 @@ export function useHabits() {
     const byDate = rowsByHabit.get(h.id) ?? new Map();
     const todayRow = byDate.get(today);
     const days = parseDays(h.days);
+    const { pastStreak, daysDone } = computeStreak(h.kind, h.goal, days, byDate);
     return {
       ...h,
       days,
       count: todayRow?.count ?? 0,
       done: isDone(h.kind, h.goal, todayRow),
       scheduledToday: isScheduledToday(days),
-      streakLabel: streakLabel(h.kind, h.goal, days, byDate),
+      streakLabel: formatStreakLabel(pastStreak),
+      daysDone,
       weekFilled: weekFilled(h.kind, h.goal, byDate),
     };
   });
@@ -174,6 +199,7 @@ export function useHabits() {
         unit: input.unit,
         unitAmount: input.unitAmount,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+        challengeLengthDays: input.challengeLengthDays,
         sortOrder: maxSortOrder + 1,
         createdAt: now,
         updatedAt: now,
@@ -192,6 +218,7 @@ export function useHabits() {
         unit: input.unit,
         unitAmount: input.unitAmount,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+        challengeLengthDays: input.challengeLengthDays,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(habits.id, id))
