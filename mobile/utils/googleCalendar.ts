@@ -99,6 +99,11 @@ export async function updateSelectedCalendars(wsId: string, ids: string[]): Prom
   await writeRecord('calendar_connections', wsId, { ...conn, selectedCalendarIds: ids });
 }
 
+export async function getCalendarLastSynced(wsId: string): Promise<string | null> {
+  const record = await readRecord<string>('calendar_last_synced');
+  return record[wsId] ?? null;
+}
+
 // ─── OAuth2 — expo-auth-session, PKCE ──────────────────────────────────────────
 
 function redirectUri(): string {
