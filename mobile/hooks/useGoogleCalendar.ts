@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CalendarConnection, CalendarInfo } from '@/utils/googleCalendar';
 import {
@@ -84,13 +84,39 @@ export function useGoogleCalendar(): {
     }
   }
 
+  // Tracks the most recently computed selectedCalendarIds, including ones
+  // from toggles still mid-flight — a second row tapped before the first
+  // toggle's write+refresh resolves would otherwise both compute their new
+  // array from the same stale `connection` snapshot, so the later write
+  // (a full-array replace) silently discards the earlier tap (Greptile
+  // P1). Only reset from a fresh `connection` while no toggle is
+  // in-flight — otherwise a mid-chain refresh() (from an earlier toggle in
+  // the same rapid-tap burst) would reset this to a snapshot that doesn't
+  // yet include a later, still-queued toggle's change, corrupting the very
+  // chain it's meant to protect.
+  const pendingIdsRef = useRef<string[] | null>(null);
+  const togglesInFlightRef = useRef(0);
+  useEffect(() => {
+    if (togglesInFlightRef.current === 0) {
+      pendingIdsRef.current = connection?.selectedCalendarIds ?? null;
+    }
+  }, [connection]);
+  const toggleChainRef = useRef<Promise<void>>(Promise.resolve());
+
   async function toggleCalendar(id: string): Promise<void> {
     if (!connection) return;
-    const ids = connection.selectedCalendarIds.includes(id)
-      ? connection.selectedCalendarIds.filter(c => c !== id)
-      : [...connection.selectedCalendarIds, id];
-    await updateSelectedCalendars(workspaceId, ids);
-    await refresh();
+    const current = pendingIdsRef.current ?? connection.selectedCalendarIds;
+    const next = current.includes(id) ? current.filter(c => c !== id) : [...current, id];
+    pendingIdsRef.current = next;
+    togglesInFlightRef.current++;
+    const chained = toggleChainRef.current.then(() => updateSelectedCalendars(workspaceId, next));
+    toggleChainRef.current = chained;
+    try {
+      await chained;
+      await refresh();
+    } finally {
+      togglesInFlightRef.current--;
+    }
   }
 
   return { connection, calendars, lastSynced, loading, connecting, syncing, connect, disconnect, syncNow, toggleCalendar };

@@ -44,6 +44,8 @@ export default function CalendarScreen(): React.JSX.Element {
             setDisconnecting(true);
             try {
               await disconnect();
+            } catch (err) {
+              Alert.alert('Disconnect failed', err instanceof Error ? err.message : 'Unknown error');
             } finally {
               setDisconnecting(false);
             }
@@ -59,6 +61,12 @@ export default function CalendarScreen(): React.JSX.Element {
     } catch (err) {
       Alert.alert('Sync failed', err instanceof Error ? err.message : 'Unknown error');
     }
+  }
+
+  function handleToggleCalendar(id: string): void {
+    toggleCalendar(id).catch(err => {
+      Alert.alert("Couldn't update calendars", err instanceof Error ? err.message : 'Unknown error');
+    });
   }
 
   function formatRelative(iso: string): string {
@@ -120,7 +128,7 @@ export default function CalendarScreen(): React.JSX.Element {
               calendars.map(cal => {
                 const selected = connection.selectedCalendarIds.includes(cal.id);
                 return (
-                  <Pressable key={cal.id} style={styles.calRow} onPress={() => void toggleCalendar(cal.id)}>
+                  <Pressable key={cal.id} style={styles.calRow} onPress={() => handleToggleCalendar(cal.id)}>
                     <View style={[styles.calDot, { backgroundColor: cal.backgroundColor ?? colors.textTertiary }]} />
                     <Text style={styles.calName} numberOfLines={1}>
                       {cal.summary}

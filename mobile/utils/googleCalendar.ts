@@ -213,6 +213,16 @@ export async function connectCalendar(wsId: string): Promise<{ connection: Calen
   return { connection, calendars };
 }
 
+// Three sequential SecureStore writes, not atomic — unlike extension's
+// equivalent (a single Dexie `db.transaction('rw', db.settings, ...)`
+// across one table), SecureStore has no multi-key transaction primitive to
+// wrap these in. A failure between deletes could in principle leave
+// calendar_connections gone but calendar_lists/calendar_last_synced still
+// present — harmless (they're only ever read alongside a connection that
+// no longer exists, per getCalendarConnection/getCalendarList's callers)
+// but a known, accepted gap rather than a silent one. The caller (UI) is
+// responsible for surfacing a thrown error to the user; this function
+// itself doesn't swallow anything.
 export async function disconnectCalendar(wsId: string): Promise<void> {
   const conn = await getCalendarConnection(wsId);
   if (conn && CLIENT_ID) {
