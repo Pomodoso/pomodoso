@@ -78,6 +78,10 @@ export function useTimer() {
   // before any `await`, so a second concurrent call bails out immediately
   // regardless of React's render timing.
   const isMutatingRef = useRef(false);
+  // Tracks which completed session's prompt has already been auto-started,
+  // so the effect below fires once per session rather than re-triggering on
+  // every render while pendingBreak/pendingNextFocus are non-null.
+  const autoStartedForRef = useRef<string | null>(null);
   const { data: sessions } = useLiveQuery(
     db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).orderBy(desc(pomodoroSession.startedAt)),
   );
@@ -516,6 +520,20 @@ export function useTimer() {
       isMutatingRef.current = false;
     }
   }
+
+  // Auto-start the next phase the moment its prompt appears, rather than
+  // waiting for a tap on the BreakBanner — the banner still renders (as a
+  // brief "starting..." acknowledgement) but no longer requires the user to
+  // act on it. JS can't run while the app is backgrounded, so a session
+  // ending off-screen still needs the app reopened before this can fire;
+  // what this removes is the SECOND action (tapping the banner) once it's
+  // open, which was the actual friction reported in testing.
+  useEffect(() => {
+    if (!mostRecentUnresolved || autoStartedForRef.current === mostRecentUnresolved.id) return;
+    autoStartedForRef.current = mostRecentUnresolved.id;
+    if (pendingBreak) startBreak();
+    else if (pendingNextFocus) startNextFocus();
+  }, [mostRecentUnresolved, pendingBreak, pendingNextFocus]);
 
   return {
     display,

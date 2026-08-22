@@ -1,10 +1,18 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+
+// Expo's documented boilerplate for openAuthSessionAsync (useAuth.ts's
+// signInWithGoogle) — dismisses the auth browser session properly once the
+// redirect lands. Safe to call at module scope; a no-op outside a pending
+// auth session.
+WebBrowser.maybeCompleteAuthSession();
 
 type Mode = 'signin' | 'signup';
 type LinkState = 'idle' | 'sending' | 'sent';
@@ -14,12 +22,6 @@ type LinkState = 'idle' | 'sending' | 'sent';
 // exists only because a Chrome popup can't receive a redirect. Mobile can
 // (app.json's "pomodoso" scheme + useAuth.ts's deep-link handling), so
 // there's no reason to carry that limitation over.
-//
-// No "Continue with Google" here yet: that needs native iOS/Android OAuth
-// client IDs registered in the same Google Cloud project the extension
-// uses (expo-auth-session, PKCE, no embedded secret) — flagged as a
-// pending M0 sub-task in docs/mobile-app-plan.md, not done yet. Google
-// sign-in stays extension/web-only until that registration happens.
 export default function LoginScreen() {
   const auth = useAuth();
   const [mode, setMode] = useState<Mode>('signin');
@@ -27,6 +29,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [signupDone, setSignupDone] = useState(false);
   const [resetState, setResetState] = useState<LinkState>('idle');
   const [magicState, setMagicState] = useState<LinkState>('idle');
@@ -63,6 +66,18 @@ export default function LoginScreen() {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGoogleSignIn(): Promise<void> {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      await auth.signInWithGoogle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign in with Google');
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -120,6 +135,27 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.brand}>Pomodoso</Text>
         <Text style={styles.subtitle}>{mode === 'signin' ? 'Sign in to your account' : 'Create an account'}</Text>
+
+        <Pressable
+          style={[styles.googleBtn, googleLoading && styles.disabled]}
+          onPress={() => void handleGoogleSignIn()}
+          disabled={googleLoading}
+        >
+          {googleLoading ? (
+            <ActivityIndicator color={colors.text} size="small" />
+          ) : (
+            <>
+              <Ionicons name="logo-google" size={16} color={colors.text} />
+              <Text style={styles.googleBtnText}>Continue with Google</Text>
+            </>
+          )}
+        </Pressable>
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
         <TextInput
           style={styles.input}
@@ -213,6 +249,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginBottom: 16,
+  },
+  googleBtnText: { fontSize: 14.5, fontWeight: '600', color: colors.text },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { fontSize: 11.5, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
   error: { fontSize: 12.5, color: colors.accent, marginBottom: 12 },
   submitBtn: {
     backgroundColor: colors.accent,
