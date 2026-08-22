@@ -145,7 +145,6 @@ export default function Pricing() {
         )}
 
         <p className="text-xs text-neutral-500 text-center">
-          All plans include a <span className="text-neutral-400">no-questions-asked refund</span> within 7 days.{' '}
           <Link to="/refund" className="text-neutral-400 hover:underline">Refund policy</Link>
         </p>
       </main>

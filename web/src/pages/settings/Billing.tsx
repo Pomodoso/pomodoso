@@ -307,10 +307,6 @@ export default function Billing() {
           </div>
         )}
 
-        <p style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 14 }}>
-          All plans include a no-questions-asked refund within 7 days.
-        </p>
-
         <DevicesCard />
       </main>
     </div>
