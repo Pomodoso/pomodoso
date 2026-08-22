@@ -8,7 +8,7 @@ mod routes;
 
 use axum::{
     middleware as axum_middleware,
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use jsonwebtoken::jwk::JwkSet;
@@ -119,6 +119,26 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/tasks",
             get(routes::today::get_tasks).route_layer(auth.clone()),
+        )
+        .route(
+            "/projects",
+            get(routes::projects::list_projects)
+                .post(routes::projects::create_project)
+                .route_layer(auth.clone()),
+        )
+        .route(
+            "/projects/{id}",
+            patch(routes::projects::update_project)
+                .delete(routes::projects::delete_project)
+                .route_layer(auth.clone()),
+        )
+        .route(
+            "/projects/{id}/archive",
+            post(routes::projects::archive_project).route_layer(auth.clone()),
+        )
+        .route(
+            "/projects/{id}/unarchive",
+            post(routes::projects::unarchive_project).route_layer(auth.clone()),
         )
         .route(
             "/billing/checkout",

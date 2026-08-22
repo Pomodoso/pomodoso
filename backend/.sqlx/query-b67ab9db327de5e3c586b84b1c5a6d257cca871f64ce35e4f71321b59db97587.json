@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project (id, workspace_id, name, color, updated_at, synced_at)\n           VALUES ($1, $2, $3, $4, NOW(), NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b67ab9db327de5e3c586b84b1c5a6d257cca871f64ce35e4f71321b59db97587"
+}

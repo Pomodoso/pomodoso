@@ -944,7 +944,7 @@ fn json_uuid_list(v: &serde_json::Value) -> Vec<Uuid> {
         .unwrap_or_default()
 }
 
-async fn require_workspace_access(
+pub(crate) async fn require_workspace_access(
     state: &AppState,
     user_id: Uuid,
     workspace_id: Uuid,
