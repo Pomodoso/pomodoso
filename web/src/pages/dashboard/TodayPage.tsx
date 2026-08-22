@@ -135,6 +135,12 @@ function todayDate(): string {
   return new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
 }
 
+function shiftDate(date: string, deltaDays: number): string {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + deltaDays);
+  return d.toLocaleDateString('en-CA');
+}
+
 function habitIconClass(icon: string): string {
   const map: Record<string, string> = {
     water: 'ti-glass-full',
@@ -834,8 +840,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
-
-  const date = todayDate();
+  const [date, setDate] = useState(todayDate());
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -867,9 +872,10 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
     );
   }
 
-  const now = new Date();
-  const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const shownDate = new Date(`${date}T00:00:00`);
+  const dayName = shownDate.toLocaleDateString('en-US', { weekday: 'long' });
+  const dateStr = shownDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const isToday = date === todayDate();
 
   // Workspace badge only makes sense when looking across workspaces.
   const showWorkspace = workspaceId === 'all';
@@ -878,9 +884,30 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
     <>
       {/* Page header */}
       <div className="pomo-page-header">
-        <div>
-          <div className="pomo-eyebrow">{dayName}</div>
-          <h1 className="pomo-page-title">{dateStr}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 2 }}>
+            <button className="pomo-btn pomo-btn-icon" aria-label="Previous day" onClick={() => setDate(d => shiftDate(d, -1))}>
+              <i className="ti ti-chevron-left" />
+            </button>
+            <button className="pomo-btn pomo-btn-icon" aria-label="Next day" onClick={() => setDate(d => shiftDate(d, 1))}>
+              <i className="ti ti-chevron-right" />
+            </button>
+          </div>
+          <div>
+            <div className="pomo-eyebrow">
+              {dayName}
+              {!isToday && (
+                <button
+                  className="pomo-link-btn"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => setDate(todayDate())}
+                >
+                  Jump to today
+                </button>
+              )}
+            </div>
+            <h1 className="pomo-page-title">{dateStr}</h1>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="pomo-btn">
