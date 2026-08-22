@@ -9,6 +9,7 @@ import { Sidebar } from '../../components/Sidebar.tsx';
 import { useCrisp } from '../../lib/useCrisp.ts';
 import TodayPage from './TodayPage.tsx';
 import TasksPage from './TasksPage.tsx';
+import WeekPage from './WeekPage.tsx';
 
 const ACTIVE_WS_KEY = 'pomodoso:active_ws';
 
@@ -18,7 +19,7 @@ interface WorkspaceInfo {
   color: string;
 }
 
-export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' }) {
+export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' | 'week' }) {
   const { session, user, entitlements } = useAuth();
   useCrisp({ email: user?.email ?? session?.user.email, name: session?.user.user_metadata?.full_name as string | undefined });
   const navigate = useNavigate();
@@ -168,7 +169,7 @@ export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks'
   return (
     <div className="pomo-app">
       <Sidebar
-        active={page}
+        active={page === 'week' ? 'today' : page}
         switcher={switcher}
         userName={userName}
         userEmail={userEmail}
@@ -179,9 +180,13 @@ export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks'
       {/* ── Main content ────────────────────────────────────────────────────────── */}
       <main className="pomo-main">
         {activeWsId ? (
-          page === 'tasks'
-            ? <TasksPage workspaceId={activeWsId} />
-            : <TodayPage workspaceId={activeWsId} />
+          page === 'tasks' ? (
+            <TasksPage workspaceId={activeWsId} />
+          ) : page === 'week' ? (
+            <WeekPage workspaceId={activeWsId} />
+          ) : (
+            <TodayPage workspaceId={activeWsId} />
+          )
         ) : wsLoaded ? (
           <div style={{ padding: '80px 36px', maxWidth: 460 }}>
             <div style={{ fontSize: 28, marginBottom: 12 }}>🍅</div>
