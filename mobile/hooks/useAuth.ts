@@ -3,6 +3,7 @@ import type { Entitlements } from '@pomodoso/types';
 import type { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 
 import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
@@ -39,6 +40,7 @@ export interface AuthState {
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   sendMagicLinkEmail: (email: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -73,7 +75,21 @@ async function applySessionFromUrl(url: string): Promise<void> {
   }
   const supabase = getMobileSupabase();
   const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  if (error) console.warn('Failed to apply session from auth redirect', error);
+  if (error) {
+    console.warn('Failed to apply session from auth redirect', error);
+    return;
+  }
+  // Magic link / signup confirmation: don't rely solely on login.tsx's own
+  // `if (auth.session) router.back()` effect to leave the screen — that
+  // depends on ITS OWN useAuth() instance's onAuthStateChange listener
+  // firing and re-rendering before the user notices, which is a real gap
+  // when the deep link reopens the app from the background (observed on
+  // device: session was set correctly, but the login screen didn't leave
+  // until manually navigated back). Navigate explicitly here instead, same
+  // as the recovery branch above already does for its own screen.
+  if (params.get('type') !== 'recovery') {
+    router.replace('/');
+  }
 }
 
 export function useAuth(): AuthState {
@@ -152,6 +168,28 @@ export function useAuth(): AuthState {
     await signUpWithEmail(getMobileSupabase(), email, password, REDIRECT_URL);
   }, []);
 
+  // Mirrors extension's oauthFlow (popup/useAuth.ts) — a popup/RN app can't
+  // receive a normal browser redirect the way web's signInWithProvider does,
+  // so skipBrowserRedirect gets back the Google authorize URL instead of
+  // navigating, and an in-app browser session (not the OS browser — this one
+  // reliably returns control to the app on redirect) drives it. The
+  // resulting pomodoso://auth-callback#access_token=... is the exact same
+  // shape magic link/signup already produce, so applySessionFromUrl handles
+  // it unchanged — no new callback plumbing needed, just a new trigger.
+  const signInWithGoogle = useCallback(async () => {
+    const supabase = getMobileSupabase();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: REDIRECT_URL, skipBrowserRedirect: true },
+    });
+    if (error) throw error;
+    if (!data.url) throw new Error('No Google auth URL returned');
+    const result = await WebBrowser.openAuthSessionAsync(data.url, REDIRECT_URL);
+    if (result.type === 'success' && result.url) {
+      await applySessionFromUrl(result.url);
+    }
+  }, []);
+
   const sendMagicLinkEmail = useCallback(async (email: string) => {
     await sendMagicLink(getMobileSupabase(), email, REDIRECT_URL);
   }, []);
@@ -177,6 +215,7 @@ export function useAuth(): AuthState {
     isConfigured: isAuthConfigured(),
     signIn,
     signUp,
+    signInWithGoogle,
     sendMagicLinkEmail,
     resetPassword,
     updatePassword,

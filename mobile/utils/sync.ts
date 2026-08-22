@@ -623,6 +623,79 @@ function applyEntity(entity: SyncEntity): void {
   }
 }
 
+// ─── Workspace normalization ────────────────────────────────────────────────
+// Ported from extension's db.ts normalizeWorkspaces/migrateWorkspaceData.
+// Every client seeds its OWN workspace on first run (db/client.ts's initDb)
+// — with no server-side identity to converge on, a laptop's extension and a
+// phone's fresh mobile install both end up pushing a same-named "Personal"
+// workspace as a genuinely different row, and nothing before this reconciled
+// them. This runs after every pull (when it can see workspaces other devices
+// pushed) and merges same-named ones into the one with the lexicographically
+// smallest id — deterministic, so every device converges on the same
+// "winner" independently without needing to coordinate.
+//
+// Narrower than extension's port: mobile has no taskOrder table yet (task_order
+// is a documented gap at the top of this file) and habits are user-global,
+// not workspace-scoped (schema.ts) — so there's nothing habit- or
+// priority-order-related to carry over, just the four workspace-scoped
+// entity tables below.
+function wsNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function migrateWorkspaceData(fromId: string, toId: string): boolean {
+  const ts = nowIso();
+  let moved = 0;
+  moved += db.update(task).set({ workspaceId: toId, updatedAt: ts }).where(eq(task.workspaceId, fromId)).run().changes;
+  moved += db.update(project).set({ workspaceId: toId, updatedAt: ts }).where(eq(project.workspaceId, fromId)).run().changes;
+  moved += db.update(meeting).set({ workspaceId: toId, updatedAt: ts }).where(eq(meeting.workspaceId, fromId)).run().changes;
+  moved += db
+    .update(pomodoroSession)
+    .set({ workspaceId: toId, updatedAt: ts })
+    .where(eq(pomodoroSession.workspaceId, fromId))
+    .run().changes;
+  return moved > 0;
+}
+
+/** Merges same-named workspaces into the one with the smallest id and
+ *  re-homes anything still pointing at a tombstoned workspace whose name has
+ *  a living successor. Returns true when something changed (caller should
+ *  push the result). */
+function normalizeWorkspaces(): boolean {
+  const all = db.select().from(workspace).all();
+  const alive = all.filter(w => !w.deletedAt);
+  let changed = false;
+
+  const groups = new Map<string, typeof alive>();
+  for (const w of alive) {
+    const key = wsNameKey(w.name);
+    const existing = groups.get(key);
+    if (existing) existing.push(w);
+    else groups.set(key, [w]);
+  }
+
+  const canonicalByName = new Map<string, (typeof alive)[number]>();
+  for (const [key, group] of groups) {
+    group.sort((a, b) => a.id.localeCompare(b.id));
+    const canonical = group[0];
+    if (!canonical) continue;
+    canonicalByName.set(key, canonical);
+    for (const dup of group.slice(1)) {
+      if (migrateWorkspaceData(dup.id, canonical.id)) changed = true;
+      db.update(workspace).set({ deletedAt: nowIso(), updatedAt: nowIso() }).where(eq(workspace.id, dup.id)).run();
+      changed = true;
+    }
+  }
+
+  for (const dead of all.filter(w => w.deletedAt)) {
+    const target = canonicalByName.get(wsNameKey(dead.name));
+    if (!target || target.id === dead.id) continue;
+    if (migrateWorkspaceData(dead.id, target.id)) changed = true;
+  }
+
+  return changed;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** One push+pull cycle. No-ops quietly if not signed in or API_URL isn't
@@ -640,6 +713,12 @@ export async function syncNow(): Promise<void> {
   const client = new TokenApiClient(API_URL, session.access_token);
   await push(client);
   await pull(client);
+  // Same-named workspaces from other installs/devices converge into one
+  // canonical id; if that moved anything, push the result right away
+  // (mirrors extension's syncAll).
+  if (normalizeWorkspaces()) {
+    await push(client);
+  }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;

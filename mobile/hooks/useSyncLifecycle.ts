@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
+import { useAuth } from '@/hooks/useAuth';
 import { registerBackgroundSync } from '@/utils/backgroundSync';
 import { syncAllConnectedWorkspaces } from '@/utils/googleCalendar';
 import { syncNow } from '@/utils/sync';
@@ -38,6 +39,16 @@ function syncCalendarSilently(reason: string): void {
 // quietly if not signed in or not entitled — every call site here can fire
 // unconditionally without checking auth state first.
 export function useSyncLifecycle(): void {
+  // Keyed on user id (stable across token refreshes, changes only on an
+  // actual sign-in/out swap) rather than the raw session object — a sign-in
+  // while the app is already open (e.g. the magic-link deep link) previously
+  // had no trigger of its own: this effect ran once at mount, before any
+  // session existed, and the next sync wasn't until the next foreground
+  // transition or the 60s poll tick. Re-running on login gives the same
+  // "session exists -> sync immediately" behavior the initial-mount comment
+  // below already describes, just also on a login that happens mid-session.
+  const userId = useAuth().session?.user.id;
+
   useEffect(() => {
     // Cold start / app reload — matches extension's own "session exists ->
     // sync immediately" behavior on load (App.tsx), rather than waiting for
@@ -65,5 +76,5 @@ export function useSyncLifecycle(): void {
       subscription.remove();
       clearInterval(interval);
     };
-  }, []);
+  }, [userId]);
 }
