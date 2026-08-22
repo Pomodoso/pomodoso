@@ -12,6 +12,7 @@ import { db, getTimerSettingsFromDb, getTimezoneFromDb } from './db';
 import { connectCalendar, syncTodayMeetings } from './calendarSync';
 import { performBackgroundSync } from './syncEngine';
 import { providerRuleAllows } from './ticketRules';
+import { googleSignInFlow } from './authFlow';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
@@ -376,6 +377,9 @@ async function handleMessageAsync(message: ExtensionMessage): Promise<unknown> {
     case 'sync.request':
       scheduleBackgroundSync();
       return null;
+
+    case 'auth.googleSignIn':
+      return googleSignInFlow();
 
     case 'calendar.connect': {
       try {

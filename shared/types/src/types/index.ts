@@ -399,6 +399,7 @@ export type ExtensionMessage =
   | { type: 'ticket.detected'; payload: TicketRef | null }
   | { type: 'ticket.getDetected' }
   | { type: 'calendar.connect'; wsId: string }
+  | { type: 'auth.googleSignIn' }
   | { type: 'sync.request' };
 
 export interface TimerStartPayload {

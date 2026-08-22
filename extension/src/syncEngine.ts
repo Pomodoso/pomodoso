@@ -1,6 +1,6 @@
 import { TokenApiClient, pushEntities, pullEntities } from '@pomodoso/api';
 import type { SyncEntity } from '@pomodoso/api';
-import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, habitLogId } from './db';
+import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, normalizeHabits, habitLogId } from './db';
 import { ensureFreshSession } from './supabaseClient';
 import type {
   TaskRow, ProjectRow, WorkspaceRow,
@@ -100,9 +100,11 @@ export async function syncAll(
   const client = new TokenApiClient(apiUrl, accessToken);
   await push(client);
   await pull(client);
-  // Same-named workspaces from other installs / imports converge into one
-  // canonical id; if that moved anything, push the result right away.
-  if (await normalizeWorkspaces()) {
+  // Same-named workspaces/habits from other installs / imports converge into
+  // one canonical id; if either moved anything, push the result right away.
+  const workspacesChanged = await normalizeWorkspaces();
+  const habitsChanged = await normalizeHabits();
+  if (workspacesChanged || habitsChanged) {
     await push(client);
   }
 }

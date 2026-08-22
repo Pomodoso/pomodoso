@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { TokenApiClient, getMe, signInWithEmail, signOut as supabaseSignOut, resetPasswordForEmail, sendEmailOtp, verifyEmailOtp } from '@pomodoso/api';
-import type { Entitlements } from '@pomodoso/types';
+import type { Entitlements, ExtensionResponse } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { db } from '../db';
 import { getExtensionSupabase } from '../supabaseClient';
@@ -25,54 +25,6 @@ export interface AuthState {
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   isConfigured: boolean;
-}
-
-async function oauthFlow(
-  provider: 'google',
-  persistSession: (s: Session) => Promise<void>,
-  setSession: (s: Session) => void,
-) {
-  const supabase = getExtensionSupabase();
-  const redirectTo = chrome.identity.getRedirectURL('callback');
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: { redirectTo, skipBrowserRedirect: true },
-  });
-  if (error || !data.url) throw error ?? new Error('OAuth URL unavailable');
-
-  const callbackUrl = await new Promise<string>((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow({ url: data.url, interactive: true }, (url) => {
-      if (chrome.runtime.lastError || !url) {
-        reject(new Error(chrome.runtime.lastError?.message ?? 'OAuth cancelled'));
-      } else {
-        resolve(url);
-      }
-    });
-  });
-
-  // Supabase may return tokens in the URL hash (implicit) or as a code (PKCE)
-  const parsed = new URL(callbackUrl);
-  const hash = new URLSearchParams(parsed.hash.slice(1));
-  const query = parsed.searchParams;
-
-  const accessToken = hash.get('access_token') ?? query.get('access_token');
-  const refreshToken = hash.get('refresh_token') ?? query.get('refresh_token');
-  const code = query.get('code');
-
-  let newSession: Session | null = null;
-
-  if (accessToken && refreshToken) {
-    const { data: sd } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-    newSession = sd.session;
-  } else if (code) {
-    const { data: sd } = await supabase.auth.exchangeCodeForSession(code);
-    newSession = sd.session;
-  }
-
-  if (!newSession) throw new Error('No session returned from OAuth');
-  setSession(newSession);
-  await persistSession(newSession);
 }
 
 export function useAuth(): AuthState {
@@ -150,10 +102,6 @@ export function useAuth(): AuthState {
     })();
   }, [isConfigured, session?.access_token]);
 
-  const persistSession = useCallback(async (s: Session) => {
-    await db.settings.put({ key: SESSION_KEY, value: s });
-  }, []);
-
   const signIn = useCallback(async (email: string, password: string) => {
     if (!isConfigured) throw new Error('Auth not configured');
     const supabase = getExtensionSupabase();
@@ -162,10 +110,21 @@ export function useAuth(): AuthState {
     await db.settings.put({ key: SESSION_KEY, value: newSession });
   }, [isConfigured]);
 
+  // Runs in the background service worker (background.ts's authFlow.ts),
+  // not here — chrome.identity.launchWebAuthFlow's interactive window steals
+  // focus, which closes this popup (standard Chrome behavior) before a
+  // popup-local async chain would otherwise resolve; login would then
+  // silently never complete. The background flow persists the session to
+  // IndexedDB regardless of whether this popup is still around to receive
+  // the response — setSession here is just a nice-to-have for the case
+  // where the popup survives; if not, useAuth's restore-on-mount effect
+  // picks the already-persisted session up next time the popup opens.
   const signInWithGoogle = useCallback(async () => {
     if (!isConfigured) throw new Error('Auth not configured');
-    await oauthFlow('google', persistSession, setSession);
-  }, [isConfigured, persistSession]);
+    const response = (await chrome.runtime.sendMessage({ type: 'auth.googleSignIn' })) as ExtensionResponse<Session>;
+    if (!response.ok) throw new Error(response.error);
+    setSession(response.data);
+  }, [isConfigured]);
 
   // Passwordless: email a one-time code, then verify it. (A magic *link* can't
   // return the session to the popup, so the extension uses the OTP code.)
