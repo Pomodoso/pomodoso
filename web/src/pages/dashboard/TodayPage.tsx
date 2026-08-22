@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
 import { trackEvent } from '../../lib/analytics.ts';
 
@@ -836,6 +837,7 @@ function ReportModal({ data, dateStr, onClose }: { data: TodayData; dateStr: str
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function TodayPage({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
   const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -910,7 +912,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="pomo-btn">
+          <button className="pomo-btn" onClick={() => navigate('/dashboard/week')}>
             <i className="ti ti-calendar" /> Week view
           </button>
           <button className="pomo-btn pomo-btn-primary" onClick={() => { trackEvent('report_opened'); setShowReport(true); }}>
