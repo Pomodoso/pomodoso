@@ -415,6 +415,76 @@ export async function normalizeWorkspaces(): Promise<boolean> {
   return changed;
 }
 
+// ─── Habit identity: merge duplicates by name ──────────────────────────────────
+// Habits are user-global (rule 6) — every client seeds its own onboarding
+// defaults ("Water", etc.) on first run with no shared identity to converge
+// on, so two installs (or a reinstall) genuinely produce two separate habit
+// rows with the same name. Unlike workspaces this went unnoticed for months
+// because the popup never surfaced it — found via a duplicate "Water" habit
+// on the web dashboard. Same merge-by-lowest-id strategy as
+// normalizeWorkspaces, applied per (user-global) habit name instead of per
+// workspace.
+const habitNameKey = (name: string) => name.trim().toLowerCase();
+
+// Reassigns fromHabitId's history to toHabitId. habit_history's own id is
+// deterministic from (habitId, date) — see habitLogId below — so a
+// reassigned row needs a freshly computed id, not just a changed habitId
+// field, and if the canonical habit already has its own entry for that same
+// date (both duplicates were checked off on the same day), the two rows
+// have to be merged rather than one silently overwriting the other.
+async function mergeHabitHistory(fromHabitId: string, toHabitId: string): Promise<boolean> {
+  const rows = await db.habitHistory.where('habitId').equals(fromHabitId).toArray();
+  let changed = false;
+  for (const row of rows) {
+    const newId = habitLogId(toHabitId, row.date);
+    const existing = await db.habitHistory.get(newId);
+    if (existing) {
+      const mergedDone = existing.done || row.done || false;
+      const mergedCount = Math.max(existing.count ?? 0, row.count ?? 0);
+      if (mergedDone !== existing.done || mergedCount !== existing.count) {
+        await db.habitHistory.put({ ...existing, done: mergedDone, count: mergedCount, updatedAt: now() });
+        changed = true;
+      }
+    } else {
+      await db.habitHistory.put({ ...row, id: newId, habitId: toHabitId, updatedAt: now() });
+      changed = true;
+    }
+    if (row.id) await db.habitHistory.delete(row.id);
+  }
+  return changed;
+}
+
+/** Merges same-named habits into the one with the smallest id, reassigning
+ *  (and date-colliding-merging) their history. Returns true when something
+ *  changed (caller should push). */
+export async function normalizeHabits(): Promise<boolean> {
+  const all = await db.habits.toArray();
+  const alive = all.filter(h => !h.deletedAt);
+  let changed = false;
+
+  const groups = new Map<string, HabitRow[]>();
+  for (const h of alive) {
+    const key = habitNameKey(h.name);
+    const g = groups.get(key);
+    if (g) g.push(h);
+    else groups.set(key, [h]);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    group.sort((a, b) => a.id.localeCompare(b.id));
+    const canonical = group[0];
+    if (!canonical) continue;
+    for (const dup of group.slice(1)) {
+      if (await mergeHabitHistory(dup.id, canonical.id)) changed = true;
+      await db.habits.update(dup.id, { deletedAt: now(), updatedAt: now() });
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 // Deterministic UUID for a habit log, unique per (habit, date). The server's
 // habit_log PK is `id`, so each (habit, date) MUST get a distinct id — the old
 // generator truncated the date off, giving every day of a habit the same id,
