@@ -86,6 +86,14 @@ export const routes: RouteRecord[] = [
         ),
       },
       {
+        path: 'dashboard/workspaces',
+        element: (
+          <ProtectedRoute>
+            <Dashboard page="workspaces" />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'settings/billing',
         element: (
           <ProtectedRoute>

@@ -13,6 +13,7 @@ import WeekPage from './WeekPage.tsx';
 import ProjectsPage from './ProjectsPage.tsx';
 import HabitsPage from './HabitsPage.tsx';
 import HistoryPage from './HistoryPage.tsx';
+import WorkspacesPage from './WorkspacesPage.tsx';
 
 const ACTIVE_WS_KEY = 'pomodoso:active_ws';
 
@@ -22,7 +23,7 @@ interface WorkspaceInfo {
   color: string;
 }
 
-export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' | 'week' | 'projects' | 'habits' | 'history' }) {
+export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' | 'week' | 'projects' | 'habits' | 'history' | 'workspaces' }) {
   const { session, user, entitlements } = useAuth();
   useCrisp({ email: user?.email ?? session?.user.email, name: session?.user.user_metadata?.full_name as string | undefined });
   const navigate = useNavigate();
@@ -193,6 +194,8 @@ export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks'
             <HabitsPage />
           ) : page === 'history' ? (
             <HistoryPage workspaceId={activeWsId} />
+          ) : page === 'workspaces' ? (
+            <WorkspacesPage onChanged={refreshWorkspaces} />
           ) : (
             <TodayPage workspaceId={activeWsId} />
           )
