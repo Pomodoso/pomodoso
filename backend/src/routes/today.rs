@@ -354,6 +354,30 @@ pub async fn get_today(
     let mut priorities = build_list(&priority_ids, true);
     let mut tasks = build_list(&today_ids, false);
 
+    // task_order's priority_ids/today_ids is *current* membership, not a
+    // historical record — the extension has no concept of "what Today looked
+    // like on a past day" either, so browsing to a previous date here
+    // otherwise shows whichever tasks currently happen to still be in Today,
+    // hiding anything since resolved (done/cancelled) and removed from that
+    // list. Recurring tasks already dodge this via extra.completedDates
+    // (below); regular one-off tasks need the same treatment via
+    // completed_at, or a past day always looks empty/still-open no matter
+    // what was actually finished that day.
+    let extra_done_ids: Vec<Uuid> = sqlx::query_scalar!(
+        r#"
+        SELECT id FROM task
+        WHERE workspace_id = ANY($1)
+          AND deleted_at IS NULL
+          AND completed_at IS NOT NULL
+          AND DATE(completed_at AT TIME ZONE $3) = $2
+        "#,
+        &ws_ids,
+        q.date,
+        tz,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
     // Recurring tasks track completion via extra.completedDates and are removed
     // from the Today order when done, so they'd otherwise vanish from the web.
     // Surface the ones completed today (that aren't already listed) so the user
@@ -363,15 +387,21 @@ pub async fn get_today(
         .chain(tasks.iter())
         .map(|t| t.id)
         .collect();
-    let mut recurring_done: Vec<TodayTask> = task_map
+    let mut extra_done: Vec<TodayTask> = task_map
         .iter()
         .filter(|(id, t)| {
-            t.recurring && t.completed_dates.contains(&today_str) && !listed_ids.contains(id)
+            !listed_ids.contains(*id)
+                && ((t.recurring && t.completed_dates.contains(&today_str))
+                    || extra_done_ids.contains(id))
         })
         .map(|(id, t)| TodayTask {
             id: *id,
             title: t.title.clone(),
-            status: "done".to_owned(),
+            status: if t.recurring {
+                "done".to_owned()
+            } else {
+                t.status.clone()
+            },
             is_priority: false,
             completed_at: t.completed_at,
             project_id: t.project_id,
@@ -382,12 +412,12 @@ pub async fn get_today(
             workspace_color: t.workspace_color.clone(),
             ticket_id: t.ticket_id.clone(),
             position: 0,
-            recurring: true,
+            recurring: t.recurring,
             done_today: true,
         })
         .collect();
-    recurring_done.sort_by(|a, b| a.title.cmp(&b.title));
-    tasks.extend(recurring_done);
+    extra_done.sort_by(|a, b| a.title.cmp(&b.title));
+    tasks.extend(extra_done);
 
     // Completed tasks sink to the bottom, preserving relative order
     priorities.sort_by_key(|t| t.status == "done");
