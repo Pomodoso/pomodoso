@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
 import { trackEvent } from '../../lib/analytics.ts';
+import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 import { ReportModal } from '../../components/ReportModal.tsx';
 
@@ -771,12 +772,17 @@ function buildReport(data: TodayData, dateStr: string): string {
 
 export default function TodayPage({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [date, setDate] = useState(todayDate());
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  // Can't browse further back than the account's own signup date.
+  const minDate = user?.created_at ? new Date(user.created_at).toLocaleDateString('en-CA') : null;
+  const atMinDate = minDate !== null && date <= minDate;
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -822,7 +828,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
       <div className="pomo-page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ display: 'flex', gap: 2 }}>
-            <button className="pomo-btn pomo-btn-icon" aria-label="Previous day" onClick={() => setDate(d => shiftDate(d, -1))}>
+            <button className="pomo-btn pomo-btn-icon" aria-label="Previous day" onClick={() => setDate(d => shiftDate(d, -1))} disabled={atMinDate}>
               <i className="ti ti-chevron-left" />
             </button>
             <button className="pomo-btn pomo-btn-icon" aria-label="Next day" onClick={() => setDate(d => shiftDate(d, 1))}>

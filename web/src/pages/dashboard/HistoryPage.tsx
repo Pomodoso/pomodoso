@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
+import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 import { ReportModal } from '../../components/ReportModal.tsx';
 
@@ -184,6 +185,7 @@ function DayDetail({ date, day, onOpenTask }: { date: string; day: HistoryDay | 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const [view, setView] = useState<ViewMode>(() => (searchParams.get('view') === 'month' ? 'month' : 'week'));
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayDate()));
@@ -227,6 +229,12 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
   };
   const isCurrentRange = view === 'week' ? weekStart === startOfWeek(today) : monthStart === startOfMonth(today);
 
+  // Can't browse further back than the account's own signup date.
+  const minDate = user?.created_at ? new Date(user.created_at).toLocaleDateString('en-CA') : null;
+  const atMinDate =
+    minDate !== null &&
+    (view === 'week' ? weekStart <= startOfWeek(minDate) : monthStart <= startOfMonth(minDate));
+
   return (
     <>
       <div className="pomo-page-header">
@@ -236,6 +244,7 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
               className="pomo-btn pomo-btn-icon"
               aria-label={view === 'week' ? 'Previous week' : 'Previous month'}
               onClick={() => (view === 'week' ? setWeekStart(w => addDays(w, -7)) : setMonthStart(m => addMonths(m, -1)))}
+              disabled={atMinDate}
             >
               <i className="ti ti-chevron-left" />
             </button>

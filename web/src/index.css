@@ -206,6 +206,8 @@ body {
 }
 .pomo-btn-primary:hover { opacity: 0.9; }
 .pomo-btn i { font-size: 14px; }
+.pomo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pomo-btn:disabled:hover { background: var(--surface); }
 .pomo-btn-icon { padding: 7px 8px; }
 .pomo-btn-icon i { font-size: 16px; }
 .pomo-link-btn {
