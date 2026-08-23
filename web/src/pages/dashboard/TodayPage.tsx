@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
 import { trackEvent } from '../../lib/analytics.ts';
+import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -240,9 +241,9 @@ function WorkspaceBadge({ task }: { task: TodayTask }) {
   );
 }
 
-function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: number; showWorkspace: boolean }) {
+function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; index: number; showWorkspace: boolean; onOpen: (id: string) => void }) {
   return (
-    <div className="pomo-priority-item" key={task.id}>
+    <div className="pomo-priority-item" key={task.id} onClick={() => onOpen(task.id)} style={{ cursor: 'pointer' }}>
       <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
         {task.status === 'done'
           ? <i className="ti ti-check" style={{ fontSize: 12 }} />
@@ -283,7 +284,7 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
   );
 }
 
-function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: TodayTask[]; tasks: TodayTask[]; showWorkspace: boolean }) {
+function TodayTasksCard({ priorities, tasks, showWorkspace, onOpen }: { priorities: TodayTask[]; tasks: TodayTask[]; showWorkspace: boolean; onOpen: (id: string) => void }) {
   const allTasks = [...priorities, ...tasks];
   const doneCount = allTasks.filter(t => t.status === 'done').length;
   // Recurring tasks are grouped at the end (done ones sink to the bottom of the
@@ -318,19 +319,19 @@ function TodayTasksCard({ priorities, tasks, showWorkspace }: { priorities: Toda
       </div>
       <div className="pomo-priority-list">
         {regularPriorities.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
         ))}
         {regularPriorities.length > 0 && regularTasks.length > 0 && (
           <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
         )}
         {regularTasks.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
         ))}
         {recurringTasks.length > 0 && (regularPriorities.length > 0 || regularTasks.length > 0) && (
           <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
         )}
         {recurringTasks.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
         ))}
       </div>
     </div>
@@ -850,6 +851,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [date, setDate] = useState(todayDate());
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -929,6 +931,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
       </div>
 
       {showReport && <ReportModal data={data} dateStr={`${dayName}, ${dateStr}`} onClose={() => setShowReport(false)} />}
+      {openTaskId && <TaskDetailModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} />}
 
       {/* Active pomodoro bar */}
       {data.active_session && <PomoBar session={data.active_session} />}
@@ -936,7 +939,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
       {/* Main grid */}
       <div className="pomo-grid">
         <div className="pomo-left-col">
-          <TodayTasksCard priorities={data.priorities} tasks={data.tasks} showWorkspace={showWorkspace} />
+          <TodayTasksCard priorities={data.priorities} tasks={data.tasks} showWorkspace={showWorkspace} onOpen={setOpenTaskId} />
           <WorkLogCard workLog={data.work_log} meetings={data.meetings} />
         </div>
 

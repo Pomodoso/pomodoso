@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.title, t.status, t.notes, t.ticket_id, t.is_priority,\n               t.scheduled_for, t.completed_at, t.created_at, t.updated_at,\n               t.project_id, t.workspace_id, t.extra,\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\",\n               w.name  as \"workspace_name!\",\n               w.color as \"workspace_color!\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        JOIN workspace w ON w.id = t.workspace_id\n        WHERE t.id = $1 AND t.deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "ticket_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_priority",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "scheduled_for",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "project_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "project_color?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "workspace_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "workspace_color!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b9f4564d8c98166b8d893789b257b4b29c6b70a2f9a02f2c55caec3466520182"
+}

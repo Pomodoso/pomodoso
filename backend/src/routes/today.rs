@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     Extension, Json,
 };
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
@@ -817,6 +817,140 @@ pub async fn get_tasks(
         backlog,
         recurring,
         done,
+    }))
+}
+
+// ─── Task detail (single task, full info) ──────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct TaskSession {
+    pub id: Uuid,
+    pub mode: String,
+    pub started_at: DateTime<Utc>,
+    pub actual_duration_seconds: i32,
+    pub status: String,
+}
+
+#[derive(Serialize)]
+pub struct TaskDetail {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub notes: String,
+    pub ticket_id: Option<String>,
+    pub is_priority: bool,
+    pub scheduled_for: Option<NaiveDate>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub project_id: Option<Uuid>,
+    pub project_name: Option<String>,
+    pub project_color: Option<String>,
+    pub workspace_id: Uuid,
+    pub workspace_name: String,
+    pub workspace_color: String,
+    /// The recurrence rule (extra.recurrence), null for one-off tasks.
+    pub recurrence: Option<serde_json::Value>,
+    /// YYYY-MM-DD dates this recurring task was completed on (extra.completedDates).
+    pub completed_dates: Vec<String>,
+    pub total_pomos: i64,
+    pub total_seconds: i64,
+    /// Most recent sessions first, capped so the response stays small for
+    /// tasks worked on over a long period.
+    pub sessions: Vec<TaskSession>,
+}
+
+pub async fn get_task_detail(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TaskDetail>> {
+    let row = sqlx::query!(
+        r#"
+        SELECT t.id, t.title, t.status, t.notes, t.ticket_id, t.is_priority,
+               t.scheduled_for, t.completed_at, t.created_at, t.updated_at,
+               t.project_id, t.workspace_id, t.extra,
+               p.name  as "project_name?",
+               p.color as "project_color?",
+               w.name  as "workspace_name!",
+               w.color as "workspace_color!"
+        FROM task t
+        LEFT JOIN project p ON p.id = t.project_id
+        JOIN workspace w ON w.id = t.workspace_id
+        WHERE t.id = $1 AND t.deleted_at IS NULL
+        "#,
+        id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    require_workspace_access(&state, auth.id, row.workspace_id).await?;
+
+    let recurrence = row
+        .extra
+        .get("recurrence")
+        .filter(|v| !v.is_null())
+        .cloned();
+    let completed_dates: Vec<String> = row
+        .extra
+        .get("completedDates")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let totals = sqlx::query!(
+        r#"
+        SELECT COUNT(*) FILTER (WHERE mode = 'pomodoro') as "pomos!",
+               COALESCE(SUM(actual_duration_seconds), 0) as "seconds!"
+        FROM pomodoro_session
+        WHERE task_id = $1 AND status = 'completed'
+        "#,
+        id,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let sessions = sqlx::query_as!(
+        TaskSession,
+        r#"
+        SELECT id, mode, started_at, actual_duration_seconds, status
+        FROM pomodoro_session
+        WHERE task_id = $1 AND status = 'completed'
+        ORDER BY started_at DESC
+        LIMIT 20
+        "#,
+        id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(TaskDetail {
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        notes: row.notes,
+        ticket_id: row.ticket_id,
+        is_priority: row.is_priority,
+        scheduled_for: row.scheduled_for,
+        completed_at: row.completed_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        project_id: row.project_id,
+        project_name: row.project_name,
+        project_color: row.project_color,
+        workspace_id: row.workspace_id,
+        workspace_name: row.workspace_name,
+        workspace_color: row.workspace_color,
+        recurrence,
+        completed_dates,
+        total_pomos: totals.pomos,
+        total_seconds: totals.seconds,
+        sessions,
     }))
 }
 
