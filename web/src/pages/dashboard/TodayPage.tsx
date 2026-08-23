@@ -271,7 +271,7 @@ function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; inde
       </div>
       {(() => {
         const badge =
-          task.status === 'in_progress' ? { label: 'Active', color: 'var(--accent)' }
+          task.status === 'in_progress' ? { label: 'In progress', color: 'var(--accent)' }
           : task.status === 'delayed' ? { label: 'Delayed', color: '#7B5DB4' }
           : task.status === 'cancelled' ? { label: 'Cancelled', color: 'var(--text-tert)' }
           : null;

@@ -26,7 +26,9 @@ export function Sidebar({ active, switcher, userName, userEmail, isPro, onSignOu
     <aside className="pomo-sidebar">
       {/* Brand */}
       <Link to="/dashboard" className="pomo-brand" style={{ textDecoration: 'none', color: 'inherit' }}>
-        <div className="pomo-brand-logo">🍅</div>
+        <div className="pomo-brand-logo">
+          <img src="/icon.svg" alt="" />
+        </div>
         Pomodoso
       </Link>
 
