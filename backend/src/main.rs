@@ -169,6 +169,10 @@ async fn main() -> anyhow::Result<()> {
                 .route_layer(auth.clone()),
         )
         .route(
+            "/habits/history",
+            get(routes::habits::get_habits_history).route_layer(auth.clone()),
+        )
+        .route(
             "/habits/{id}",
             patch(routes::habits::update_habit)
                 .delete(routes::habits::delete_habit)
@@ -177,10 +181,6 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/habits/{id}/log",
             post(routes::habits::log_habit).route_layer(auth.clone()),
-        )
-        .route(
-            "/habits/{id}/history",
-            get(routes::habits::get_habit_history).route_layer(auth.clone()),
         )
         .route(
             "/billing/checkout",

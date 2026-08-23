@@ -330,60 +330,102 @@ pub async fn log_habit(
 }
 
 // ─── Yearly history (GitHub-contributions-style heatmap) ──────────────────────
+// One combined grid across every habit — not per-habit — so a day's color
+// reflects overall habit consistency ("how many of your habits did you hit
+// that day"), not any single habit's identity.
 
 #[derive(Deserialize)]
-pub struct HabitHistoryQuery {
+pub struct HabitsHistoryQuery {
     pub year: i32,
 }
 
 #[derive(Serialize)]
-pub struct HabitHistoryDay {
+pub struct HabitsHistoryDay {
     pub date: NaiveDate,
-    pub value: i32,
-    pub done: bool,
+    pub habits_done: i32,
 }
 
 #[derive(Serialize)]
-pub struct HabitHistoryResponse {
+pub struct HabitsHistoryResponse {
     pub year: i32,
-    pub days: Vec<HabitHistoryDay>,
+    pub habits_total: i32,
+    pub days: Vec<HabitsHistoryDay>,
 }
 
-pub async fn get_habit_history(
+pub async fn get_habits_history(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
-    Path(id): Path<Uuid>,
-    Query(q): Query<HabitHistoryQuery>,
-) -> Result<Json<HabitHistoryResponse>> {
-    require_habit_owner(&state, auth.id, id).await?;
-
+    Query(q): Query<HabitsHistoryQuery>,
+) -> Result<Json<HabitsHistoryResponse>> {
     let from =
         NaiveDate::from_ymd_opt(q.year, 1, 1).ok_or(AppError::BadRequest("invalid year".into()))?;
     let to = NaiveDate::from_ymd_opt(q.year, 12, 31)
         .ok_or(AppError::BadRequest("invalid year".into()))?;
 
+    let habits = sqlx::query!(
+        r#"SELECT id, kind, target_count FROM habit WHERE user_id = $1 AND deleted_at IS NULL"#,
+        auth.id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    let habits_total = habits.len() as i32;
+    let habit_meta: std::collections::HashMap<Uuid, (String, Option<i32>)> = habits
+        .into_iter()
+        .map(|h| (h.id, (h.kind, h.target_count)))
+        .collect();
+
     let rows = sqlx::query!(
         r#"
-        SELECT date, value, completed_at
-        FROM habit_log
-        WHERE habit_id = $1 AND date BETWEEN $2 AND $3
-        ORDER BY date
+        SELECT hl.habit_id, hl.date, hl.value, hl.completed_at
+        FROM habit_log hl
+        JOIN habit h ON h.id = hl.habit_id
+        WHERE h.user_id = $1 AND h.deleted_at IS NULL AND hl.date BETWEEN $2 AND $3
         "#,
-        id,
+        auth.id,
         from,
         to,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    let days = rows
-        .into_iter()
-        .map(|r| HabitHistoryDay {
-            date: r.date,
-            value: r.value,
-            done: r.completed_at.is_some(),
-        })
-        .collect();
+    let mut done_by_day: std::collections::HashMap<NaiveDate, i32> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let Some((kind, target)) = habit_meta.get(&row.habit_id) else {
+            continue;
+        };
+        // completed_at is an unreliable "done" signal for counter habits (can
+        // be NULL even when value already met/exceeded target — see
+        // HabitHeatmap.tsx's frontend fallback for the same gap), so counters
+        // are judged by value vs. target directly; completed_at only matters
+        // for boolean habits, which have no value to compare.
+        let completed = match kind.as_str() {
+            "counter" => match target {
+                Some(t) if *t > 0 => row.value >= *t,
+                _ => row.value > 0,
+            },
+            _ => row.completed_at.is_some(),
+        };
+        if completed {
+            *done_by_day.entry(row.date).or_insert(0) += 1;
+        }
+    }
 
-    Ok(Json(HabitHistoryResponse { year: q.year, days }))
+    let mut days = Vec::new();
+    let mut cursor = from;
+    while cursor <= to {
+        days.push(HabitsHistoryDay {
+            date: cursor,
+            habits_done: done_by_day.get(&cursor).copied().unwrap_or(0),
+        });
+        cursor = cursor
+            .succ_opt()
+            .unwrap_or(cursor + chrono::Duration::days(1));
+    }
+
+    Ok(Json(HabitsHistoryResponse {
+        year: q.year,
+        habits_total,
+        days,
+    }))
 }
