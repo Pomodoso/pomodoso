@@ -26,9 +26,7 @@ export function Sidebar({ active, switcher, userName, userEmail, isPro, onSignOu
     <aside className="pomo-sidebar">
       {/* Brand */}
       <Link to="/dashboard" className="pomo-brand" style={{ textDecoration: 'none', color: 'inherit' }}>
-        <div className="pomo-brand-logo">
-          <i className="ti ti-tomato" />
-        </div>
+        <div className="pomo-brand-logo">🍅</div>
         Pomodoso
       </Link>
 
@@ -111,6 +109,17 @@ export function Sidebar({ active, switcher, userName, userEmail, isPro, onSignOu
             }}>
               {userName !== userEmail ? userName : userEmail}
             </div>
+            {userName !== userEmail && (
+              <div style={{
+                fontSize: 10,
+                color: 'var(--text-tert)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {userEmail}
+              </div>
+            )}
             <div style={{ fontSize: 10, color: 'var(--text-tert)' }}>
               {isPro ? 'Pro' : 'Free plan'}
             </div>

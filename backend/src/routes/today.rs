@@ -325,16 +325,21 @@ pub async fn get_today(
     // otherwise shows whichever tasks currently happen to still be in Today,
     // hiding anything since resolved (done/cancelled) and removed from that
     // list. Recurring tasks already dodge this via extra.completedDates
-    // (below); regular one-off tasks need the same treatment via
-    // completed_at, or a past day always looks empty/still-open no matter
-    // what was actually finished that day.
+    // (below); regular one-off tasks need the same treatment.
+    //
+    // completed_at is NOT a reliable signal here: the extension's local Task
+    // model has no such field at all, so it never gets sent on sync push and
+    // stays NULL for virtually every real task. The extension's own "when did
+    // this happen" view (Tasks > History) falls back to updated_at for this
+    // exact reason — mirror that: status done/cancelled + the day its
+    // updated_at (or completed_at, if some other client did set it) falls on.
     let extra_done_ids: Vec<Uuid> = sqlx::query_scalar!(
         r#"
         SELECT id FROM task
         WHERE workspace_id = ANY($1)
           AND deleted_at IS NULL
-          AND completed_at IS NOT NULL
-          AND DATE(completed_at AT TIME ZONE $3) = $2
+          AND status IN ('done', 'cancelled')
+          AND DATE(COALESCE(completed_at, updated_at) AT TIME ZONE $3) = $2
         "#,
         &ws_ids,
         q.date,
@@ -657,13 +662,27 @@ pub async fn get_today(
         .values()
         .filter(|t| t.completed_dates.contains(&date_str))
         .count() as i64;
+    // One-off tasks completed today but already dropped out of the Today/
+    // priority lists — same signal as extra_done above, excluding anything
+    // already counted via done_in_lists, and only counting real completions
+    // (not cancellations) to match done_in_lists' status == "done" filter.
+    let extra_done_count = extra_done_ids
+        .iter()
+        .filter(|id| {
+            !listed.contains(id)
+                && task_map
+                    .get(id)
+                    .map(|t| t.status == "done")
+                    .unwrap_or(false)
+        })
+        .count() as i64;
 
     let stats = TodayStats {
         pomos_today: pomos_completed_today,
         seconds_today,
         pomos_this_week: week_stats.pomos,
         tickets_this_week: week_stats.tickets,
-        tasks_done_today: done_in_lists + recurring_done,
+        tasks_done_today: done_in_lists + extra_done_count + recurring_done,
     };
 
     Ok(Json(TodayResponse {
