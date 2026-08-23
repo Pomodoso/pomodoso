@@ -422,7 +422,6 @@ export default function HabitsPage() {
                 </div>
                 <HabitHeatmap
                   habitId={h.id}
-                  color={habitIconColor(h.icon)}
                   kind={h.kind}
                   targetCount={h.target_count}
                   minYear={minYear}

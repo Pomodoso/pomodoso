@@ -62,9 +62,8 @@ function monthLabelsForWeeks(weeks: string[][], year: number): (string | null)[]
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
-export function HabitHeatmap({ habitId, color, kind, targetCount, minYear }: {
+export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
   habitId: string;
-  color: string;
   kind: 'boolean' | 'counter';
   targetCount: number | null;
   minYear: number;
@@ -145,8 +144,8 @@ export function HabitHeatmap({ habitId, color, kind, targetCount, minYear }: {
                         height: 11,
                         borderRadius: 2,
                         visibility: inYear ? 'visible' : 'hidden',
-                        background: ratio <= 0 ? 'var(--border)' : color,
-                        opacity: ratio <= 0 ? 1 : ratio >= 1 ? 1 : 0.4,
+                        background: ratio <= 0 ? 'var(--border)' : 'var(--accent)',
+                        opacity: ratio <= 0 ? 1 : ratio >= 1 ? 1 : ratio >= 0.5 ? 0.65 : 0.35,
                       }}
                     />
                   );
