@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) FROM workspace_member m\n        JOIN workspace w ON w.id = m.workspace_id\n        WHERE m.user_id = $1 AND w.deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bea2c1ec392956b1229a9834b263f5a21b76d0e57c3cf9eeb89668fabafb39dd"
+}

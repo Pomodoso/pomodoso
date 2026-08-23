@@ -110,7 +110,21 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/workspaces",
-            get(routes::today::get_workspaces).route_layer(auth.clone()),
+            get(routes::workspaces::list_workspaces).route_layer(auth.clone()),
+        )
+        .route(
+            "/workspaces/{id}",
+            patch(routes::workspaces::update_workspace)
+                .delete(routes::workspaces::delete_workspace)
+                .route_layer(auth.clone()),
+        )
+        .route(
+            "/workspaces/{id}/archive",
+            post(routes::workspaces::archive_workspace).route_layer(auth.clone()),
+        )
+        .route(
+            "/workspaces/{id}/unarchive",
+            post(routes::workspaces::unarchive_workspace).route_layer(auth.clone()),
         )
         .route(
             "/today",

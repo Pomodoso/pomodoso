@@ -147,41 +147,6 @@ pub struct TodayResponse {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-pub async fn get_workspaces(
-    State(state): State<AppState>,
-    Extension(auth): Extension<AuthUser>,
-) -> Result<Json<Vec<WorkspaceInfo>>> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT w.id, w.name, w.color
-        FROM workspace w
-        JOIN workspace_member m ON m.workspace_id = w.id
-        WHERE m.user_id = $1 AND w.deleted_at IS NULL
-        ORDER BY GREATEST(
-          w.updated_at,
-          COALESCE(
-            (SELECT MAX(t.synced_at) FROM task t WHERE t.workspace_id = w.id),
-            w.updated_at
-          )
-        ) DESC
-        "#,
-        auth.id,
-    )
-    .fetch_all(&state.pool)
-    .await?;
-
-    let workspaces = rows
-        .into_iter()
-        .map(|r| WorkspaceInfo {
-            id: r.id,
-            name: r.name,
-            color: r.color,
-        })
-        .collect();
-
-    Ok(Json(workspaces))
-}
-
 pub async fn get_today(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,

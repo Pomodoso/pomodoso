@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE workspace SET archived_at = NULL, updated_at = NOW()\n           WHERE id = $1\n           RETURNING id, name, color, archived_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "color",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "archived_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "aaf8b616e7a9da08abe3863c5e5595cadba20a96b9fe699012e9aeeba44ff601"
+}

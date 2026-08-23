@@ -6,3 +6,4 @@ pub mod me;
 pub mod projects;
 pub mod sync;
 pub mod today;
+pub mod workspaces;
