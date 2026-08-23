@@ -230,6 +230,28 @@ body {
 }
 .pomo-input:focus { outline: none; border-color: var(--border-strong); }
 
+/* ── Modal ───────────────────────────────────────────────────────────────────── */
+.pomo-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 23, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8vh 24px;
+  z-index: 200;
+}
+.pomo-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
+  width: 100%;
+  max-width: 560px;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+
 /* ── Cards ───────────────────────────────────────────────────────────────────── */
 .pomo-card {
   background: var(--surface);

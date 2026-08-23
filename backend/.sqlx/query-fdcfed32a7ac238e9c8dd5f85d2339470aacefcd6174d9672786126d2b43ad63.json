@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) FILTER (WHERE mode = 'pomodoro') as \"pomos!\",\n               COALESCE(SUM(actual_duration_seconds), 0) as \"seconds!\"\n        FROM pomodoro_session\n        WHERE task_id = $1 AND status = 'completed'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pomos!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "seconds!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "fdcfed32a7ac238e9c8dd5f85d2339470aacefcd6174d9672786126d2b43ad63"
+}

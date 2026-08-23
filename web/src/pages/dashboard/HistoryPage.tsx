@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Mirrors backend/src/routes/history.rs's HistoryResponse.
@@ -102,7 +103,7 @@ const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // ─── Day detail panel ────────────────────────────────────────────────────────
 
-function DayDetail({ date, day }: { date: string; day: HistoryDay | undefined }) {
+function DayDetail({ date, day, onOpenTask }: { date: string; day: HistoryDay | undefined; onOpenTask: (id: string) => void }) {
   const label = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   });
@@ -126,7 +127,7 @@ function DayDetail({ date, day }: { date: string; day: HistoryDay | undefined })
       ) : (
         <div className="pomo-priority-list">
           {tasks.map(t => (
-            <div className="pomo-priority-item" key={t.id}>
+            <div className="pomo-priority-item" key={t.id} onClick={() => onOpenTask(t.id)} style={{ cursor: 'pointer' }}>
               <div className="pomo-priority-mark done"><i className="ti ti-check" style={{ fontSize: 12 }} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: 'var(--text)' }}>{t.title}</div>
@@ -152,6 +153,7 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayDate()));
   const [monthStart, setMonthStart] = useState(() => startOfMonth(todayDate()));
   const [selectedDate, setSelectedDate] = useState(() => todayDate());
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -319,7 +321,8 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
 
-      <DayDetail date={selectedDate} day={dayByDate.get(selectedDate)} />
+      <DayDetail date={selectedDate} day={dayByDate.get(selectedDate)} onOpenTask={setOpenTaskId} />
+      {openTaskId && <TaskDetailModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} />}
     </>
   );
 }

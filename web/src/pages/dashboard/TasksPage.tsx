@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 
 interface TaskItem {
   id: string;
@@ -76,15 +77,16 @@ function WorkspaceBadge({ task }: { task: TaskItem }) {
   );
 }
 
-function TaskRow({ task, showWorkspace, icon, subtitle }: {
+function TaskRow({ task, showWorkspace, icon, subtitle, onOpen }: {
   task: TaskItem;
   showWorkspace: boolean;
   icon: string;
   subtitle?: string;
+  onOpen: (id: string) => void;
 }) {
   const isDone = task.status === 'done' || task.status === 'cancelled';
   return (
-    <div className="pomo-priority-item">
+    <div className="pomo-priority-item" onClick={() => onOpen(task.id)} style={{ cursor: 'pointer' }}>
       <div className={`pomo-priority-mark ${isDone ? 'done' : ''}`}>
         <i className={`ti ${isDone ? 'ti-check' : icon}`} style={{ fontSize: 11 }} />
       </div>
@@ -130,6 +132,7 @@ export default function TasksPage({ workspaceId }: { workspaceId: string }) {
   const [showDone, setShowDone] = useState(false);
   const [done, setDone] = useState<TaskItem[] | null>(null);
   const [doneLoading, setDoneLoading] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   const wsParam = workspaceId === 'all' ? '' : `workspace_id=${workspaceId}`;
   const showWorkspace = workspaceId === 'all';
@@ -191,6 +194,7 @@ export default function TasksPage({ workspaceId }: { workspaceId: string }) {
               showWorkspace={showWorkspace}
               icon="ti-repeat"
               subtitle={t.recurrence ? formatRecurrence(t.recurrence) : undefined}
+              onOpen={setOpenTaskId}
             />
           ))
         )}
@@ -201,7 +205,7 @@ export default function TasksPage({ workspaceId }: { workspaceId: string }) {
           <div className="pomo-empty"><i className="ti ti-inbox" />Backlog is empty.</div>
         ) : (
           data.backlog.map(t => (
-            <TaskRow key={t.id} task={t} showWorkspace={showWorkspace} icon="ti-point" />
+            <TaskRow key={t.id} task={t} showWorkspace={showWorkspace} icon="ti-point" onOpen={setOpenTaskId} />
           ))
         )}
       </Card>
@@ -214,11 +218,13 @@ export default function TasksPage({ workspaceId }: { workspaceId: string }) {
             <div className="pomo-empty"><i className="ti ti-check" />No completed tasks.</div>
           ) : (
             done.map(t => (
-              <TaskRow key={t.id} task={t} showWorkspace={showWorkspace} icon="ti-check" />
+              <TaskRow key={t.id} task={t} showWorkspace={showWorkspace} icon="ti-check" onOpen={setOpenTaskId} />
             ))
           )}
         </Card>
       )}
+
+      {openTaskId && <TaskDetailModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} />}
     </>
   );
 }
