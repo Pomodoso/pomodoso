@@ -60,6 +60,28 @@ function monthLabelsForWeeks(weeks: string[][], year: number): (string | null)[]
   });
 }
 
+// 6 non-empty levels (0 = nothing logged) — "muy poco" through "muchísimo" —
+// plus a distinct top shade for days that exceeded the goal, so over-achieving
+// reads as brighter than merely meeting it.
+const OPACITY_STEPS = [0.14, 0.28, 0.42, 0.58, 0.74, 0.88, 1];
+function intensityOpacity(ratio: number): number {
+  if (ratio <= 0) return 0;
+  const step = ratio >= 1 ? OPACITY_STEPS.length - 1 : Math.min(Math.floor(ratio * (OPACITY_STEPS.length - 1)), OPACITY_STEPS.length - 2);
+  return OPACITY_STEPS[step];
+}
+
+// completed_at isn't a reliable "done" signal for counter habits — logs can
+// have value >= target and still lack it (same class of gap as tasks'
+// completed_at earlier). Derive intensity from value vs. target instead;
+// completed_at is only meaningful for boolean habits, which have no partial
+// state to derive from.
+function dayRatio(day: HabitHistoryDay | undefined, kind: 'boolean' | 'counter', targetCount: number | null, maxValue: number): number {
+  if (!day) return 0;
+  if (kind === 'boolean') return day.done ? 1 : 0;
+  const target = targetCount && targetCount > 0 ? targetCount : maxValue;
+  return target > 0 ? day.value / target : 0;
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
@@ -72,13 +94,15 @@ export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
   const [year, setYear] = useState(currentYear);
   const [data, setData] = useState<HabitHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setError(false);
     api
       .get<HabitHistoryResponse>(`/habits/${habitId}/history?year=${year}`)
       .then(setData)
-      .catch(() => setData({ year, days: [] }))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [habitId, year]);
 
@@ -88,9 +112,11 @@ export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
     return map;
   }, [data]);
 
+  const maxValue = useMemo(() => Math.max(1, ...(data?.days.map(d => d.value) ?? [0])), [data]);
+
   const weeks = useMemo(() => buildYearWeeks(year), [year]);
   const monthLabels = useMemo(() => monthLabelsForWeeks(weeks, year), [weeks, year]);
-  const totalDone = data?.days.filter(d => d.done).length ?? 0;
+  const totalCompleted = data?.days.filter(d => dayRatio(d, kind, targetCount, maxValue) >= 1).length ?? 0;
 
   const years: number[] = [];
   for (let y = currentYear; y >= minYear; y--) years.push(y);
@@ -98,8 +124,8 @@ export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       <div style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
-        <div style={{ fontSize: 11, color: 'var(--text-tert)', marginBottom: 6 }}>
-          {loading ? 'Loading…' : `${totalDone} completions in ${year}`}
+        <div style={{ fontSize: 11, color: error ? 'var(--accent)' : 'var(--text-tert)', marginBottom: 6 }}>
+          {loading ? 'Loading…' : error ? 'Failed to load' : `${totalCompleted} completions in ${year}`}
         </div>
         <div style={{ display: 'inline-block' }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weeks.length}, 11px)`, gap: 3, marginBottom: 3, marginLeft: 14 }}>
@@ -130,11 +156,8 @@ export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
                 week.map((date, di) => {
                   const inYear = new Date(`${date}T00:00:00`).getFullYear() === year;
                   const day = dayMap.get(date);
-                  const ratio =
-                    !day ? 0
-                    : kind === 'counter' && targetCount
-                      ? day.value / targetCount
-                      : day.done ? 1 : 0;
+                  const ratio = dayRatio(day, kind, targetCount, maxValue);
+                  const opacity = intensityOpacity(ratio);
                   return (
                     <div
                       key={`${wi}-${di}`}
@@ -144,8 +167,8 @@ export function HabitHeatmap({ habitId, kind, targetCount, minYear }: {
                         height: 11,
                         borderRadius: 2,
                         visibility: inYear ? 'visible' : 'hidden',
-                        background: ratio <= 0 ? 'var(--border)' : 'var(--accent)',
-                        opacity: ratio <= 0 ? 1 : ratio >= 1 ? 1 : ratio >= 0.5 ? 0.65 : 0.35,
+                        background: opacity <= 0 ? 'var(--border)' : 'var(--accent)',
+                        opacity: opacity <= 0 ? 1 : opacity,
                       }}
                     />
                   );
