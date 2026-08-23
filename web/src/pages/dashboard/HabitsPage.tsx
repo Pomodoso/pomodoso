@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import { useAuth } from '../../lib/AuthContext.tsx';
+import { HabitHeatmap } from '../../components/HabitHeatmap.tsx';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Habits are user-global (CLAUDE.md rule 6) — unlike every other dashboard
@@ -293,6 +295,8 @@ function HabitRow({ habit, onToggle, onIncrement, onEdit, onDelete }: {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HabitsPage() {
+  const { user } = useAuth();
+  const minYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const [habits, setHabits] = useState<Habit[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -405,6 +409,29 @@ export default function HabitsPage() {
           ))
         )}
       </div>
+
+      {habits && habits.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>Activity</h2>
+          <div className="pomo-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {habits.map(h => (
+              <div key={h.id}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <i className={`ti ${habitIconClass(h.icon)}`} style={{ fontSize: 15, color: habitIconColor(h.icon) }} />
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{h.name}</span>
+                </div>
+                <HabitHeatmap
+                  habitId={h.id}
+                  color={habitIconColor(h.icon)}
+                  kind={h.kind}
+                  targetCount={h.target_count}
+                  minYear={minYear}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
