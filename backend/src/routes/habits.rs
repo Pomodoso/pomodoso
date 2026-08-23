@@ -328,3 +328,62 @@ pub async fn log_habit(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// ─── Yearly history (GitHub-contributions-style heatmap) ──────────────────────
+
+#[derive(Deserialize)]
+pub struct HabitHistoryQuery {
+    pub year: i32,
+}
+
+#[derive(Serialize)]
+pub struct HabitHistoryDay {
+    pub date: NaiveDate,
+    pub value: i32,
+    pub done: bool,
+}
+
+#[derive(Serialize)]
+pub struct HabitHistoryResponse {
+    pub year: i32,
+    pub days: Vec<HabitHistoryDay>,
+}
+
+pub async fn get_habit_history(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<HabitHistoryQuery>,
+) -> Result<Json<HabitHistoryResponse>> {
+    require_habit_owner(&state, auth.id, id).await?;
+
+    let from =
+        NaiveDate::from_ymd_opt(q.year, 1, 1).ok_or(AppError::BadRequest("invalid year".into()))?;
+    let to = NaiveDate::from_ymd_opt(q.year, 12, 31)
+        .ok_or(AppError::BadRequest("invalid year".into()))?;
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT date, value, completed_at
+        FROM habit_log
+        WHERE habit_id = $1 AND date BETWEEN $2 AND $3
+        ORDER BY date
+        "#,
+        id,
+        from,
+        to,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let days = rows
+        .into_iter()
+        .map(|r| HabitHistoryDay {
+            date: r.date,
+            value: r.value,
+            done: r.completed_at.is_some(),
+        })
+        .collect();
+
+    Ok(Json(HabitHistoryResponse { year: q.year, days }))
+}
