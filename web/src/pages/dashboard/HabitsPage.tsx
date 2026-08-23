@@ -227,30 +227,44 @@ function HabitRow({ habit, onToggle, onIncrement, onEdit, onDelete }: {
       </div>
 
       {habit.kind === 'counter' ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button className="pomo-btn pomo-btn-icon" onClick={() => onIncrement(habit, -1)} aria-label="Decrease">
-            <i className="ti ti-minus" />
-          </button>
-          <span style={{ fontSize: 12.5, minWidth: 40, textAlign: 'center', color: habit.log_done ? 'var(--success)' : 'var(--text)' }}>
-            {habit.log_value}/{habit.target_count ?? 0}
-          </span>
-          <button className="pomo-btn pomo-btn-icon" onClick={() => onIncrement(habit, 1)} aria-label="Increase">
-            <i className="ti ti-plus" />
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="pomo-btn pomo-btn-icon" onClick={() => onIncrement(habit, -1)} aria-label="Decrease">
+              <i className="ti ti-minus" />
+            </button>
+            <span style={{ fontSize: 12.5, minWidth: 40, textAlign: 'center', color: habit.log_done ? 'var(--success)' : 'var(--text)' }}>
+              {habit.log_value}/{habit.target_count ?? 0}
+            </span>
+            <button className="pomo-btn pomo-btn-icon" onClick={() => onIncrement(habit, 1)} aria-label="Increase">
+              <i className="ti ti-plus" />
+            </button>
+          </div>
+          {habit.unit && habit.unit_amount && (
+            <span style={{ fontSize: 10, color: habit.log_done ? 'var(--success)' : 'var(--text-tert)', fontVariantNumeric: 'tabular-nums' }}>
+              {habit.log_value * habit.unit_amount}/{(habit.target_count ?? 1) * habit.unit_amount}{habit.unit}
+            </span>
+          )}
         </div>
       ) : (
-        <button
-          onClick={() => onToggle(habit)}
-          aria-label="Toggle done"
-          style={{
-            width: 24, height: 24, borderRadius: 6, cursor: 'pointer',
-            border: `1.5px solid ${habit.log_done ? 'var(--success)' : 'var(--border-strong)'}`,
-            background: habit.log_done ? 'var(--success)' : 'var(--surface)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          {habit.log_done && <i className="ti ti-check" style={{ fontSize: 14, color: '#fff' }} />}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {habit.unit && habit.unit_amount && (
+            <span style={{ fontSize: 11, color: 'var(--text-tert)' }}>
+              {habit.unit_amount}{habit.unit}
+            </span>
+          )}
+          <button
+            onClick={() => onToggle(habit)}
+            aria-label="Toggle done"
+            style={{
+              width: 24, height: 24, borderRadius: 6, cursor: 'pointer',
+              border: `1.5px solid ${habit.log_done ? 'var(--success)' : 'var(--border-strong)'}`,
+              background: habit.log_done ? 'var(--success)' : 'var(--surface)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {habit.log_done && <i className="ti ti-check" style={{ fontSize: 14, color: '#fff' }} />}
+          </button>
+        </div>
       )}
 
       <button className="pomo-btn pomo-btn-icon" aria-label="Edit habit" onClick={onEdit}>

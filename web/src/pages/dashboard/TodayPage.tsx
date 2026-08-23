@@ -266,11 +266,18 @@ function TaskRow({ task, index, showWorkspace }: { task: TodayTask; index: numbe
           </div>
         )}
       </div>
-      {task.status === 'in_progress' && (
-        <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Active
-        </span>
-      )}
+      {(() => {
+        const badge =
+          task.status === 'in_progress' ? { label: 'Active', color: 'var(--accent)' }
+          : task.status === 'delayed' ? { label: 'Delayed', color: '#7B5DB4' }
+          : task.status === 'cancelled' ? { label: 'Cancelled', color: 'var(--text-tert)' }
+          : null;
+        return badge && (
+          <span style={{ fontSize: 10, color: badge.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {badge.label}
+          </span>
+        );
+      })()}
       {showWorkspace && <WorkspaceBadge task={task} />}
     </div>
   );
