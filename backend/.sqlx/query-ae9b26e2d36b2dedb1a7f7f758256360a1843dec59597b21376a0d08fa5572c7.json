@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT t.id, t.title, t.completed_at, t.extra,\n               DATE(t.completed_at AT TIME ZONE $4) as \"completed_day?\",\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n          AND (\n            (t.completed_at IS NOT NULL AND DATE(t.completed_at AT TIME ZONE $4) BETWEEN $2 AND $3)\n            OR t.extra ? 'completedDates'\n          )\n        ",
+  "query": "\n        SELECT t.id, t.title, t.status, t.extra,\n               DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) as \"effective_day!\",\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n          AND (\n            (t.status IN ('done', 'cancelled')\n             AND DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) BETWEEN $2 AND $3)\n            OR t.extra ? 'completedDates'\n          )\n        ",
   "describe": {
     "columns": [
       {
@@ -15,8 +15,8 @@
       },
       {
         "ordinal": 2,
-        "name": "completed_at",
-        "type_info": "Timestamptz"
+        "name": "status",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "completed_day?",
+        "name": "effective_day!",
         "type_info": "Date"
       },
       {
@@ -50,12 +50,12 @@
     "nullable": [
       false,
       false,
-      true,
+      false,
       false,
       null,
       true,
       true
     ]
   },
-  "hash": "cff07ba9f7227eb415bc73ccf0c644ce5e25ca6d9648bd8a0b708bebd707e230"
+  "hash": "ae9b26e2d36b2dedb1a7f7f758256360a1843dec59597b21376a0d08fa5572c7"
 }

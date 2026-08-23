@@ -121,13 +121,21 @@ pub async fn get_history(
         }
     }
 
-    // ── Completed tasks per day — one-off tasks via completed_at, recurring
-    // occurrences via extra.completedDates (already local YYYY-MM-DD strings,
-    // no tz conversion needed for those). ──────────────────────────────────
+    // ── Completed tasks per day ─────────────────────────────────────────────
+    // One-off tasks: status done/cancelled, bucketed by completed_at if some
+    // client set it, else updated_at. completed_at alone isn't a reliable
+    // signal — the extension's local Task model has no such field, so it
+    // never gets sent on sync push and stays NULL for virtually every real
+    // task; the extension's own "when did this happen" view (Tasks > History)
+    // falls back to updated_at for this exact reason. Recurring occurrences
+    // still come from extra.completedDates (already local YYYY-MM-DD strings,
+    // no tz conversion needed for those) and are fanned out separately below,
+    // independent of status, to avoid double-counting against the
+    // updated_at bucket.
     let task_rows = sqlx::query!(
         r#"
-        SELECT t.id, t.title, t.completed_at, t.extra,
-               DATE(t.completed_at AT TIME ZONE $4) as "completed_day?",
+        SELECT t.id, t.title, t.status, t.extra,
+               DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) as "effective_day!",
                p.name  as "project_name?",
                p.color as "project_color?"
         FROM task t
@@ -135,7 +143,8 @@ pub async fn get_history(
         WHERE t.workspace_id = ANY($1)
           AND t.deleted_at IS NULL
           AND (
-            (t.completed_at IS NOT NULL AND DATE(t.completed_at AT TIME ZONE $4) BETWEEN $2 AND $3)
+            (t.status IN ('done', 'cancelled')
+             AND DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) BETWEEN $2 AND $3)
             OR t.extra ? 'completedDates'
           )
         "#,
@@ -148,17 +157,20 @@ pub async fn get_history(
     .await?;
 
     for row in task_rows {
-        let task = HistoryTask {
-            id: row.id,
-            title: row.title.clone(),
-            project_name: row.project_name.clone(),
-            project_color: row.project_color.clone(),
-        };
+        let has_completed_dates = row
+            .extra
+            .get("completedDates")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| !a.is_empty());
 
-        if let Some(day) = row.completed_day {
-            if let Some(bucket) = days.get_mut(&day) {
-                bucket.tasks_done.push(task);
-                continue;
+        if !has_completed_dates && matches!(row.status.as_str(), "done" | "cancelled") {
+            if let Some(bucket) = days.get_mut(&row.effective_day) {
+                bucket.tasks_done.push(HistoryTask {
+                    id: row.id,
+                    title: row.title.clone(),
+                    project_name: row.project_name.clone(),
+                    project_color: row.project_color.clone(),
+                });
             }
         }
 

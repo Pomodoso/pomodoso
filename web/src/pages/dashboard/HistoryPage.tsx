@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
+import { ReportModal } from '../../components/ReportModal.tsx';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Mirrors backend/src/routes/history.rs's HistoryResponse.
@@ -101,6 +103,39 @@ function buildMonthGrid(monthStart: string): string[] {
 
 const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+function buildRangeReport(data: HistoryResponse, label: string): string {
+  const lines: string[] = [];
+  lines.push(`# ${label}`);
+  lines.push('');
+
+  const totalPomos = data.days.reduce((s, d) => s + d.pomos, 0);
+  const totalSeconds = data.days.reduce((s, d) => s + d.seconds, 0);
+  const totalTasks = data.days.reduce((s, d) => s + d.tasks_done.length, 0);
+
+  lines.push('## Summary');
+  lines.push(`- ${totalPomos} pomos · ${fmtDuration(totalSeconds)} tracked`);
+  lines.push(`- ${totalTasks} tasks completed`);
+  lines.push('');
+
+  for (const day of data.days) {
+    if (day.pomos === 0 && day.seconds === 0 && day.tasks_done.length === 0) continue;
+    const dayLabel = new Date(`${day.date}T00:00:00`).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    });
+    lines.push(`## ${dayLabel}`);
+    if (day.pomos > 0 || day.seconds > 0) {
+      lines.push(`- ${day.pomos}p · ${fmtDuration(day.seconds)}`);
+    }
+    for (const t of day.tasks_done) {
+      const proj = t.project_name ? ` _(${t.project_name})_` : '';
+      lines.push(`- [x] ${t.title}${proj}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 // ─── Day detail panel ────────────────────────────────────────────────────────
 
 function DayDetail({ date, day, onOpenTask }: { date: string; day: HistoryDay | undefined; onOpenTask: (id: string) => void }) {
@@ -149,11 +184,13 @@ function DayDetail({ date, day, onOpenTask }: { date: string; day: HistoryDay | 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
-  const [view, setView] = useState<ViewMode>('week');
+  const [searchParams] = useSearchParams();
+  const [view, setView] = useState<ViewMode>(() => (searchParams.get('view') === 'month' ? 'month' : 'week'));
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayDate()));
   const [monthStart, setMonthStart] = useState(() => startOfMonth(todayDate()));
   const [selectedDate, setSelectedDate] = useState(() => todayDate());
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +273,9 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
             onClick={() => setView('month')}
           >
             Month
+          </button>
+          <button className="pomo-btn pomo-btn-primary" onClick={() => setShowReport(true)} disabled={!data}>
+            <i className="ti ti-file-export" /> Generate report
           </button>
         </div>
       </div>
@@ -323,6 +363,14 @@ export default function HistoryPage({ workspaceId }: { workspaceId: string }) {
 
       <DayDetail date={selectedDate} day={dayByDate.get(selectedDate)} onOpenTask={setOpenTaskId} />
       {openTaskId && <TaskDetailModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} />}
+      {showReport && data && (
+        <ReportModal
+          title={view === 'week' ? 'Weekly report' : 'Monthly report'}
+          filename={`pomodoso-report-${from}-to-${to}.md`}
+          content={buildRangeReport(data, view === 'week' ? weekRangeLabel(weekStart) : monthLabel(monthStart))}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </>
   );
 }
