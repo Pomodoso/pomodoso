@@ -121,6 +121,10 @@ async fn main() -> anyhow::Result<()> {
             get(routes::today::get_tasks).route_layer(auth.clone()),
         )
         .route(
+            "/history",
+            get(routes::history::get_history).route_layer(auth.clone()),
+        )
+        .route(
             "/projects",
             get(routes::projects::list_projects)
                 .post(routes::projects::create_project)

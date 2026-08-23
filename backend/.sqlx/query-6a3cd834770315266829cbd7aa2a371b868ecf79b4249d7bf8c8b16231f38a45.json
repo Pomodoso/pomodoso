@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DATE(started_at AT TIME ZONE $4) as \"day!\", mode, actual_duration_seconds\n        FROM pomodoro_session\n        WHERE workspace_id = ANY($1)\n          AND status = 'completed'\n          AND DATE(started_at AT TIME ZONE $4) BETWEEN $2 AND $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "actual_duration_seconds",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "6a3cd834770315266829cbd7aa2a371b868ecf79b4249d7bf8c8b16231f38a45"
+}
