@@ -11,7 +11,7 @@ function initials(str: string): string {
 }
 
 export interface SidebarProps {
-  active: 'today' | 'tasks' | 'projects' | 'billing';
+  active: 'today' | 'tasks' | 'projects' | 'habits' | 'billing';
   switcher?: ReactNode;
   userName: string;
   userEmail: string;
@@ -56,10 +56,9 @@ export function Sidebar({ active, switcher, userName, userEmail, isPro, onSignOu
       <Link className={`pomo-nav-item ${active === 'projects' ? 'active' : ''}`} to="/dashboard/projects">
         <i className="ti ti-folders" /> Projects
       </Link>
-      <a className="pomo-nav-item disabled" href="/dashboard/habits">
+      <Link className={`pomo-nav-item ${active === 'habits' ? 'active' : ''}`} to="/dashboard/habits">
         <i className="ti ti-checkup-list" /> Habits
-        <span className="pomo-soon">Soon</span>
-      </a>
+      </Link>
       <a className="pomo-nav-item disabled" href="/dashboard/calendar">
         <i className="ti ti-calendar" /> Calendar
         <span className="pomo-soon">Soon</span>

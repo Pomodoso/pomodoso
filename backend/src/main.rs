@@ -141,6 +141,22 @@ async fn main() -> anyhow::Result<()> {
             post(routes::projects::unarchive_project).route_layer(auth.clone()),
         )
         .route(
+            "/habits",
+            get(routes::habits::list_habits)
+                .post(routes::habits::create_habit)
+                .route_layer(auth.clone()),
+        )
+        .route(
+            "/habits/{id}",
+            patch(routes::habits::update_habit)
+                .delete(routes::habits::delete_habit)
+                .route_layer(auth.clone()),
+        )
+        .route(
+            "/habits/{id}/log",
+            post(routes::habits::log_habit).route_layer(auth.clone()),
+        )
+        .route(
             "/billing/checkout",
             post(routes::billing::create_checkout).route_layer(auth.clone()),
         )
