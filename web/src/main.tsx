@@ -70,6 +70,14 @@ export const routes: RouteRecord[] = [
         ),
       },
       {
+        path: 'dashboard/habits',
+        element: (
+          <ProtectedRoute>
+            <Dashboard page="habits" />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'settings/billing',
         element: (
           <ProtectedRoute>

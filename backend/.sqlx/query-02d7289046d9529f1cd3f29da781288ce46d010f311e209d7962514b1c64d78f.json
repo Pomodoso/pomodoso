@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO habit (id, user_id, name, icon, kind, target_count, frequency, frequency_days, extra, updated_at, synced_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02d7289046d9529f1cd3f29da781288ce46d010f311e209d7962514b1c64d78f"
+}

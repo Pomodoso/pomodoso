@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE habit SET\n          name = $2, icon = $3, kind = $4, target_count = $5,\n          frequency = $6, frequency_days = $7,\n          extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object('unit', $8::text, 'unitAmount', $9::int),\n          updated_at = NOW()\n        WHERE id = $1\n        RETURNING id, name, icon, kind, target_count, frequency, frequency_days, extra\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "icon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "frequency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "frequency_days",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "extra",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e554b134150204719b7f4339b6780f25f0d33b3c5b184ad3d253fc7c253c5963"
+}
