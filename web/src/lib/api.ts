@@ -29,6 +29,8 @@ async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
     const body = await resp.json().catch(() => ({ error: resp.statusText }));
     throw new ApiError(resp.status, body.error ?? resp.statusText);
   }
+  // 204 (e.g. DELETE endpoints) has no body — .json() would throw on it.
+  if (resp.status === 204) return undefined as T;
   return resp.json() as Promise<T>;
 }
 
@@ -38,6 +40,9 @@ export function setAuthToken(_token: string | null): void {}
 export const api = {
   fetch: authedFetch,
   get: <T>(path: string) => authedFetch<T>(path, { method: 'GET' }),
-  post: <T>(path: string, body: unknown) =>
-    authedFetch<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+  post: <T>(path: string, body?: unknown) =>
+    authedFetch<T>(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body: unknown) =>
+    authedFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  del: <T>(path: string) => authedFetch<T>(path, { method: 'DELETE' }),
 };

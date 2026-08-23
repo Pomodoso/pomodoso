@@ -219,6 +219,16 @@ body {
   font-family: inherit;
 }
 .pomo-link-btn:hover { text-decoration: underline; }
+.pomo-input {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-family: inherit;
+}
+.pomo-input:focus { outline: none; border-color: var(--border-strong); }
 
 /* ── Cards ───────────────────────────────────────────────────────────────────── */
 .pomo-card {
