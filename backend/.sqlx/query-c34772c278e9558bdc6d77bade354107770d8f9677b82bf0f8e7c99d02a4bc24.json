@@ -1,20 +1,25 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT date, value, completed_at\n        FROM habit_log\n        WHERE habit_id = $1 AND date BETWEEN $2 AND $3\n        ORDER BY date\n        ",
+  "query": "\n        SELECT hl.habit_id, hl.date, hl.value, hl.completed_at\n        FROM habit_log hl\n        JOIN habit h ON h.id = hl.habit_id\n        WHERE h.user_id = $1 AND h.deleted_at IS NULL AND hl.date BETWEEN $2 AND $3\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "habit_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
         "name": "date",
         "type_info": "Date"
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "value",
         "type_info": "Int4"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "completed_at",
         "type_info": "Timestamptz"
       }
@@ -29,8 +34,9 @@
     "nullable": [
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "cbe5d91426f6153f4bed0002017e96ceee5bc34d8a37c7fbe4a8adb42a44666b"
+  "hash": "c34772c278e9558bdc6d77bade354107770d8f9677b82bf0f8e7c99d02a4bc24"
 }
