@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, user_id, plan, status,\n               stripe_customer_id, stripe_subscription_id,\n               current_period_end, trial_ends_at, cancelled_at,\n               feature_overrides, created_at, updated_at\n        FROM subscription WHERE user_id = $1\n        ",
+  "query": "\n        SELECT id, user_id, plan, status,\n               stripe_customer_id, stripe_subscription_id,\n               payment_provider, store_transaction_id, store_product_id,\n               current_period_end, trial_ends_at, cancelled_at,\n               feature_overrides, created_at, updated_at\n        FROM subscription\n        WHERE user_id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -35,31 +35,46 @@
       },
       {
         "ordinal": 6,
+        "name": "payment_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "store_transaction_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "store_product_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
         "name": "current_period_end",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "trial_ends_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 11,
         "name": "cancelled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 12,
         "name": "feature_overrides",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -80,9 +95,12 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "798b4226254f6be53148cbf3b3c2f7f4c28fe394a6804c84b5c859c207160658"
+  "hash": "918163626f8e2d6eebec150bd2579d7036bc97a47b774d0e8a625fb49091c50e"
 }

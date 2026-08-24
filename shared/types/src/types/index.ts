@@ -48,6 +48,9 @@ export interface Subscription {
   status: SubscriptionStatus;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  payment_provider: PaymentProvider | null;
+  store_transaction_id: string | null;
+  store_product_id: string | null;
   current_period_end: ISOTimestamp | null;
   trial_ends_at: ISOTimestamp | null;
   cancelled_at: ISOTimestamp | null;
@@ -72,6 +75,18 @@ export interface EntitlementFeatures {
 export interface Entitlements {
   plan: Plan;
   features: EntitlementFeatures;
+}
+
+/** Where a subscription was bought. Drives the manage-subscription affordance
+ *  only — never read this to decide whether a feature is enabled. */
+export type PaymentProvider = 'stripe' | 'apple' | 'google';
+
+export interface BillingInfo {
+  payment_provider: PaymentProvider | null;
+  status: SubscriptionStatus;
+  current_period_end: ISOTimestamp | null;
+  /** Set once auto-renew is off. Access continues until current_period_end. */
+  cancelled_at: ISOTimestamp | null;
 }
 
 export const FREE_ENTITLEMENTS: Entitlements = {

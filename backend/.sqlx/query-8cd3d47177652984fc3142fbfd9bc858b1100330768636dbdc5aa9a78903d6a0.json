@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subscription\n        SET plan = COALESCE($1, plan),\n            status = $2,\n            cancelled_at = CASE\n                WHEN $3 THEN NOW()\n                WHEN $4 THEN NULL\n                ELSE cancelled_at\n            END,\n            current_period_end = COALESCE($5, current_period_end),\n            payment_provider = $6,\n            store_transaction_id = COALESCE($7, store_transaction_id),\n            store_product_id = COALESCE($8, store_product_id),\n            updated_at = NOW()\n        WHERE user_id = $9\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8cd3d47177652984fc3142fbfd9bc858b1100330768636dbdc5aa9a78903d6a0"
+}
