@@ -3,6 +3,15 @@ interface PopupFooterProps {
   minutesToday: number;
 }
 
+const linkStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: 'var(--color-info)',
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  padding: 0,
+};
+
 export function PopupFooter({ pomosToday, minutesToday }: PopupFooterProps) {
   const hours = Math.floor(minutesToday / 60);
   const mins = minutesToday % 60;
@@ -22,19 +31,22 @@ export function PopupFooter({ pomosToday, minutesToday }: PopupFooterProps) {
         <span>·</span>
         <span>⏱ {timeStr} today</span>
       </div>
-      <button
-        style={{
-          fontSize: 11,
-          color: 'var(--color-info)',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: 0,
-        }}
-        onClick={() => chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' })}
-      >
-        Open app ↗
-      </button>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button
+          style={linkStyle}
+          // Packaged page, not a website — getURL resolves it inside the
+          // extension so this works offline and without an account.
+          onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('report/index.html') })}
+        >
+          Report
+        </button>
+        <button
+          style={linkStyle}
+          onClick={() => chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' })}
+        >
+          Open app ↗
+        </button>
+      </div>
     </div>
   );
 }

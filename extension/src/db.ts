@@ -18,12 +18,9 @@ export function now(): string {
   return new Date().toISOString();
 }
 
-// Returns YYYY-MM-DD in the given IANA timezone (e.g. 'America/Argentina/Buenos_Aires').
-// daysOffset shifts by that many days before formatting (negative = past).
-export function localDate(tz: string, daysOffset = 0): string {
-  const d = daysOffset ? new Date(Date.now() + daysOffset * 86400_000) : new Date();
-  return d.toLocaleDateString('en-CA', { timeZone: tz });
-}
+// Lives in dates.ts now (see the note there); re-exported so every existing
+// `from './db'` import keeps working.
+export { localDate } from './dates.ts';
 
 // ─── Task types ────────────────────────────────────────────────────────────────
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'delayed' | 'cancelled';
