@@ -300,7 +300,11 @@ export async function syncTodayMeetings(wsId: string, timezone: string): Promise
         const row: MeetingRow = {
           id: crypto.randomUUID(),
           googleEventId,
-          recurringEventId,
+          // Omitted rather than set to undefined, matching how the update
+          // branch above and calendarColor below already handle it — under
+          // exactOptionalPropertyTypes an optional field and an explicitly
+          // undefined one are different types.
+          ...(recurringEventId ? { recurringEventId } : {}),
           title: item.summary ?? '(no title)',
           time: startStr,
           durationMinutes,

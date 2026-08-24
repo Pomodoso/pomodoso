@@ -27,8 +27,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type-check shared API package
-        run: pnpm --filter @pomodoso/api typecheck
+      # Every package at once, replacing the per-package steps this used to
+      # run. The extension was never type-checked here — only built and tested,
+      # and Vite strips types without checking them — so 38 errors accumulated
+      # unnoticed, one of which was a real null-handling bug. Checking the
+      # whole workspace is what stops that recurring.
+      - name: Type-check
+        run: pnpm typecheck
 
       - name: Build web (tsc -b + vite)
         run: pnpm --filter web build
@@ -38,9 +43,6 @@ jobs:
 
       - name: Test extension
         run: pnpm --filter extension test
-
-      - name: Type-check mobile
-        run: pnpm --filter mobile typecheck
 
       - name: Bundle mobile (catches Metro/asset errors tsc can't see)
         run: pnpm --filter mobile exec expo export --platform ios --platform android

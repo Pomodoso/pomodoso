@@ -47,7 +47,7 @@ interface SettingsStateProps {
   initialPage?: SettingsPage;
   entitlements: Entitlements;
   auth: AuthState;
-  onSyncNow?: () => void;
+  onSyncNow?: (() => void) | undefined;
   onBack: () => void;
   onAddRule: (rule: DetectionRule) => void;
   onToggleRule: (id: string) => void;
@@ -492,10 +492,13 @@ function WorkspacesPage({ workspaces, canAddWorkspace, onAdd, onUpdate, onDelete
 
 // ── Account & Sync sub-page ───────────────────────────────────────────────────
 
+// `| undefined` spelled out, not just `?`: under exactOptionalPropertyTypes
+// the two differ, and SettingsState forwards a value that may genuinely be
+// undefined rather than omitting the prop.
 function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
   auth: AuthState;
   entitlements: Entitlements;
-  onSyncNow?: () => void;
+  onSyncNow?: (() => void) | undefined;
   onBack: () => void;
 }) {
   const [email, setEmail] = useState('');

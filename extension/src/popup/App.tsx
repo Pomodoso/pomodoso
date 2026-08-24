@@ -742,7 +742,15 @@ export function App() {
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
     if (timerState.status === 'active' && timerState.mode === 'pomodoro' && payload.mode === 'pomodoro') {
-      await handleAttachTask({ taskId: payload.taskId, taskTitle: payload.taskTitle, ticketId: payload.ticketId, ticketExternalId: payload.ticketExternalId });
+      // A start payload's taskId is nullable and this branch forwards it to an
+      // attach payload, whose taskId is not — starting a task-less pomodoro
+      // while one was already running used to attach a null task (and then
+      // updateTask(null)). Attaching only means something with a task; without
+      // one, keep the existing "already running, don't restart" behaviour and
+      // do nothing. The non-attach path below already guards taskId the same way.
+      if (payload.taskId && payload.taskTitle) {
+        await handleAttachTask({ taskId: payload.taskId, taskTitle: payload.taskTitle, ticketId: payload.ticketId, ticketExternalId: payload.ticketExternalId });
+      }
       return;
     }
     await start(payload);
