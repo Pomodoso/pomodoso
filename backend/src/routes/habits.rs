@@ -342,7 +342,10 @@ pub struct HabitsHistoryQuery {
 #[derive(Serialize)]
 pub struct HabitsHistoryDay {
     pub date: NaiveDate,
-    pub habits_done: i32,
+    /// Sum of each habit's fractional progress that day (each capped at 1.0),
+    /// not a count of fully-completed habits — a day where you logged partial
+    /// progress on a counter habit should still show *some* color, not none.
+    pub habits_done: f64,
 }
 
 #[derive(Serialize)]
@@ -376,7 +379,7 @@ pub async fn get_habits_history(
 
     let rows = sqlx::query!(
         r#"
-        SELECT hl.habit_id, hl.date, hl.value, hl.completed_at
+        SELECT hl.habit_id, hl.date, hl.value
         FROM habit_log hl
         JOIN habit h ON h.id = hl.habit_id
         WHERE h.user_id = $1 AND h.deleted_at IS NULL AND hl.date BETWEEN $2 AND $3
@@ -388,27 +391,49 @@ pub async fn get_habits_history(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut done_by_day: std::collections::HashMap<NaiveDate, i32> =
+    // completed_at is an unreliable "done" signal for both habit kinds — it
+    // can be NULL even when value already met/exceeded target for counters,
+    // and NULL on plainly-logged boolean rows too (confirmed against real
+    // data: every boolean log in the sample had completed_at NULL despite
+    // value=1 meaning "done"). value is always set by every client that logs
+    // a habit, so it's the one signal to trust for both kinds.
+    //
+    // Counter habits without a target_count fall back to the year's own max
+    // logged value for that habit, so a goalless counter still shows some
+    // intensity instead of never having a denominator to compare against.
+    let mut max_by_habit: std::collections::HashMap<Uuid, i32> = std::collections::HashMap::new();
+    for row in &rows {
+        if let Some((kind, target)) = habit_meta.get(&row.habit_id) {
+            if kind == "counter" && !target.is_some_and(|t| t > 0) {
+                let entry = max_by_habit.entry(row.habit_id).or_insert(0);
+                if row.value > *entry {
+                    *entry = row.value;
+                }
+            }
+        }
+    }
+
+    let mut score_by_day: std::collections::HashMap<NaiveDate, f64> =
         std::collections::HashMap::new();
     for row in rows {
         let Some((kind, target)) = habit_meta.get(&row.habit_id) else {
             continue;
         };
-        // completed_at is an unreliable "done" signal for counter habits (can
-        // be NULL even when value already met/exceeded target — see
-        // HabitHeatmap.tsx's frontend fallback for the same gap), so counters
-        // are judged by value vs. target directly; completed_at only matters
-        // for boolean habits, which have no value to compare.
-        let completed = match kind.as_str() {
-            "counter" => match target {
-                Some(t) if *t > 0 => row.value >= *t,
-                _ => row.value > 0,
-            },
-            _ => row.completed_at.is_some(),
+        let ratio: f64 = match kind.as_str() {
+            "counter" => {
+                let denom = target
+                    .filter(|t| *t > 0)
+                    .map(f64::from)
+                    .unwrap_or_else(|| f64::from(*max_by_habit.get(&row.habit_id).unwrap_or(&0)));
+                if denom > 0.0 {
+                    (f64::from(row.value) / denom).min(1.0)
+                } else {
+                    0.0
+                }
+            }
+            _ => f64::from(i32::from(row.value > 0)),
         };
-        if completed {
-            *done_by_day.entry(row.date).or_insert(0) += 1;
-        }
+        *score_by_day.entry(row.date).or_insert(0.0) += ratio;
     }
 
     let mut days = Vec::new();
@@ -416,7 +441,7 @@ pub async fn get_habits_history(
     while cursor <= to {
         days.push(HabitsHistoryDay {
             date: cursor,
-            habits_done: done_by_day.get(&cursor).copied().unwrap_or(0),
+            habits_done: score_by_day.get(&cursor).copied().unwrap_or(0.0),
         });
         cursor = cursor
             .succ_opt()
