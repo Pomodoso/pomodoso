@@ -47,26 +47,6 @@ if (Platform.OS === 'android') {
   });
 }
 
-/** Schedules a test notification `seconds` from now — mirrors how a real
- *  pomodoro/break end notification would be scheduled: computed once, at
- *  session start, as an absolute fire date, never a running countdown. */
-export async function scheduleTestNotification(seconds: number): Promise<string> {
-  const granted = await ensureNotificationPermission();
-  if (!granted) throw new Error('Notification permission not granted');
-
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Pomodoso — test notification',
-      body: `Scheduled ${seconds}s ago. If you're reading this with the app backgrounded or killed, background delivery works.`,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds,
-      channelId: 'default',
-    },
-  });
-}
-
 /** Schedules the real end-of-session notification for an absolute fire date
  *  (a pomodoro's endsAt). Reschedule on resume-from-pause by cancelling the
  *  old id and calling this again with the new date. */

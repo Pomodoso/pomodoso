@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import { isNull } from 'drizzle-orm';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
@@ -7,12 +9,23 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
+import { db } from '@/db/client';
+import { habits, pomodoroSession, task } from '@/db/schema';
 import { importBackup, shareBackup } from '@/utils/backup';
 
 // Ports extension's SettingsState.tsx DataPage.
 export default function DataSettingsScreen(): React.JSX.Element {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // Every non-deleted row, matching what an export actually writes. The old
+  // More tab counted only status='completed' sessions, so it read "0
+  // sessions" for anyone whose sessions were all stopped early.
+  const { data: allTasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
+  const { data: allHabits } = useLiveQuery(db.select().from(habits).where(isNull(habits.deletedAt)));
+  const { data: allSessions } = useLiveQuery(
+    db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)),
+  );
 
   async function handleExport(): Promise<void> {
     setExporting(true);
@@ -105,6 +118,15 @@ export default function DataSettingsScreen(): React.JSX.Element {
               </>
             )}
           </Pressable>
+        </View>
+
+        {/* Moved here from the old More tab: what an export would contain
+            belongs next to the export button, not on a separate screen. */}
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Stored on this device</Text>
+          <Text style={styles.hint}>
+            {(allTasks ?? []).length} tasks · {(allHabits ?? []).length} habits · {(allSessions ?? []).length} sessions
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
