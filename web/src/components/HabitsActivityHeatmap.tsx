@@ -97,7 +97,7 @@ export function HabitsActivityHeatmap({ minYear }: { minYear: number }) {
 
   const weeks = useMemo(() => buildYearWeeks(year), [year]);
   const monthLabels = useMemo(() => monthLabelsForWeeks(weeks, year), [weeks, year]);
-  const totalCompletions = data?.days.reduce((s, d) => s + d.habits_done, 0) ?? 0;
+  const totalCompletions = Math.round(data?.days.reduce((s, d) => s + d.habits_done, 0) ?? 0);
 
   const years: number[] = [];
   for (let y = currentYear; y >= minYear; y--) years.push(y);
@@ -143,7 +143,7 @@ export function HabitsActivityHeatmap({ minYear }: { minYear: number }) {
                   return (
                     <div
                       key={`${wi}-${di}`}
-                      title={inYear && habitsDone ? `${date} — ${habitsDone}/${total} habits` : undefined}
+                      title={inYear && habitsDone ? `${date} — ${habitsDone.toFixed(1).replace(/\.0$/, '')}/${total} habits` : undefined}
                       style={{
                         width: 11,
                         height: 11,
