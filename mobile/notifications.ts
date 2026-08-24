@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { TIMER_STATUS_DATA_TYPE } from '@/utils/ongoingNotification';
+
 // M0 spike validated in PR #21: a locally-scheduled notification survives the
 // app backgrounded/killed on a real device — that's the only reliable way to
 // end a pomodoro session on mobile, since JS timers don't survive
@@ -8,12 +10,19 @@ import { Platform } from 'react-native';
 // date, never a running countdown.
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async notification => {
+    // The Android ongoing timer notification (utils/ongoingNotification.ts)
+    // is re-posted on every pause/resume/kind change. Without this it would
+    // pop a banner and play a sound each time, which is the opposite of what
+    // a passive status display should do. It still belongs in the shade.
+    const isTimerStatus = notification.request.content.data?.type === TIMER_STATUS_DATA_TYPE;
+    return {
+      shouldShowBanner: !isTimerStatus,
+      shouldShowList: true,
+      shouldPlaySound: !isTimerStatus,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 export async function ensureNotificationPermission(): Promise<boolean> {

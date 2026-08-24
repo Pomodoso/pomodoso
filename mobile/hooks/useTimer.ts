@@ -7,6 +7,7 @@ import { pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
+import { endPomodoroNotification, syncPomodoroNotification } from '@/utils/ongoingNotification';
 import { playSound } from '@/utils/sounds';
 import { triggerSync } from '@/utils/sync';
 import { secondsBetween } from '@/utils/time';
@@ -123,16 +124,21 @@ export function useTimer() {
   useEffect(() => {
     if (!active) {
       endPomodoroActivity();
+      endPomodoroNotification();
       return;
     }
-    syncPomodoroActivity(active.id, {
+    const presentation = {
       mode: active.mode as TimerMode,
       kind: active.kind,
       taskTitle: activeTask?.title ?? null,
       startedAtMs: new Date(active.startedAt).getTime(),
       plannedDurationSeconds: active.plannedDurationSeconds,
       pausedAtMs: active.status === 'paused' && active.pausedAt ? new Date(active.pausedAt).getTime() : null,
-    });
+    };
+    syncPomodoroActivity(active.id, presentation);
+    // Android's equivalent surface. Each is a no-op on the other platform, so
+    // both can be driven from this one reconciliation without branching here.
+    syncPomodoroNotification(active.id, presentation);
   }, [active?.id, active?.status, active?.startedAt, active?.pausedAt, active?.kind, active?.mode, active?.plannedDurationSeconds, activeTask?.title]);
 
   // Reaching the end naturally (app stayed foregrounded) transitions the
