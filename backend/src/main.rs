@@ -90,6 +90,10 @@ async fn main() -> anyhow::Result<()> {
         // Public routes — no auth
         .route("/health", get(routes::health::health))
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
+        .route(
+            "/webhooks/revenuecat",
+            post(routes::iap::revenuecat_webhook),
+        )
         // Protected routes — auth applied per-route to avoid affecting public routes after merge
         .route("/me", get(routes::me::get_me).route_layer(auth.clone()))
         .route(

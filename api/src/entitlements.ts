@@ -1,9 +1,10 @@
-import type { Entitlements, User } from '@pomodoso/types';
+import type { BillingInfo, Entitlements, User } from '@pomodoso/types';
 import type { IApiClient } from './client.ts';
 
 export interface MeResponse {
   user: User;
   entitlements: Entitlements;
+  billing: BillingInfo;
 }
 
 export async function getMe(client: IApiClient): Promise<MeResponse> {

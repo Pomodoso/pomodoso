@@ -36,6 +36,12 @@ pub struct Subscription {
     pub status: String,
     pub stripe_customer_id: Option<String>,
     pub stripe_subscription_id: Option<String>,
+    /// "stripe" | "apple" | "google" — where the money came from. Entitlement
+    /// resolution ignores this; it drives support and the manage-subscription
+    /// link, which cannot use Stripe's portal for store purchases.
+    pub payment_provider: Option<String>,
+    pub store_transaction_id: Option<String>,
+    pub store_product_id: Option<String>,
     pub current_period_end: Option<DateTime<Utc>>,
     pub trial_ends_at: Option<DateTime<Utc>>,
     pub cancelled_at: Option<DateTime<Utc>>,

@@ -18,6 +18,9 @@ pub struct Config {
     pub stripe_pro_monthly_price_id: Option<String>,
     pub stripe_founder_lifetime_price_id: Option<String>,
 
+    // Optional — store (App Store / Play) billing won't work without this
+    pub revenuecat_webhook_secret: Option<String>,
+
     // Optional — emails won't send without this
     pub resend_api_key: Option<String>,
     pub resend_from_email: Option<String>,
@@ -43,12 +46,17 @@ impl Config {
             stripe_founder_lifetime_price_id: std::env::var("STRIPE_FOUNDER_LIFETIME_PRICE_ID")
                 .ok(),
 
+            revenuecat_webhook_secret: std::env::var("REVENUECAT_WEBHOOK_SECRET").ok(),
+
             resend_api_key: std::env::var("RESEND_API_KEY").ok(),
             resend_from_email: std::env::var("RESEND_FROM_EMAIL").ok(),
         };
 
         if cfg.stripe_secret_key.is_none() {
             tracing::warn!("STRIPE_SECRET_KEY not set — billing endpoints will return 501");
+        }
+        if cfg.revenuecat_webhook_secret.is_none() {
+            tracing::warn!("REVENUECAT_WEBHOOK_SECRET not set — store purchases will be rejected");
         }
         if cfg.resend_api_key.is_none() {
             tracing::warn!("RESEND_API_KEY not set — emails will not be sent");

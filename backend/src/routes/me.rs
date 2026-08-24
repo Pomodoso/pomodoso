@@ -14,6 +14,34 @@ use crate::{
 pub struct MeResponse {
     pub user: User,
     pub entitlements: Entitlements,
+    pub billing: BillingInfo,
+}
+
+/// Where the subscription was bought and what state it's in. Deliberately kept
+/// out of `Entitlements`, which stays purely about what the user can do — a
+/// client deciding whether a feature is on must never read this (CLAUDE.md #1).
+/// It exists so the account screen can render the right manage-subscription
+/// affordance: Stripe's billing portal has no equivalent for a store purchase,
+/// which is cancelled from the OS subscription settings instead.
+#[derive(Serialize)]
+pub struct BillingInfo {
+    /// "stripe" | "apple" | "google", or null for a free user who never paid.
+    pub payment_provider: Option<String>,
+    pub status: String,
+    pub current_period_end: Option<DateTime<Utc>>,
+    /// Set once auto-renew is off. Access continues until `current_period_end`.
+    pub cancelled_at: Option<DateTime<Utc>>,
+}
+
+impl BillingInfo {
+    fn from_subscription(sub: &Subscription) -> Self {
+        Self {
+            payment_provider: sub.payment_provider.clone(),
+            status: sub.status.clone(),
+            current_period_end: sub.current_period_end,
+            cancelled_at: sub.cancelled_at,
+        }
+    }
 }
 
 /// Returns the authenticated user + entitlements.
@@ -28,8 +56,13 @@ pub async fn get_me(
         crate::email::send_welcome(&state, &user.email, &user.name);
     }
     let entitlements = Entitlements::from_subscription(&sub);
+    let billing = BillingInfo::from_subscription(&sub);
 
-    Ok(Json(MeResponse { user, entitlements }))
+    Ok(Json(MeResponse {
+        user,
+        entitlements,
+        billing,
+    }))
 }
 
 pub async fn get_entitlements(
@@ -111,6 +144,7 @@ async fn get_or_create_subscription(
         r#"
         SELECT id, user_id, plan, status,
                stripe_customer_id, stripe_subscription_id,
+               payment_provider, store_transaction_id, store_product_id,
                current_period_end, trial_ends_at, cancelled_at,
                feature_overrides, created_at, updated_at
         FROM subscription
@@ -151,6 +185,7 @@ async fn provision_new_user(state: &AppState, user_id: Uuid) -> Result<(Subscrip
         r#"
         SELECT id, user_id, plan, status,
                stripe_customer_id, stripe_subscription_id,
+               payment_provider, store_transaction_id, store_product_id,
                current_period_end, trial_ends_at, cancelled_at,
                feature_overrides, created_at, updated_at
         FROM subscription WHERE user_id = $1
