@@ -47,6 +47,30 @@ if (Platform.OS === 'android') {
   });
 }
 
+/** Clears end-of-session alerts already sitting in the shade, sparing the
+ *  ongoing timer-status notification (identified by the same `data.type`
+ *  marker its foreground handler uses above).
+ *
+ *  Called when a new session starts. Each session deliberately owns a unique
+ *  notification id — `pomodoro_session.notification_id`, which pause/resume/
+ *  stop cancel by — so alerts can't simply replace one another by sharing an
+ *  identifier. Without this, a normal day of eight to twelve pomodoros leaves
+ *  sixteen to twenty-four stale "complete" banners to dismiss by hand.
+ *
+ *  Best effort: failing to tidy the shade must never block a session start. */
+export async function dismissDeliveredSessionAlerts(): Promise<void> {
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    await Promise.all(
+      presented
+        .filter(n => n.request.content.data?.type !== TIMER_STATUS_DATA_TYPE)
+        .map(n => Notifications.dismissNotificationAsync(n.request.identifier)),
+    );
+  } catch (err) {
+    console.warn('Failed to clear delivered session alerts', err);
+  }
+}
+
 /** Schedules the real end-of-session notification for an absolute fire date
  *  (a pomodoro's endsAt). Reschedule on resume-from-pause by cancelling the
  *  old id and calling this again with the new date. */
