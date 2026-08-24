@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { db } from '@/db/client';
 import { pomodoroSession, task, timerPrefs } from '@/db/schema';
-import { cancelScheduledNotification, scheduleSessionEndNotification } from '@/notifications';
+import { cancelScheduledNotification, dismissDeliveredSessionAlerts, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
 import { endPomodoroNotification, syncPomodoroNotification } from '@/utils/ongoingNotification';
@@ -362,6 +362,7 @@ export function useTimer() {
         return;
       }
       resolveAllPendingPrompts(); // starting something new supersedes any dangling banner
+      void dismissDeliveredSessionAlerts(); // and supersedes the previous session's shade banner too
       setIdleMode(mode); // spec 6.1: "updated on every session start" — only once we know this call won
       // Matches extension's App.tsx: only pomodoro starts get a sound
       // (stopwatch doesn't), same event as a follow-up focus after a break.
@@ -406,6 +407,7 @@ export function useTimer() {
         return;
       }
       resolveAllPendingPrompts();
+      void dismissDeliveredSessionAlerts(); // see startSession
       // Matches background.ts: 'break-start' when the follow-up is a break,
       // 'focus-start' when it's the next pomodoro after one.
       playSound(kind === 'focus' ? 'focus-start' : 'break-start', settings.soundSettings);
