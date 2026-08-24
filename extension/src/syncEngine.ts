@@ -6,6 +6,7 @@ import type {
   TaskRow, ProjectRow, WorkspaceRow,
   HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
 } from './db';
+import { habitDaysFromServer, habitFrequency, settingId, writeExtra, readExtra } from '@pomodoso/types';
 import type { TimerMode } from '@pomodoso/types';
 
 // ─── Settings keys synced to server ───────────────────────────────────────────
@@ -369,42 +370,39 @@ async function push(client: TokenApiClient): Promise<void> {
 
 function taskExtra(t: TaskRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (t.description !== undefined) extra['description'] = t.description;
-  if (t.links?.length) extra['links'] = t.links;
-  if (t.noteEntries?.length) extra['noteEntries'] = t.noteEntries;
-  if (t.preferredMode) extra['preferredMode'] = t.preferredMode;
-  if (t.recurrence) extra['recurrence'] = t.recurrence;
-  if (t.completedDates?.length) extra['completedDates'] = t.completedDates;
+  writeExtra(extra, 'description', t.description);
+  writeExtra(extra, 'links', t.links);
+  writeExtra(extra, 'noteEntries', t.noteEntries);
+  writeExtra(extra, 'preferredMode', t.preferredMode);
+  writeExtra(extra, 'recurrence', t.recurrence);
+  writeExtra(extra, 'completedDates', t.completedDates);
   return extra;
 }
 
 function meetingExtra(m: MeetingRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (m.notes) extra['notes'] = m.notes;
-  if (m.description !== undefined) extra['description'] = m.description;
-  if (m.recurringEventId) extra['recurringEventId'] = m.recurringEventId;
-  if (m.recurringLabel) extra['recurringLabel'] = m.recurringLabel;
-  if (m.calendarId) extra['calendarId'] = m.calendarId;
-  if (m.calendarName) extra['calendarName'] = m.calendarName;
-  if (m.calendarColor) extra['calendarColor'] = m.calendarColor;
+  writeExtra(extra, 'notes', m.notes);
+  writeExtra(extra, 'description', m.description);
+  writeExtra(extra, 'recurringEventId', m.recurringEventId);
+  writeExtra(extra, 'recurringLabel', m.recurringLabel);
+  writeExtra(extra, 'calendarId', m.calendarId);
+  writeExtra(extra, 'calendarName', m.calendarName);
+  writeExtra(extra, 'calendarColor', m.calendarColor);
   return extra;
 }
 
 function habitExtra(h: HabitRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (h.createdAt) extra['createdAt'] = h.createdAt;
-  if (h.unit !== undefined) extra['unit'] = h.unit;
-  if (h.unitAmount !== undefined) extra['unitAmount'] = h.unitAmount;
-  if (h.timeUnit) extra['timeUnit'] = true;
-  if (h.endDate) extra['endDate'] = h.endDate;
-  // Always present (even null) unlike the fields above — mobile's pull uses
-  // `'challengeLengthDays' in hExtra` to tell "disabled on this device" apart
-  // from "this push predates the field entirely", so omitting the key when
-  // falsy (like the others do) would leave a disabled challenge stuck
-  // showing as active on other devices. This client's own pull doesn't need
-  // the same care (it does a full `put()` per habit, so an omitted key here
-  // already clears the local field), but the wire format has to serve both.
-  extra['challengeLengthDays'] = h.challengeLengthDays ?? null;
+  writeExtra(extra, 'createdAt', h.createdAt);
+  writeExtra(extra, 'unit', h.unit);
+  writeExtra(extra, 'unitAmount', h.unitAmount);
+  writeExtra(extra, 'timeUnit', h.timeUnit);
+  writeExtra(extra, 'endDate', h.endDate);
+  // Explicitly null rather than omitted when disabled, so the clear travels.
+  // This used to be the one field written that way — writeExtra now gives
+  // every field the same property, which is what the note here originally
+  // asked for.
+  writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays ?? null);
   return extra;
 }
 
@@ -480,12 +478,15 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
       const existing = await db.tasks.get(id);
       if (existing && existing.updatedAt >= updated_at) return;
       const extra = (data['extra'] ?? {}) as Record<string, unknown>;
-      const description = (extra['description'] as string | undefined) ?? existing?.description;
-      const links = (extra['links'] as TaskRow['links']) ?? existing?.links;
-      const noteEntries = (extra['noteEntries'] as TaskRow['noteEntries']) ?? existing?.noteEntries;
-      const preferredMode = (extra['preferredMode'] as TaskRow['preferredMode']) ?? existing?.preferredMode;
-      const recurrence = (extra['recurrence'] as TaskRow['recurrence']) ?? existing?.recurrence;
-      const completedDates = (extra['completedDates'] as string[] | undefined) ?? existing?.completedDates;
+      // readExtra rather than `?? existing`: the old form treated a cleared
+      // field (null, or an emptied array) as "nothing came from the server"
+      // and put the local value back, so clears never propagated.
+      const description = readExtra(extra, 'description', existing?.description);
+      const links = readExtra(extra, 'links', existing?.links);
+      const noteEntries = readExtra(extra, 'noteEntries', existing?.noteEntries);
+      const preferredMode = readExtra(extra, 'preferredMode', existing?.preferredMode);
+      const recurrence = readExtra(extra, 'recurrence', existing?.recurrence);
+      const completedDates = readExtra(extra, 'completedDates', existing?.completedDates);
       const row: TaskRow = {
         ...(existing ?? {}),
         id,
@@ -695,31 +696,3 @@ function toEntity(
   return { table, id, data, updated_at: updatedAt ?? now(), deleted_at: deletedAt ?? null };
 }
 
-function habitFrequency(days: number[]): { frequency: string; frequency_days: string | null } {
-  if (!days || days.length === 0 || days.length === 7)
-    return { frequency: 'daily', frequency_days: null };
-  if (days.length === 5 && days.every((d, i) => d === i))
-    return { frequency: 'weekdays', frequency_days: null };
-  return { frequency: 'custom', frequency_days: JSON.stringify(days) };
-}
-
-function habitDaysFromServer(frequency: string, frequencyDays?: string | null): number[] {
-  if (frequency === 'daily') return [];
-  if (frequency === 'weekdays') return [0, 1, 2, 3, 4];
-  if (frequencyDays) {
-    try { return JSON.parse(frequencyDays) as number[]; } catch { return []; }
-  }
-  return [];
-}
-
-function settingId(key: string): string {
-  // Encode key as hex bytes so the UUID only contains valid hex chars (0-9, a-f).
-  // Keys like "timer_settings" have non-hex chars ('t','i','_') that cause a 422
-  // from the backend's uuid::Uuid deserializer if used directly.
-  const hex = Array.from(key)
-    .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-    .join('')
-    .padEnd(32, '0')
-    .substring(0, 32);
-  return `${hex.substring(0,8)}-${hex.substring(8,12)}-5${hex.substring(13,16)}-8${hex.substring(17,20)}-${hex.substring(20,32)}`;
-}

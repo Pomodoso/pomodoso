@@ -1,4 +1,5 @@
 import type { SyncEntity } from '@pomodoso/api';
+import { habitDaysFromServer, habitFrequency, writeExtra } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
 import { and, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
 
@@ -67,26 +68,6 @@ function toEntity(
   return { table, id, data, updated_at: updatedAt, deleted_at: deletedAt };
 }
 
-// Ported verbatim from extension's syncEngine.ts.
-function habitFrequency(days: number[]): { frequency: string; frequency_days: string | null } {
-  if (!days || days.length === 0 || days.length === 7) return { frequency: 'daily', frequency_days: null };
-  if (days.length === 5 && days.every((d, i) => d === i)) return { frequency: 'weekdays', frequency_days: null };
-  return { frequency: 'custom', frequency_days: JSON.stringify(days) };
-}
-
-function habitDaysFromServer(frequency: string, frequencyDays?: string | null): number[] {
-  if (frequency === 'daily') return [];
-  if (frequency === 'weekdays') return [0, 1, 2, 3, 4];
-  if (frequencyDays) {
-    try {
-      return JSON.parse(frequencyDays) as number[];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function parseJsonArray(raw: string | null | undefined): unknown[] {
   if (!raw) return [];
   try {
@@ -99,43 +80,38 @@ function parseJsonArray(raw: string | null | undefined): unknown[] {
 
 function taskExtra(t: typeof task.$inferSelect): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (t.description != null) extra.description = t.description;
-  const links = parseJsonArray(t.links);
-  if (links.length) extra.links = links;
-  const noteEntries = parseJsonArray(t.noteEntries);
-  if (noteEntries.length) extra.noteEntries = noteEntries;
-  if (t.recurrence) extra.recurrence = JSON.parse(t.recurrence) as unknown;
-  const completedDates = parseJsonArray(t.completedDates);
-  if (completedDates.length) extra.completedDates = completedDates;
+  writeExtra(extra, 'description', t.description);
+  writeExtra(extra, 'links', parseJsonArray(t.links));
+  writeExtra(extra, 'noteEntries', parseJsonArray(t.noteEntries));
+  writeExtra(extra, 'recurrence', t.recurrence ? (JSON.parse(t.recurrence) as unknown) : null);
+  writeExtra(extra, 'completedDates', parseJsonArray(t.completedDates));
+  // No preferredMode column on mobile — deliberately not written, so the
+  // extension's value survives rather than being blanked.
   return extra;
 }
 
 function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (h.createdAt) extra.createdAt = h.createdAt;
-  if (h.unit != null) extra.unit = h.unit;
-  if (h.unitAmount != null) extra.unitAmount = h.unitAmount;
-  // Always present (even null) unlike the two fields above — pull's
-  // `'challengeLengthDays' in hExtra` check relies on the key actually being
-  // there to tell "disabled" apart from "the pushing client doesn't know
-  // about this field yet". Omitting it when null (like unit/unitAmount do)
-  // would make a disabled-on-this-device challenge never clear on others.
-  extra.challengeLengthDays = h.challengeLengthDays;
+  writeExtra(extra, 'createdAt', h.createdAt);
+  writeExtra(extra, 'unit', h.unit);
+  writeExtra(extra, 'unitAmount', h.unitAmount);
+  // Explicitly null when disabled so the clear travels — writeExtra now gives
+  // every field that property, which is what this used to special-case.
+  writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
   return extra;
 }
 
-// Ported verbatim from extension's syncEngine.ts meetingExtra — same key
-// names, same "omit if falsy" shape, since the backend's `extra` column is
-// an opaque passthrough blob any client can read.
+// Same key names as the extension's meetingExtra — the backend's `extra`
+// column is an opaque passthrough blob, so both clients must agree on them.
 function meetingExtra(m: MeetingRow): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (m.notes) extra.notes = m.notes;
-  if (m.description != null) extra.description = m.description;
-  if (m.recurringEventId) extra.recurringEventId = m.recurringEventId;
-  if (m.recurringLabel) extra.recurringLabel = m.recurringLabel;
-  if (m.calendarId) extra.calendarId = m.calendarId;
-  if (m.calendarName) extra.calendarName = m.calendarName;
-  if (m.calendarColor) extra.calendarColor = m.calendarColor;
+  writeExtra(extra, 'notes', m.notes);
+  writeExtra(extra, 'description', m.description);
+  writeExtra(extra, 'recurringEventId', m.recurringEventId);
+  writeExtra(extra, 'recurringLabel', m.recurringLabel);
+  writeExtra(extra, 'calendarId', m.calendarId);
+  writeExtra(extra, 'calendarName', m.calendarName);
+  writeExtra(extra, 'calendarColor', m.calendarColor);
   return extra;
 }
 
@@ -427,6 +403,9 @@ function applyEntity(entity: SyncEntity): void {
       const workspaceId = (data.workspace_id as string | null) ?? existing?.workspaceId;
       if (!workspaceId) return; // can't satisfy the NOT NULL FK — skip rather than crash
       const extra = (data.extra ?? {}) as Record<string, unknown>;
+      // The `'key' in extra` checks below are the read side of the shared
+      // wire contract (shared/types sync-wire.ts): a present key wins even
+      // when null or empty, an absent one leaves the local value alone.
       const description = 'description' in extra ? (extra.description as string | null) : existing?.description;
       const links = 'links' in extra ? JSON.stringify(extra.links) : (existing?.links ?? '[]');
       const noteEntries = 'noteEntries' in extra ? JSON.stringify(extra.noteEntries) : (existing?.noteEntries ?? '[]');
