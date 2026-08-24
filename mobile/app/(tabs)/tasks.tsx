@@ -31,8 +31,11 @@ const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
 ];
 
 export default function TasksScreen() {
-  const { display, idleMode, setIdleMode, startSession } = useTimer();
-  const { requestStart, pickerProps } = useStartPicker(startSession);
+  const { display, idleMode, setIdleMode, startSession, attachTask } = useTimer();
+  // Same rule as Home: with a focus session running, a task's play button
+  // points it at that task rather than trying to start a second one.
+  const canAttach = display.status === 'active' && display.kind === 'focus';
+  const { requestStart, pickerProps } = useStartPicker(startSession, canAttach ? attachTask : null);
   const { tasks, addTask, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const { projects, addProject, updateProject, removeProject } = useProjects();
@@ -41,7 +44,9 @@ export default function TasksScreen() {
   const [newTaskProjectId, setNewTaskProjectId] = useState<string | null>(null);
   const { requestProject: requestNewTaskProject, pickerProps: projectPickerProps } = useProjectPicker(setNewTaskProjectId);
   const [subTab, setSubTab] = useState<SubTab>('backlog');
-  const canStart = display.status === 'idle';
+  // Play means start when idle, and attach-to-the-running-pomodoro while a
+  // focus session is going — so the button has to stay available in both.
+  const canStart = display.status === 'idle' || canAttach;
 
   const today = useTodayDate();
   // Same "stays visible today" rule as Home: a priority/today task resolved

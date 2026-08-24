@@ -92,6 +92,13 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   // "elapsed" is always just (now - startedAt) while active — no separate
   // accumulator to keep in sync.
   startedAt: text('started_at').notNull(),
+  // When the currently-attached task was attached, which is not the same as
+  // when the session began once a task can be swapped mid-pomodoro. Time is
+  // credited to a task from here, so the stretch already credited to a
+  // previously-attached task isn't counted twice. Null means "attached since
+  // the session started", the only possible state before detach/attach
+  // existed. Mirrors the extension's TimerState.taskSegmentStartedAt.
+  taskSegmentStartedAt: text('task_segment_started_at'),
   pausedAt: text('paused_at'),
   endedAt: text('ended_at'),
   status: text('status', { enum: ['active', 'paused', 'completed', 'interrupted'] }).notNull(),
