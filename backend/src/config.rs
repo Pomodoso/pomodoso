@@ -46,7 +46,10 @@ impl Config {
             stripe_founder_lifetime_price_id: std::env::var("STRIPE_FOUNDER_LIFETIME_PRICE_ID")
                 .ok(),
 
-            revenuecat_webhook_secret: std::env::var("REVENUECAT_WEBHOOK_SECRET").ok(),
+            // A blank value counts as unset — .env.example ships the key empty.
+            revenuecat_webhook_secret: std::env::var("REVENUECAT_WEBHOOK_SECRET")
+                .ok()
+                .filter(|s| !s.is_empty()),
 
             resend_api_key: std::env::var("RESEND_API_KEY").ok(),
             resend_from_email: std::env::var("RESEND_FROM_EMAIL").ok(),

@@ -204,7 +204,15 @@ pub fn should_apply(stored_provider: Option<&str>, update: &SubscriptionUpdate) 
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 
 /// Compares the shared secret without leaking its content through timing.
+///
+/// An empty `expected` never matches. `REVENUECAT_WEBHOOK_SECRET=` (present but
+/// blank, which is how .env.example ships it) reaches here as `Some("")`, and
+/// without this guard it would equal the empty string an unauthenticated caller
+/// sends by omitting the header entirely — opening the endpoint to anyone.
 fn secret_matches(expected: &str, provided: &str) -> bool {
+    if expected.is_empty() {
+        return false;
+    }
     let (a, b) = (expected.as_bytes(), provided.as_bytes());
     if a.len() != b.len() {
         return false;
@@ -281,7 +289,7 @@ async fn apply_update(
     let set_cancelled = update.cancelled_at == CancelledAt::Set;
     let clear_cancelled = update.cancelled_at == CancelledAt::Clear;
 
-    sqlx::query!(
+    let result = sqlx::query!(
         r#"
         UPDATE subscription
         SET plan = COALESCE($1, plan),
@@ -310,6 +318,17 @@ async fn apply_update(
     )
     .execute(&state.pool)
     .await?;
+
+    // No row means the account was never provisioned (the subscription row is
+    // created on first /me). Silently dropping a real purchase here would be
+    // invisible until the user complained, so make it loud.
+    if result.rows_affected() == 0 {
+        tracing::error!(
+            "revenuecat webhook: no subscription row for user {} — {:?} dropped",
+            event.user_id,
+            event.kind
+        );
+    }
 
     Ok(())
 }
@@ -560,5 +579,12 @@ mod tests {
         assert!(!secret_matches("s3cret", "s3cret "));
         assert!(!secret_matches("s3cret", ""));
         assert!(!secret_matches("", "s3cret"));
+    }
+
+    #[test]
+    fn a_blank_configured_secret_does_not_authorize_a_blank_header() {
+        // Both sides empty is the dangerous case: REVENUECAT_WEBHOOK_SECRET=
+        // set but blank, against a caller that just omits the header.
+        assert!(!secret_matches("", ""));
     }
 }
