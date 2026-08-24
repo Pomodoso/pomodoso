@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { marked } from 'marked';
 import type { TimerStartPayload } from '@pomodoso/types';
 import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEntry, Workspace } from './App';
-import { db, localDate, type RecurrenceRule } from '../db';
+import { db, localDate, type RecurrenceRule, type TaskRow } from '../db';
 import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
 
@@ -38,7 +38,7 @@ interface TaskDetailStateProps {
   onAddToPriorities?: () => void;
   onAddToTasks?: () => void;
   onUpdateTask?: (updates: Partial<SelectedTask>) => void;
-  onAddProject: (project: Project) => void;
+  onAddProject: (project: Omit<Project, 'updatedAt'>) => void;
   onUpdateProject: (id: string, updates: Partial<Project>) => void;
   onDeleteProject: (id: string) => void;
   onStart: (payload: TimerStartPayload) => Promise<void>;
@@ -54,7 +54,10 @@ const PALETTE = [
 
 marked.use({ breaks: true });
 
-function formatNoteDate(isoDate: string, timezone: string): string {
+// timezone is optional to match the prop it comes from: Intl treats an
+// undefined timeZone as "use the system zone", which is already what happens
+// at runtime when the setting hasn't been chosen.
+function formatNoteDate(isoDate: string, timezone: string | undefined): string {
   const d = new Date(isoDate);
   const now = new Date();
   const sameYear = d.getFullYear() === now.getFullYear();
@@ -112,7 +115,10 @@ function applyFormat(
 
 export function TaskDetailState({ task, projects, workspaces, activeWsId, timezone, isInToday, isInPriorities, prioritiesFull, onBack, onDelete, onMoveToBacklog, onAddToPriorities, onAddToTasks, onUpdateTask, onAddProject, onUpdateProject, onDeleteProject, onStart, onSelectTask, onCreateFollowup }: TaskDetailStateProps) {
   const parentTask = useLiveQuery(
-    () => task.parentId ? db.tasks.get(task.parentId) : Promise.resolve(undefined),
+    // Annotated so both branches produce the same promise type — see the
+    // matching comment in HomeState.tsx for why the bare Promise.resolve
+    // makes useLiveQuery look like it returns an unresolved promise.
+    () => task.parentId ? db.tasks.get(task.parentId) : Promise.resolve<TaskRow | undefined>(undefined),
     [task.parentId]
   );
   const childTasks = useLiveQuery(
@@ -754,7 +760,7 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
                 ) : filteredPickerTasks.map(t => (
                   <button
                     key={t.id}
-                    onClick={() => { onUpdateTask({ parentId: t.id }); setShowParentPicker(false); }}
+                    onClick={() => { onUpdateTask?.({ parentId: t.id }); setShowParentPicker(false); }}
                     style={{
                       width: '100%', padding: '7px 10px', textAlign: 'left', fontSize: 12,
                       background: 'none', border: 'none', borderBottom: '1px solid var(--color-border)',
@@ -1106,7 +1112,10 @@ function GhostBtn({
   children, onClick, danger, accent, disabled, title, style,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  // Takes the event because it's wired straight to <button onClick>, so React
+  // passes one — one caller relies on it to stopPropagation. Handlers that
+  // ignore it still satisfy this.
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   danger?: boolean;
   accent?: boolean;
   disabled?: boolean;
@@ -1216,10 +1225,10 @@ function ProjectPicker({
 }: {
   projects: Project[];
   value: string | null;
-  timezone?: string;
+  timezone?: string | undefined;
   workspaceId?: string | null;
   onChange: (id: string | null) => void;
-  onAddProject: (project: Project) => void;
+  onAddProject: (project: Omit<Project, 'updatedAt'>) => void;
   onUpdateProject: (id: string, updates: Partial<Project>) => void;
   onDeleteProject: (id: string) => void;
 }) {
@@ -1264,7 +1273,7 @@ function ProjectPicker({
   const handleSave = () => {
     if (!name.trim()) return;
     if (mode === 'create') {
-      const project: Project = {
+      const project: Omit<Project, 'updatedAt'> = {
         id: crypto.randomUUID(),
         name: name.trim(),
         color,

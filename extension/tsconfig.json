@@ -11,7 +11,18 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["chrome"]
+    "types": ["chrome"],
+    // Pins React's types to this package's own copy (18.x). @dnd-kit ships no
+    // @types/react of its own, so TypeScript resolved the one hoisted for
+    // mobile (19.x) when checking its .d.ts files. React 19 added bigint to
+    // ReactNode, so its components then failed to satisfy React 18's JSX
+    // contract and DndContext/DragOverlay were rejected as JSX elements —
+    // purely a types mismatch, the bundle was always fine. Vite resolves
+    // modules itself and ignores this, so it affects typechecking only.
+    "baseUrl": ".",
+    "paths": {
+      "react": ["./node_modules/@types/react"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

@@ -147,7 +147,7 @@ async function openMiniWindow(): Promise<void> {
       top,
       focused: false,
     });
-    await chrome.storage.local.set({ miniWindowId: win.id ?? null });
+    await chrome.storage.local.set({ miniWindowId: win?.id ?? null });
   } catch { /* window creation failed (e.g. no browser window visible) */ }
 }
 

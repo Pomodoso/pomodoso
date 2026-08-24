@@ -8,8 +8,10 @@ export type { RecurrenceRule };
 // the engine reads WHERE syncedAt IS NULL OR syncedAt < updatedAt.
 export interface SyncMeta {
   updatedAt: string;   // ISO — Last-Write-Wins authority
-  deletedAt?: string;  // tombstone: soft-delete only, never physical DELETE
-  syncedAt?: string;   // undefined = dirty (not yet pushed to backend)
+  deletedAt?: string | null;  // tombstone: soft-delete only, never physical DELETE
+  // `| undefined` spelled out: code clears this to undefined to re-dirty a
+  // row, and under exactOptionalPropertyTypes `?:` alone would forbid that.
+  syncedAt?: string | undefined;   // undefined = dirty (not yet pushed to backend)
 }
 
 export function now(): string {
@@ -56,7 +58,7 @@ export interface TaskRow extends SyncMeta {
   description?: string;
   notes?: string;        // legacy — superseded by noteEntries
   noteEntries?: NoteEntry[];
-  timeLogs?: TimeLogEntry[];
+  timeLogs?: TimeLogEntry[] | undefined;
   parentId?: string | null;
   recurrence?: RecurrenceRule;    // rule that makes this task repeat
   completedDates?: string[];      // YYYY-MM-DD list of days this recurring task was completed
@@ -67,7 +69,7 @@ export interface TaskOrderRow {
   priorityIds: string[];
   todayIds: string[];
   updatedAt?: string;  // stamped automatically by the Dexie hooks below
-  syncedAt?: string;
+  syncedAt?: string | undefined;
 }
 
 // ─── Project types ─────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ export interface HabitHistoryRow {
   done?: boolean;
   completedAt?: string;
   updatedAt: string;
-  syncedAt?: string;
+  syncedAt?: string | undefined;
 }
 
 // ─── Meeting types ─────────────────────────────────────────────────────────────

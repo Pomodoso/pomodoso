@@ -27,6 +27,8 @@ import {
   type HabitRow as HabitDef,
   type HabitHistoryRow,
   type MeetingRow as CalendarMeeting,
+  // Aliased because TaskRow is also the name of a component in this file.
+  type TaskRow as TaskRecord,
   type HabitKind,
   type HabitIconKind,
   type MeetingTrackMode,
@@ -78,7 +80,7 @@ interface HomeStateProps {
   onAddDetectionRule?: (name: string, urlPattern: string) => void;
   onOpenAccount: () => void;
   onSignOut: () => void;
-  onSyncNow?: () => void;
+  onSyncNow?: (() => void) | undefined;
   isSignedIn: boolean;
   syncStatus: 'disconnected' | 'connected' | 'syncing' | 'offline' | 'error';
   selectedText: string | null;
@@ -169,7 +171,12 @@ function RemoteTimerBanner({ beacon }: { beacon: RemoteBeacon }) {
     return () => clearInterval(i);
   }, []);
   const task = useLiveQuery(
-    () => beacon.task_id ? db.tasks.get(beacon.task_id) : Promise.resolve(undefined),
+    // The resolve is annotated so both ternary branches produce the same
+    // promise type. Left bare it infers Promise<undefined>, and the union
+    // with Dexie's PromiseExtended defeats useLiveQuery's overload
+    // resolution — the hook then appears to hand back the unresolved promise
+    // rather than the row, so every field access below fails to typecheck.
+    () => beacon.task_id ? db.tasks.get(beacon.task_id) : Promise.resolve<TaskRecord | undefined>(undefined),
     [beacon.task_id],
   );
 
@@ -1901,10 +1908,10 @@ function TaskTooltip({
   focusSeconds = 25 * 60,
 }: {
   task: SelectedTask;
-  project?: Project;
-  workspaceBadge?: Workspace;
+  project?: Project | undefined;
+  workspaceBadge?: Workspace | undefined;
   anchor: { top: number; left: number; width: number };
-  focusSeconds?: number;
+  focusSeconds?: number | undefined;
 }) {
   const timeStr = fmtTotalTime(task.timeLogs);
   const totalPomoSecs = task.timeLogs?.filter(l => l.mode === 'pomodoro').reduce((s, l) => s + l.durationSeconds, 0) ?? 0;
@@ -2033,8 +2040,8 @@ function SortableTaskRow(props: TaskRowProps) {
 interface TaskRowProps {
   index?: number;
   task: SelectedTask & { status: TaskStatus };
-  project?: Project;
-  workspaceBadge?: Workspace;
+  project?: Project | undefined;
+  workspaceBadge?: Workspace | undefined;
   isActiveTask: boolean;
   timerRunning: boolean;
   timerHasTask: boolean;
@@ -2191,7 +2198,7 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
 
 function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: {
   task: SelectedTask;
-  project?: Project;
+  project?: Project | undefined;
   isInPriorities: boolean;
   isInTasks: boolean;
   prioritiesFull: boolean;
@@ -2495,7 +2502,7 @@ function MeetingCard({
   meeting: CalendarMeeting;
   projects: Project[];
   timezone: string;
-  workspace?: Workspace;
+  workspace?: Workspace | undefined;
   onSelect: () => void;
   onTrackModeChange: (mode: MeetingTrackMode) => void;
   onStart: () => void;
@@ -2594,7 +2601,7 @@ function MeetingCard({
                 fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
                 background: `${workspace.color}22`, color: workspace.color,
               }}>
-                {workspace.name[0].toUpperCase()} {workspace.name}
+                {workspace.name[0]?.toUpperCase() ?? ''} {workspace.name}
               </span>
             )}
             {assignedProject && (
@@ -3149,10 +3156,10 @@ function SuggestionCard({ label, accentColor, children, primaryLabel, secondaryL
   label: string;
   accentColor: string;
   children: React.ReactNode;
-  primaryLabel?: string;
-  secondaryLabel?: string;
-  onPrimary?: () => void;
-  onSecondary?: () => void;
+  primaryLabel?: string | undefined;
+  secondaryLabel?: string | undefined;
+  onPrimary?: (() => void) | undefined;
+  onSecondary?: (() => void) | undefined;
   onDismiss: () => void;
 }) {
   return (
@@ -3412,7 +3419,7 @@ function formatDayLabel(dateStr: string, timezone: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function getEffectiveDate(task: { updatedAt: string; timeLogs?: { startedAt: string }[] }): string {
+function getEffectiveDate(task: { updatedAt: string; timeLogs?: { startedAt: string }[] | undefined }): string {
   if (task.timeLogs && task.timeLogs.length > 0) {
     return task.timeLogs.reduce((max, l) => l.startedAt > max ? l.startedAt : max, '').slice(0, 10);
   }
@@ -4472,9 +4479,14 @@ function fmtHabitTime(totalSeconds: number): string {
 // Accepts "mm:ss", "h:mm:ss", or a plain number (interpreted as minutes).
 function parseHabitTime(str: string): number {
   const parts = str.split(':').map(p => parseInt(p, 10) || 0);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return (parts[0] || 0) * 60;
+  // Destructured with defaults because noUncheckedIndexedAccess can't tell
+  // that the length checks below already make these indexes safe. The map
+  // above already coerces every element to a number, so the defaults only
+  // ever apply to positions the checks exclude anyway.
+  const [first = 0, second = 0, third = 0] = parts;
+  if (parts.length === 3) return first * 3600 + second * 60 + third;
+  if (parts.length === 2) return first * 60 + second;
+  return first * 60;
 }
 
 const PRESET_UNITS = ['ml', 'min', 'pages', 'km', 'steps', 'cal', 'glasses', 'reps'];
@@ -4496,7 +4508,7 @@ const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function HabitForm({ initialHabit, onSave, onCancel }: {
   initialHabit?: HabitDef;
-  onSave: (habit: HabitDef) => void;
+  onSave: (habit: Omit<HabitDef, 'updatedAt'>) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initialHabit?.name ?? '');
