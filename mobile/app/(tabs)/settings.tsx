@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
@@ -8,12 +10,38 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSettings } from '@/hooks/useSettings';
 import { useWorkspace } from '@/hooks/useWorkspace';
 
-// Ports extension's SettingsState.tsx main menu (SettingsPage 'main') — a
-// list of nav rows into sub-pages, rather than one long scroll. Calendar and
-// Workspace already had their own routed screens (Fase B6b-2/B3); this
-// splits the rest of what used to be one flat settings.tsx into matching
-// sub-screens. No "task detection" row — that's DOM-based ticket parsing on
-// browsed web pages, which has no equivalent on mobile.
+// Ports extension's SettingsState.tsx main menu — a list of nav rows into
+// sub-pages rather than one long scroll. No "task detection" row: that's
+// DOM-based ticket parsing on browsed pages, with no mobile equivalent.
+//
+// This is the fourth tab, replacing the old "More" screen. That screen was
+// written during M0 and never updated, so it still advertised Account, Sign
+// out and sync as "Coming soon" long after they shipped, hard-coded the
+// workspace name to "Work" (contradicting the real one shown everywhere
+// else), and exposed the M0 background-notification spike's test buttons to
+// users. Rather than keep two settings screens that disagreed, the tab now
+// *is* the real one — Home's gear routes here too.
+
+function useNotificationPermission(): boolean | null {
+  const [granted, setGranted] = useState<boolean | null>(null);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    const result = await Notifications.getPermissionsAsync();
+    setGranted(result.granted);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    // Re-check on foreground — the only way permission changes is the user
+    // going to OS Settings and back, which always passes through this.
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') void refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
+
+  return granted;
+}
 
 interface NavRowProps {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -44,6 +72,7 @@ export default function SettingsScreen(): React.JSX.Element {
   const auth = useAuth();
   const { workspace } = useWorkspace();
   const { settings } = useSettings();
+  const notificationsGranted = useNotificationPermission();
   const isPro = auth.entitlements.features.sync;
 
   const accountDescription = !auth.isConfigured || auth.loading
@@ -57,11 +86,7 @@ export default function SettingsScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.pageTitle}>Settings</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -82,6 +107,35 @@ export default function SettingsScreen(): React.JSX.Element {
           <NavRow icon="options-outline" title="General" description={`Max ${settings.maxPriorities} priorities`} onPress={() => router.push('/settings/general')} />
           <NavRow icon="swap-vertical-outline" title="Data" description="Export or import all your data" onPress={() => router.push('/settings/data')} isLast />
         </View>
+
+        {/* Permission state, not a preference — the timer can't announce the
+            end of a session without it, and the only fix is the OS settings
+            app, so this offers that rather than a toggle it cannot honour. */}
+        <View style={styles.group}>
+          <Pressable
+            style={[styles.navRow, styles.navRowLast]}
+            onPress={notificationsGranted === false ? () => void Linking.openSettings() : undefined}
+          >
+            <View style={styles.navIcon}>
+              <Ionicons
+                name={notificationsGranted ? 'notifications-outline' : 'notifications-off-outline'}
+                size={17}
+                color={notificationsGranted ? colors.success : colors.textSecondary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.navTitle}>Pomodoro alerts</Text>
+              <Text style={styles.navDescription} numberOfLines={1}>
+                {notificationsGranted === null
+                  ? 'Checking…'
+                  : notificationsGranted
+                    ? 'Notifications enabled'
+                    : 'Blocked — tap to open system settings'}
+              </Text>
+            </View>
+            {notificationsGranted === false && <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />}
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -89,14 +143,8 @@ export default function SettingsScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14 },
+  pageTitle: { fontSize: 26, fontWeight: '700', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   group: {
     backgroundColor: colors.surface,
