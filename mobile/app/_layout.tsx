@@ -1,9 +1,11 @@
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { View } from 'react-native';
 import 'react-native-reanimated';
 
+import { BrandSplash } from '@/components/BrandSplash';
 import { colors } from '@/constants/theme';
 import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
 
@@ -23,6 +25,12 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     'SpaceMono-Regular': require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  // The native splash can only be a static image. Once fonts are in we hand
+  // over to BrandSplash, which animates the same mark from the same frame and
+  // then lifts away — so the launch reads as one motion rather than a static
+  // image blinking into a UI.
+  const [introDone, setIntroDone] = useState(false);
+  const finishIntro = useCallback(() => setIntroDone(true), []);
 
   useSyncLifecycle();
 
@@ -41,10 +49,15 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="settings" options={{ presentation: 'card' }} />
-    </Stack>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+      </Stack>
+      {/* Overlaid rather than rendered instead of the Stack, so the app is
+          already mounted and settled behind it when it fades. */}
+      {!introDone && <BrandSplash onDone={finishIntro} />}
+    </View>
   );
 }

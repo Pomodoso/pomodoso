@@ -36,7 +36,7 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#FBFAF7"
         }
       ],
       "expo-sqlite",
@@ -52,7 +52,10 @@
               "name": "PomodoroActivity",
               "displayName": "Pomodoro Timer",
               "description": "Shows the running focus session or break on the Lock Screen and Dynamic Island.",
-              "supportedFamilies": ["accessoryCircular", "accessoryRectangular"]
+              "supportedFamilies": [
+                "accessoryCircular",
+                "accessoryRectangular"
+              ]
             }
           ]
         }
