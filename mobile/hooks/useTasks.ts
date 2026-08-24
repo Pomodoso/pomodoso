@@ -12,7 +12,7 @@ import { uid } from '@/utils/id';
 import { activeOccurrence } from '@/utils/recurrence';
 import { playSound } from '@/utils/sounds';
 import { triggerSync } from '@/utils/sync';
-import { secondsBetween } from '@/utils/time';
+import { creditedStart, secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
 import { useTodayDate } from './useTodayDate';
@@ -107,7 +107,7 @@ export function useTasks() {
     // toward the pomo tally below.
     if (s.status !== 'completed' && s.status !== 'interrupted') continue;
     const entry = statsByTask.get(s.taskId) ?? { pomos: 0, seconds: 0 };
-    entry.seconds += secondsBetween(s.startedAt, s.endedAt);
+    entry.seconds += secondsBetween(creditedStart(s), s.endedAt);
     if (s.mode === 'pomodoro' && s.status === 'completed') entry.pomos += 1;
     statsByTask.set(s.taskId, entry);
   }

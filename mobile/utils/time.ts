@@ -11,3 +11,18 @@ export function formatMinutes(totalMinutes: number): string {
   const m = totalMinutes % 60;
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
+
+/** The instant from which a session's elapsed time counts toward its task.
+ *
+ *  Normally the session's own start, but once a task can be swapped
+ *  mid-pomodoro (useTimer's attachTask/detachTask) the stretch before the
+ *  swap was already banked as its own session row and belongs to the task
+ *  that was attached then. Counting from `startedAt` there would credit it
+ *  twice.
+ *
+ *  Shared by the local per-task totals and the sync push so the two can't
+ *  disagree about how much time a session is worth.
+ */
+export function creditedStart(session: { startedAt: string; taskSegmentStartedAt?: string | null }): string {
+  return session.taskSegmentStartedAt ?? session.startedAt;
+}

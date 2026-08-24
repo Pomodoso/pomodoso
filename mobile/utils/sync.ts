@@ -8,6 +8,7 @@ import { habits, habitHistory, meeting, pomodoroSession, project, settings, task
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
+import { creditedStart } from '@/utils/time';
 
 // Ports extension's syncEngine.ts (push/pull/LWW) for the tables mobile
 // actually has. Deliberately NOT ported yet, both documented gaps rather
@@ -190,14 +191,18 @@ async function push(client: TokenApiClient): Promise<void> {
     )
     .all();
   for (const s of sessions) {
-    const durationSeconds = Math.round((new Date(s.endedAt!).getTime() - new Date(s.startedAt).getTime()) / 1000);
+    // creditedStart, not startedAt: a session whose task was swapped
+    // mid-pomodoro already banked the earlier stretch as its own row, and
+    // pushing the full span would credit it twice on every other device.
+    const startedAt = creditedStart(s);
+    const durationSeconds = Math.round((new Date(s.endedAt!).getTime() - new Date(startedAt).getTime()) / 1000);
     entities.push(
       toEntity('pomodoro_session', s.id, s.updatedAt, null, {
         workspace_id: s.workspaceId,
         task_id: s.taskId,
         ticket_id: null,
         mode: s.mode,
-        started_at: s.startedAt,
+        started_at: startedAt,
         duration_seconds: durationSeconds,
         kind: 'focus',
         status: 'completed',

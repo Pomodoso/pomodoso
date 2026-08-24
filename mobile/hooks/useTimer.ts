@@ -510,6 +510,87 @@ export function useTimer() {
     }
   }
 
+  // Ports the extension's attachTask/detachTask (background.ts): the pomodoro
+  // itself keeps running untouched — same row, same startedAt, same scheduled
+  // end notification — and only the task association changes.
+  //
+  // The stretch worked on the outgoing task is banked as its own completed
+  // session row. That is what the extension puts on the wire for a timeLogs
+  // entry (kind='focus', status='completed', started_at + duration), so a
+  // segment made here round-trips into that client's timeLogs unchanged.
+  //
+  // Always mode='manual', never the live session's mode. The pomodoro tally
+  // — both per-task and "Pomo N of 12" — counts mode='pomodoro' AND
+  // status='completed', so inheriting 'pomodoro' here would score a
+  // thirty-second fragment as a whole finished pomodoro. 'manual' is exactly
+  // what the schema reserves for "a retroactive time-log entry with no live
+  // timer lifecycle", which a banked partial stretch is; it still counts
+  // toward the task's seconds. The live session keeps its own mode and is
+  // still the one that can complete.
+  function bankCurrentSegment(now: string): void {
+    if (!active?.taskId) return;
+    const segmentStart = active.taskSegmentStartedAt ?? active.startedAt;
+    if (secondsBetween(segmentStart, now) <= 0) return;
+    db.insert(pomodoroSession)
+      .values({
+        id: uid(),
+        workspaceId: active.workspaceId,
+        mode: 'manual',
+        kind: 'focus',
+        taskId: active.taskId,
+        plannedDurationSeconds: null,
+        startedAt: segmentStart,
+        taskSegmentStartedAt: null,
+        pausedAt: null,
+        endedAt: now,
+        status: 'completed',
+        notificationId: null,
+        // Already finished — a banked segment has no prompt to offer.
+        promptResolved: true,
+        updatedAt: now,
+      })
+      .run();
+  }
+
+  /** Detaches the current task, leaving the pomodoro running untouched. */
+  async function detachTask(): Promise<void> {
+    if (!active || active.status !== 'active' || isMutatingRef.current) return;
+    isMutatingRef.current = true;
+    try {
+      const now = nowIso();
+      bankCurrentSegment(now);
+      db.update(pomodoroSession)
+        .set({ taskId: null, taskSegmentStartedAt: null, updatedAt: now })
+        .where(eq(pomodoroSession.id, active.id))
+        .run();
+      triggerSync();
+    } finally {
+      isMutatingRef.current = false;
+    }
+  }
+
+  /** Points the running pomodoro at a different task, banking the time spent
+   *  on the previous one. Also the way to attach a task to a session started
+   *  without one. */
+  async function attachTask(taskId: string): Promise<void> {
+    if (!active || active.status !== 'active' || isMutatingRef.current) return;
+    if (active.taskId === taskId) return;
+    isMutatingRef.current = true;
+    try {
+      const now = nowIso();
+      bankCurrentSegment(now);
+      db.update(pomodoroSession)
+        // taskSegmentStartedAt, not startedAt: the time before this moment
+        // belongs to whatever was attached before, and has just been banked.
+        .set({ taskId, taskSegmentStartedAt: now, updatedAt: now })
+        .where(eq(pomodoroSession.id, active.id))
+        .run();
+      triggerSync();
+    } finally {
+      isMutatingRef.current = false;
+    }
+  }
+
   async function stopSession(): Promise<void> {
     if (!active || isMutatingRef.current) return;
     isMutatingRef.current = true;
@@ -558,5 +639,7 @@ export function useTimer() {
     pauseSession,
     resumeSession,
     stopSession,
+    attachTask,
+    detachTask,
   };
 }

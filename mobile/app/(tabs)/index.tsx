@@ -51,8 +51,13 @@ export default function HomeScreen() {
     pauseSession,
     resumeSession,
     stopSession,
+    attachTask,
+    detachTask,
   } = useTimer();
-  const { requestStart, pickerProps } = useStartPicker(startSession);
+  // Only while a focus session is actually running: on a break there's no
+  // task to swap, and paused/idle should still open the start picker.
+  const canAttach = display.status === 'active' && display.kind === 'focus';
+  const { requestStart, pickerProps } = useStartPicker(startSession, canAttach ? attachTask : null);
   const { tasks, setTaskStatus } = useTasks();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const { projects } = useProjects();
@@ -154,7 +159,14 @@ export default function HomeScreen() {
 
               {display.taskTitle && (
                 <View style={styles.currentTask}>
-                  <Text style={styles.currentTaskLabel}>{isBreak ? 'Break — up next' : 'Working on'}</Text>
+                  <View style={styles.currentTaskHeader}>
+                    <Text style={styles.currentTaskLabel}>{isBreak ? 'Break — up next' : 'Working on'}</Text>
+                    {canAttach && (
+                      <Pressable onPress={detachTask} hitSlop={10} accessibilityLabel="Detach task">
+                        <Text style={styles.detachText}>Detach</Text>
+                      </Pressable>
+                    )}
+                  </View>
                   <Text style={styles.currentTaskTitle}>{display.taskTitle}</Text>
                   {display.ticketRef && (
                     <View style={styles.currentTaskMeta}>
@@ -163,6 +175,18 @@ export default function HomeScreen() {
                       </View>
                     </View>
                   )}
+                </View>
+              )}
+
+              {/* A focus session with nothing attached — the state you land in
+                  after Detach, or after starting one without picking a task.
+                  Says where to attach from rather than opening a second task
+                  picker here: the lists below already have play buttons, and
+                  while a session runs those attach instead of starting. */}
+              {canAttach && !display.taskTitle && (
+                <View style={styles.currentTask}>
+                  <Text style={styles.currentTaskLabel}>No task attached</Text>
+                  <Text style={styles.noTaskHint}>Tap ▶ on any task below to work on it.</Text>
                 </View>
               )}
 
@@ -197,7 +221,7 @@ export default function HomeScreen() {
             status={t.status}
             projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
             onPress={() => router.push(`/task/${t.id}`)}
-            onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+            onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
             onStatusPress={() => requestStatus(t.id, t.title, t.status)}
           />
         ))}
@@ -214,7 +238,7 @@ export default function HomeScreen() {
                 status={t.status}
                 projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                 onPress={() => router.push(`/task/${t.id}`)}
-                onPlayPress={display.status === 'idle' && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
                 onStatusPress={() => requestStatus(t.id, t.title, t.status)}
               />
             ))}
@@ -343,6 +367,13 @@ const styles = StyleSheet.create({
   },
   pomoRowLabel: { fontSize: 12, color: colors.textTertiary, fontWeight: '500', marginTop: 8 },
   pomoCount: { fontSize: 12, color: colors.textTertiary, fontWeight: '500', marginTop: 14 },
+  currentTaskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  detachText: { fontSize: 11, fontWeight: '600', color: colors.accent },
+  noTaskHint: { fontSize: 13, color: colors.textTertiary, marginTop: 4 },
   currentTask: {
     width: '100%',
     backgroundColor: colors.surface,

@@ -213,6 +213,7 @@ function initDb(): void {
       task_id TEXT,
       planned_duration_seconds INTEGER,
       started_at TEXT NOT NULL,
+      task_segment_started_at TEXT,
       paused_at TEXT,
       ended_at TEXT,
       status TEXT NOT NULL,
@@ -285,6 +286,17 @@ function initDb(): void {
       synced_at TEXT
     );
   `);
+
+  // Additive on purpose, unlike the drop-and-recreate probes above. Those
+  // predate any real data and reshaped columns; this only appends a nullable
+  // one, and dropping the table would throw away local pomodoro history that
+  // a free (unsynced) user has no way to get back. Throws harmlessly on a
+  // database that already has the column, which is every run after the first.
+  try {
+    expoDb.execSync('ALTER TABLE pomodoro_session ADD COLUMN task_segment_started_at TEXT;');
+  } catch {
+    /* column already present */
+  }
 
   // Seeds one real-UUID workspace on first run — not a sentinel string id
   // like extension's old 'default' (a migration scar there, not a design
