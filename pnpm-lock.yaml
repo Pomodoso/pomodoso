@@ -245,6 +245,9 @@ importers:
 
   shared/types:
     devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
       typescript:
         specifier: ^5.5.0
         version: 5.9.3

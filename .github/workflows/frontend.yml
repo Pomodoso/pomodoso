@@ -41,8 +41,11 @@ jobs:
       - name: Build extension
         run: pnpm --filter extension build
 
-      - name: Test extension
-        run: pnpm --filter extension test
+      # Every package that has tests, not just the extension — the sync wire
+      # contract in @pomodoso/types is shared by both clients and is exactly
+      # the code where a silent disagreement corrupts data across devices.
+      - name: Test
+        run: pnpm -r test
 
       - name: Bundle mobile (catches Metro/asset errors tsc can't see)
         run: pnpm --filter mobile exec expo export --platform ios --platform android
