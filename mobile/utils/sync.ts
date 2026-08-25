@@ -254,10 +254,23 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
-  // Only completed focus-time entries sync, matching what extension's own
-  // wire usage actually is (it only ever sends kind:'focus'/status:
-  // 'completed', even though the backend schema is more permissive) —
-  // active/paused/interrupted sessions and breaks stay device-local.
+  // Every finished stretch of focus time syncs — completed *and*
+  // interrupted.
+  //
+  // This used to push only status='completed', on the reasoning that the
+  // extension "only ever sends status:'completed'". That conflated the wire
+  // field with the selection: the extension hardcodes 'completed' on the
+  // way out for *every* timeLog it has, and it has no notion of an
+  // interrupted one — it simply records the stretch that elapsed. Mapping
+  // that to "push only locally-completed sessions" silently dropped real
+  // tracked time, and dropped it asymmetrically: a stopwatch session always
+  // ends 'interrupted' (no deadline to reconcile against), so no stopwatch
+  // time ever left the device at all, and neither did a pomodoro stopped
+  // early. useTasks already counts both toward a task's total, so the phone
+  // showed time no other device could see.
+  //
+  // active/paused still stay local — they have no endedAt and aren't
+  // finished. Breaks stay local too (spec 6.1: not logged in reports).
   // Already-deleted-but-never-synced sessions are simply never pushed —
   // the backend's pomodoro_session table has no deleted_at column at all
   // (confirmed via its pull SELECT, which hardcodes deleted_at: None), so
@@ -269,7 +282,7 @@ async function push(client: TokenApiClient): Promise<void> {
     .from(pomodoroSession)
     .where(
       and(
-        eq(pomodoroSession.status, 'completed'),
+        inArray(pomodoroSession.status, ['completed', 'interrupted']),
         eq(pomodoroSession.kind, 'focus'),
         isNull(pomodoroSession.deletedAt),
         isNotNull(pomodoroSession.endedAt),
