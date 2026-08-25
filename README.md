@@ -72,10 +72,16 @@ so you can never accidentally load a prod-pointing build locally.
 | `pnpm --filter extension dev` | dev build, watch mode |
 | `pnpm --filter extension build` | dev build (load `extension/dist`) |
 | `pnpm --filter extension build:prod` | explicit production build (rare) |
-| **`pnpm --filter extension zip`** | **prod zip** `pomodoso-extension-v<version>.zip`, then **restores the dev build** |
+| **`cd extension && make zip`** | **prod zip** `releases/pomodoso-<version>.zip`, then **restores the dev build** |
 
-So: load `extension/dist` for local work; run `zip` only to produce the Chrome Web Store
-upload.
+So: load `extension/dist` for local work; run `make zip` only to produce the Chrome Web
+Store upload.
+
+Packaging lives in `extension/Makefile` and nowhere else. There used to be a second
+path (`pnpm --filter extension zip`) that produced the same artifact under a different
+name — `pomodoso-extension-v<version>.zip` against the Makefile's `pomodoso-<version>.zip`
+— and every release from 1.1.2 on used the Makefile's. Two ways to build one thing is
+how you end up uploading the wrong file.
 
 ## Tests / CI
 
