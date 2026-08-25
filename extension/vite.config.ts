@@ -38,6 +38,16 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
+    // Vite emits <link rel="modulepreload" crossorigin> for every shared
+    // chunk. Chrome rejects each one under a chrome-extension:// origin —
+    // "cross-world extension resource mismatch" — and lists them all as
+    // errors on the extension's own page. Nothing breaks: the hints are
+    // discarded and the modules still load through the import graph. But
+    // a page of red on a freshly installed extension is its own problem.
+    //
+    // The hint buys nothing here anyway. It exists to start fetches earlier
+    // over a network; these files are already on disk.
+    modulePreload: false,
     rollupOptions: {
       input: {
         popup: resolve(root, 'popup/index.html'),
