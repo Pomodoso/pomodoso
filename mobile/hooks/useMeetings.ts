@@ -22,10 +22,10 @@ export interface TodayMeeting extends MeetingRow {
 // pure function of `time`/`durationMinutes`, no reason to let it go stale
 // between renders.
 export function useMeetings(): { meetings: TodayMeeting[] } {
-  const { workspaceId } = useWorkspace();
+  const { scopeId } = useWorkspace();
   const { data: rows } = useLiveQuery(
-    db.select().from(meeting).where(and(isNull(meeting.deletedAt), eq(meeting.workspaceId, workspaceId))),
-    [workspaceId],
+    db.select().from(meeting).where(scopeId === null ? isNull(meeting.deletedAt) : and(isNull(meeting.deletedAt), eq(meeting.workspaceId, scopeId))),
+    [scopeId],
   );
 
   const todayStr = new Date().toLocaleDateString('en-CA');

@@ -54,7 +54,12 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
-        <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+        {/* No "settings" screen is declared here. PR #86 moved settings.tsx
+            into (tabs)/, which deleted the root route this used to configure
+            — the sub-pages are flat routes (settings/account, settings/data,
+            …), and expo-router warned on every render that no route named
+            "settings" existed. Its presentation option had been applying to
+            nothing since that move. */}
       </Stack>
       {/* Overlaid rather than rendered instead of the Stack, so the app is
           already mounted and settled behind it when it fades. */}

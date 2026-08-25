@@ -83,7 +83,7 @@ export function useTimer() {
   // so the effect below fires once per session rather than re-triggering on
   // every render while pendingBreak/pendingNextFocus are non-null.
   const autoStartedForRef = useRef<string | null>(null);
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, scopeId } = useWorkspace();
   // Scoped to the active workspace, matching extension's `inWs` (App.tsx).
   // Unscoped, the daily pomo count and today's focus total summed every
   // workspace at once, and `active` could resolve to a session belonging to
@@ -92,14 +92,14 @@ export function useTimer() {
     db
       .select()
       .from(pomodoroSession)
-      .where(and(isNull(pomodoroSession.deletedAt), eq(pomodoroSession.workspaceId, workspaceId)))
+      .where(scopeId === null ? isNull(pomodoroSession.deletedAt) : and(isNull(pomodoroSession.deletedAt), eq(pomodoroSession.workspaceId, scopeId)))
       .orderBy(desc(pomodoroSession.startedAt)),
-    [workspaceId],
+    [scopeId],
   );
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
   const { data: tasks } = useLiveQuery(
-    db.select().from(task).where(and(isNull(task.deletedAt), eq(task.workspaceId, workspaceId))),
-    [workspaceId],
+    db.select().from(task).where(scopeId === null ? isNull(task.deletedAt) : and(isNull(task.deletedAt), eq(task.workspaceId, scopeId))),
+    [scopeId],
   );
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
   const { settings } = useSettings();

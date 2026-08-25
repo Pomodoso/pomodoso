@@ -65,8 +65,11 @@ function parseNoteEntries(raw: string): NoteEntry[] {
 export function useTasks() {
   const today = useTodayDate();
   const { settings: settingsValue } = useSettings();
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, scopeId } = useWorkspace();
   // Scoped to the active workspace, matching extension's `inWs` (App.tsx).
+  // scopeId is null under "All workspaces", which drops the predicate
+  // entirely rather than filtering — the same escape hatch the extension's
+  // `activeWsId === 'all'` gives.
   // Without this every list mixed all workspaces together — invisible while
   // a device only ever had its own seeded workspace, and immediately wrong
   // the moment sync brought the account's real ones down.
@@ -74,16 +77,16 @@ export function useTasks() {
     db
       .select()
       .from(task)
-      .where(and(isNull(task.deletedAt), eq(task.workspaceId, workspaceId)))
+      .where(scopeId === null ? isNull(task.deletedAt) : and(isNull(task.deletedAt), eq(task.workspaceId, scopeId)))
       .orderBy(asc(task.sortOrder)),
-    [workspaceId],
+    [scopeId],
   );
   const { data: sessions } = useLiveQuery(
     db
       .select()
       .from(pomodoroSession)
-      .where(and(isNull(pomodoroSession.deletedAt), eq(pomodoroSession.workspaceId, workspaceId))),
-    [workspaceId],
+      .where(scopeId === null ? isNull(pomodoroSession.deletedAt) : and(isNull(pomodoroSession.deletedAt), eq(pomodoroSession.workspaceId, scopeId))),
+    [scopeId],
   );
 
   // Mirrors extension's "Add recurring tasks to Today" effect (App.tsx) —
@@ -94,7 +97,10 @@ export function useTasks() {
   // each pass skips tasks already isToday/isPriority, so it converges
   // immediately rather than looping.
   useEffect(() => {
-    let materialized = false;
+    // Which workspaces were actually touched, not just whether any were.
+    // Under "All workspaces" this loop sees tasks from several at once, and
+    // each one's order is its own synced record.
+    const touched = new Set<string>();
     for (const t of tasks ?? []) {
       if (!t.recurrence || t.isToday || t.isPriority) continue;
       const rule = parseRecurrence(t.recurrence);
@@ -103,7 +109,7 @@ export function useTasks() {
       if (!occ) continue;
       if (parseCompletedDates(t.completedDates).includes(occ)) continue;
       db.update(task).set({ isToday: true }).where(eq(task.id, t.id)).run();
-      materialized = true;
+      touched.add(t.workspaceId);
     }
     // Auto-materialization changes Today membership just as much as tapping
     // the row does, so it has to travel too — the extension's equivalent
@@ -111,11 +117,11 @@ export function useTasks() {
     // changed something: the effect is idempotent and re-runs on every
     // tasks/today change, so stamping unconditionally would keep the order
     // permanently dirty and re-push it forever.
-    if (materialized) {
-      markTaskOrderDirty(workspaceId);
+    if (touched.size > 0) {
+      for (const ws of touched) markTaskOrderDirty(ws);
       triggerSync();
     }
-  }, [tasks, today, workspaceId]);
+  }, [tasks, today]);
 
   // Real time-per-task, computed from completed sessions — falls back to the
   // task's stored `meta` placeholder ("Not started") for tasks with no
@@ -327,7 +333,7 @@ export function useTasks() {
     if (!current) return false;
     if (current.isPriority) {
       db.update(task).set({ isPriority: false }).where(eq(task.id, id)).run();
-      markTaskOrderDirty(workspaceId);
+      markTaskOrderDirty(current.workspaceId);
       triggerSync();
       return true;
     }
@@ -337,7 +343,7 @@ export function useTasks() {
     ).length;
     if (priorityCount >= maxPriorities) return false;
     db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
-    markTaskOrderDirty(workspaceId);
+    markTaskOrderDirty(current.workspaceId);
     triggerSync();
     return true;
   }
@@ -348,13 +354,13 @@ export function useTasks() {
     if (!current) return false;
     if (current.isToday) {
       db.update(task).set({ isToday: false }).where(eq(task.id, id)).run();
-      markTaskOrderDirty(workspaceId);
+      markTaskOrderDirty(current.workspaceId);
       triggerSync();
       return true;
     }
     if (isResolvedStatus(current.status)) return false;
     db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
-    markTaskOrderDirty(workspaceId);
+    markTaskOrderDirty(current.workspaceId);
     triggerSync();
     return true;
   }
