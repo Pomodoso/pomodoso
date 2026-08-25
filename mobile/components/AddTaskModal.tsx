@@ -6,6 +6,9 @@ import type { ProjectRow, WorkspaceRow } from '@/db/schema';
 
 interface AddTaskModalProps {
   visible: boolean;
+  /** Already scoped to `workspaceId` by the caller, which is also what feeds
+   *  the ProjectPicker — one place decides, so the two can't disagree about
+   *  which projects belong to the workspace being filed into. */
   projects: ProjectRow[];
   selectedProjectId: string | null;
   /** Offered only under "All workspaces", where there is no active workspace
@@ -25,11 +28,7 @@ export function AddTaskModal({
   onRequestProject, onSubmit, onCancel,
 }: AddTaskModalProps) {
   const [title, setTitle] = useState('');
-  // A project belongs to exactly one workspace, so the picker must only offer
-  // the chosen one's — otherwise a task lands referencing a project its own
-  // workspace doesn't contain.
-  const scoped = projects.filter(p => p.workspaceId === workspaceId);
-  const selectedProject = scoped.find(p => p.id === selectedProjectId) ?? null;
+  const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
 
   function handleSubmit(): void {
     if (!title.trim()) return;
