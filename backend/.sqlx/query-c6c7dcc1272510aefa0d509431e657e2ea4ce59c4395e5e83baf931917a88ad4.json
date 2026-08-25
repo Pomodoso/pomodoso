@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id FROM task\n        WHERE workspace_id = ANY($1)\n          AND deleted_at IS NULL\n          AND status IN ('done', 'cancelled')\n          AND completed_at IS NOT NULL\n          AND DATE(completed_at AT TIME ZONE $3) = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c6c7dcc1272510aefa0d509431e657e2ea4ce59c4395e5e83baf931917a88ad4"
+}

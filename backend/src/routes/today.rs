@@ -327,19 +327,25 @@ pub async fn get_today(
     // list. Recurring tasks already dodge this via extra.completedDates
     // (below); regular one-off tasks need the same treatment.
     //
-    // completed_at is NOT a reliable signal here: the extension's local Task
-    // model has no such field at all, so it never gets sent on sync push and
-    // stays NULL for virtually every real task. The extension's own "when did
-    // this happen" view (Tasks > History) falls back to updated_at for this
-    // exact reason — mirror that: status done/cancelled + the day its
-    // updated_at (or completed_at, if some other client did set it) falls on.
+    // Grouped by completed_at alone. The COALESCE to updated_at this used to
+    // carry was a workaround for completed_at being null on most rows, and it
+    // failed in the worst way once mobile started syncing: updated_at moves on
+    // every edit *and* every sync convergence, so a task finished months ago
+    // resurfaced here the moment anything touched its row. That is what made
+    // this list report nearly a whole account as done today.
+    //
+    // Both clients now carry completed_at, the task upsert COALESCEs so a
+    // client that omits it can't null it out, and migration 014 backfilled the
+    // rows already lost. A row still missing one is genuinely undated and is
+    // better left out of every day than dropped into an arbitrary one.
     let extra_done_ids: Vec<Uuid> = sqlx::query_scalar!(
         r#"
         SELECT id FROM task
         WHERE workspace_id = ANY($1)
           AND deleted_at IS NULL
           AND status IN ('done', 'cancelled')
-          AND DATE(COALESCE(completed_at, updated_at) AT TIME ZONE $3) = $2
+          AND completed_at IS NOT NULL
+          AND DATE(completed_at AT TIME ZONE $3) = $2
         "#,
         &ws_ids,
         q.date,

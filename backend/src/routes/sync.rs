@@ -350,7 +350,15 @@ async fn push_task(
           project_id   = EXCLUDED.project_id,
           parent_id    = EXCLUDED.parent_id,
           ticket_id    = EXCLUDED.ticket_id,
-          completed_at = EXCLUDED.completed_at,
+          -- COALESCE, not a plain overwrite: a client that doesn't carry
+          -- completed_at sends null for it, and a plain assignment lets that
+          -- null erase a real completion date another client recorded.
+          -- Mobile did exactly this (it had no such column and hardcoded
+          -- null), which wiped the column account-wide and made every done
+          -- task look finished on whatever day mobile last synced.
+          -- Clearing a completion date is not a thing any client asks for;
+          -- reopening a task changes `status`, and that still travels.
+          completed_at = COALESCE(EXCLUDED.completed_at, task.completed_at),
           extra        = EXCLUDED.extra,
           updated_at   = EXCLUDED.updated_at,
           deleted_at   = EXCLUDED.deleted_at,
@@ -461,7 +469,8 @@ async fn push_habit_log(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
         ON CONFLICT (habit_id, date) DO UPDATE SET
           value        = EXCLUDED.value,
-          completed_at = EXCLUDED.completed_at,
+          -- Same reasoning as task.completed_at above.
+          completed_at = COALESCE(EXCLUDED.completed_at, habit_log.completed_at),
           updated_at   = EXCLUDED.updated_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= habit_log.updated_at
