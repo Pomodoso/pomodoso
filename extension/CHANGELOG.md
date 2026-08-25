@@ -2,10 +2,25 @@
 
 ## v1.3.5 (In progress)
 
+### Reports
+
+- **New: daily, weekly and monthly report** — A Report view that totals your pomodoros, focus time, tasks completed and meetings for today, this week or this month, broken down by project and by ticket. Copy it out as Markdown (tables) or as Slack (bullets, because Slack's composer renders no table) to paste straight into a standup.
+
+### Habits
+
+- **21-day challenges and real streaks** — Habits can run as a fixed-length challenge, and the streak shown is now computed from your actual logged history rather than a stored counter that drifted.
+- **Fix: clearing a challenge length now syncs** — Removing the challenge length on one device left it set on every other one. The field was only sent when it had a value, so "no value" never travelled.
+
 ### Sync
 
 - **Fix: signing into a different account no longer skips your data** — The pull cursor that tracks "what have I already downloaded" wasn't tied to the account or the server that issued it, so switching accounts left the new one only receiving rows edited after the previous account's last sync. Everything older stayed invisible, with sync reporting success throughout. The cursor is now scoped, and every device does one full pull on upgrade to repair itself.
 - **Ask before merging a device's data into an account** — Signing in on a device that already had tasks and habits on it merged the two silently. You're now asked once per account whether to combine them or keep only what's in your account, so a shared or test device can't quietly push its contents into a real one.
+- **Fix: clearing a task's description or links now reaches your other devices** — Emptying a field was indistinguishable from "this device doesn't have that field", so the clear never propagated and the old text came back on the next sync.
+- **Fix: signing in with Google no longer dies mid-flow** — The popup closing during the OAuth round trip cancelled the sign-in. Duplicate habits created by earlier failed attempts are merged on upgrade.
+
+### Account
+
+- **Backups no longer carry sync state** — Importing a backup could hand a device another device's identity and its "already synced" markers, which made imported projects silently disappear. Backups now leave that state out.
 
 
 ## v1.3.4
