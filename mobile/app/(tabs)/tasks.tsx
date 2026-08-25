@@ -266,7 +266,17 @@ export default function TasksScreen() {
           setNewTaskProjectId(null);
         }}
       />
-      <ProjectPicker {...projectPickerProps} projects={projects} onCreate={addProject} onUpdate={updateProject} onRemove={removeProject} />
+      {/* Scoped to the workspace the new task is going into, not to the
+          active scope — under "All workspaces" those differ, and offering
+          another workspace's projects is how a task ends up referencing one
+          its own workspace doesn't contain. */}
+      <ProjectPicker
+        {...projectPickerProps}
+        projects={projects.filter(p => p.workspaceId === newTaskWorkspaceId)}
+        onCreate={(name, color) => addProject(name, color, newTaskWorkspaceId)}
+        onUpdate={updateProject}
+        onRemove={removeProject}
+      />
     </SafeAreaView>
   );
 }
