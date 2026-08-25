@@ -3,6 +3,8 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useRef } from 'react';
 
 import { db } from '@/db/client';
+import { markSettingDirty } from '@/utils/syncedSettings';
+import { triggerSync } from '@/utils/sync';
 import { settings } from '@/db/schema';
 
 export interface AppSettings {
@@ -127,6 +129,11 @@ export function useSettings() {
       .values({ key, value: json })
       .onConflictDoUpdate({ target: settings.key, set: { value: json } })
       .run();
+    // Settings that other devices share travel; the rest (show habits/meetings
+    // in Today) describe this screen and stay put. markSettingDirty decides
+    // which is which, and no-ops for the local-only ones.
+    markSettingDirty(key);
+    triggerSync();
   }
 
   return { settings: value, update };
