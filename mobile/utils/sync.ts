@@ -8,6 +8,14 @@ import { habits, habitHistory, meeting, pomodoroSession, project, settings, task
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
+import {
+  discardLocalData,
+  needsSyncChoice,
+  recordSyncChoice,
+  requestSyncChoice,
+  resolveSyncChoice,
+  type SyncChoice,
+} from '@/utils/syncChoice';
 import { creditedStart } from '@/utils/time';
 
 // Ports extension's syncEngine.ts (push/pull/LWW) for the tables mobile
@@ -698,6 +706,18 @@ export async function syncNow(): Promise<void> {
   // Scoped so the cursor can't outlive the account or the backend it was
   // issued by — switching either invalidates it into a full pull.
   const scope = pullScope(session.user.id, API_URL);
+
+  // A device with local data signing into an account for the first time has
+  // to say whether to combine the two or take the account's copy. Gating
+  // here rather than at the call sites is the point: every automatic trigger
+  // (mutation debounce, foreground, cold start, 60s poll, background fetch)
+  // funnels through this one function, and any of them merging while the
+  // dialog is still open would decide the question for the user.
+  if (needsSyncChoice(scope)) {
+    requestSyncChoice(scope);
+    return;
+  }
+
   await push(client);
   await pull(client, scope);
   // Same-named workspaces from other installs/devices converge into one
@@ -706,6 +726,20 @@ export async function syncNow(): Promise<void> {
   if (normalizeWorkspaces()) {
     await push(client);
   }
+}
+
+/** Records the user's answer to the first-sign-in question and syncs.
+ *
+ *  'cloud' erases local rows *before* the first push, which is the whole
+ *  point — pushing first would put them in the account and make the choice
+ *  meaningless. The pull cursor is left alone: it is already scoped to this
+ *  account and backend, so a first sign-in has none to reuse and the pull
+ *  that follows is a full one. */
+export async function resolveSyncChoiceAndSync(scope: string, choice: SyncChoice): Promise<void> {
+  if (choice === 'cloud') discardLocalData();
+  recordSyncChoice(scope, choice);
+  resolveSyncChoice();
+  await syncNow();
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;

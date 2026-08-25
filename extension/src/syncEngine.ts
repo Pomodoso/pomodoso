@@ -2,6 +2,10 @@ import { TokenApiClient, pushEntities, pullEntities } from '@pomodoso/api';
 import type { SyncEntity } from '@pomodoso/api';
 import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, normalizeHabits, habitLogId } from './db';
 import { ensureFreshSession } from './supabaseClient';
+import {
+  clearPendingSyncChoice, discardLocalData, needsSyncChoice, recordSyncChoice, requestSyncChoice,
+  type SyncChoice,
+} from './syncChoice';
 import type {
   TaskRow, ProjectRow, WorkspaceRow,
   HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
@@ -104,6 +108,18 @@ export async function syncAll(
   // Scoped so the cursor can't outlive the account or the backend it was
   // issued by — switching either invalidates it into a full pull.
   const scope = pullScope(userId, apiUrl);
+
+  // A profile with local data signing into an account for the first time has
+  // to say whether to combine the two or take the account's copy. Gating
+  // here rather than at the call sites is the point: every trigger (the ~25
+  // mutation sites' debounce, popup open, the background alarm) funnels
+  // through this one function, and any of them merging while the dialog is
+  // still open would decide the question for the user.
+  if (await needsSyncChoice(scope)) {
+    requestSyncChoice(scope);
+    return;
+  }
+
   await push(client);
   await pull(client, scope);
   // Same-named workspaces/habits from other installs / imports converge into
@@ -113,6 +129,27 @@ export async function syncAll(
   if (workspacesChanged || habitsChanged) {
     await push(client);
   }
+}
+
+/** Records the user's answer to the first-sign-in question and syncs.
+ *
+ *  'cloud' erases local rows *before* the first push, which is the whole
+ *  point — pushing first would put them in the account and make the choice
+ *  meaningless. The pull cursor is left alone: it is already scoped to this
+ *  account and backend, so a first sign-in has none to reuse and the pull
+ *  that follows is a full one. */
+export async function resolveSyncChoiceAndSync(scope: string, choice: SyncChoice): Promise<void> {
+  // Credentials come from _config rather than the caller: the dialog can sit
+  // open for as long as the user wants to think, and initSync refreshes
+  // _config on every session change. A token captured when the dialog opened
+  // could have expired by the time they answer.
+  if (!_config) throw new Error('Sync is not configured');
+  const { token, apiUrl, userId } = _config;
+
+  if (choice === 'cloud') await discardLocalData();
+  await recordSyncChoice(scope, choice);
+  clearPendingSyncChoice();
+  await syncAll(token, apiUrl, userId);
 }
 
 /** Self-configuring sync for the background service worker. Refreshes the

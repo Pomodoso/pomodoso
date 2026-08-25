@@ -10,6 +10,7 @@ import { HomeState, type Tab } from './HomeState';
 import { TaskDetailState } from './TaskDetailState';
 import { SettingsState } from './SettingsState';
 import { LinkPickerState } from './LinkPickerState';
+import { SyncChoiceDialog } from './SyncChoiceDialog';
 import { NotePickerState } from './NotePickerState';
 import {
   db, now, localDate, migrateFromChromeStorageIfNeeded,
@@ -1309,6 +1310,10 @@ function PopupShell({ children, center, isPro }: { children: React.ReactNode; ce
         {children}
       </div>
       {!isPro && <KofiFooter />}
+      {/* Here rather than in App's return, which has seven early-return
+          branches — the shell is the one thing every one of them renders.
+          Draws nothing unless there's a decision outstanding. */}
+      <SyncChoiceDialog />
     </div>
   );
 }

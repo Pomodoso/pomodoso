@@ -7,9 +7,11 @@ import {
   pullScope,
   readExtra,
   readPullCursor,
+  readSyncChoice,
   settingId,
   writeExtra,
   writePullCursor,
+  writeSyncChoice,
   type ExtraBag,
 } from './sync-wire.ts';
 
@@ -182,4 +184,46 @@ test('scopes are distinct across every axis that can change', () => {
   assert.notEqual(pullScope(USER_A, PROD), pullScope(USER_B, PROD));
   assert.notEqual(pullScope(USER_A, PROD), pullScope(USER_A, TUNNEL));
   assert.equal(pullScope(USER_A, PROD), pullScope(USER_A, PROD));
+});
+
+// ─── first-sign-in choice ─────────────────────────────────────────────────────
+
+test('a choice round-trips within its own scope', () => {
+  const scope = pullScope(USER_A, PROD);
+  for (const choice of ['merge', 'cloud'] as const) {
+    assert.equal(readSyncChoice(writeSyncChoice(scope, choice), scope), choice);
+  }
+});
+
+test('a choice made for another account is not reused', () => {
+  // The answer is about what happens to this device's data *for a given
+  // account*. Reusing account A's answer would silently apply it to B —
+  // and 'cloud' would erase the device without asking.
+  const stored = writeSyncChoice(pullScope(USER_A, PROD), 'cloud');
+  assert.equal(readSyncChoice(stored, pullScope(USER_B, PROD)), undefined);
+});
+
+test('a choice made against another backend is not reused', () => {
+  const stored = writeSyncChoice(pullScope(USER_A, TUNNEL), 'cloud');
+  assert.equal(readSyncChoice(stored, pullScope(USER_A, PROD)), undefined);
+});
+
+test('an absent or malformed choice means ask', () => {
+  const scope = pullScope(USER_A, PROD);
+  assert.equal(readSyncChoice(undefined, scope), undefined);
+  assert.equal(readSyncChoice(null, scope), undefined);
+  assert.equal(readSyncChoice('merge', scope), undefined, 'a bare string carries no scope');
+  assert.equal(readSyncChoice({ scope }, scope), undefined);
+  assert.equal(readSyncChoice({ scope, choice: 'wipe' }, scope), undefined, 'unknown verbs are not guessed at');
+});
+
+test('asking again is always preferred to acting on a doubtful answer', () => {
+  // Every rejection path above returns undefined rather than a default.
+  // Defaulting to 'merge' would silently union a borrowed device into an
+  // account; defaulting to 'cloud' would erase one. Neither is recoverable,
+  // and re-asking costs a dialog.
+  const scope = pullScope(USER_A, PROD);
+  for (const bad of [undefined, null, 0, '', 'cloud', [], { scope }, { choice: 'merge' }]) {
+    assert.equal(readSyncChoice(bad, scope), undefined, `for ${JSON.stringify(bad)}`);
+  }
 });
