@@ -266,3 +266,28 @@ export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+// Today / Priorities membership, as the sync wire models it: one record per
+// workspace holding two ordered id lists (extension's `taskOrders`, and the
+// backend's `task_order` entity keyed by workspace id).
+//
+// Mobile's own source of truth stays `task.isToday` / `task.isPriority` —
+// the booleans every screen reads. This table exists because those booleans
+// alone cannot sync:
+//
+//   - There is nowhere to hang a timestamp. Sync is LWW per record, and
+//     toggling Today deliberately does NOT bump `task.updatedAt` (PR #37
+//     tried and reverted it: that field also drives useTaskHistory's
+//     grouping date, so bumping it moved resolved tasks into today's
+//     History and stranded them there). A per-workspace record carries its
+//     own updatedAt without touching the task's.
+//   - Order is not expressible. The wire sends ordered arrays; a boolean
+//     per row has no position.
+//
+// So membership is derived from the booleans when pushing and applied back
+// onto them when pulling; only the timestamps live here.
+export const taskOrder = sqliteTable('task_order', {
+  workspaceId: text('workspace_id').primaryKey(),
+  updatedAt: text('updated_at').notNull(),
+  syncedAt: text('synced_at'),
+});

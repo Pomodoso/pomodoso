@@ -55,7 +55,13 @@ export default function TasksScreen() {
   // one section.
   const priorities = tasks.filter(t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
   const todayTasks = tasks.filter(t => t.isToday && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)));
-  const backlog = tasks.filter(t => !t.isPriority && !t.isToday && !isResolvedStatus(t.status));
+  // Recurring templates are excluded the same way extension's backlog does
+  // it (App.tsx: "templates live in Recurring section, not backlog"). Without
+  // this a recurring task appeared twice on the same screen — once here and
+  // once under Recurring below.
+  const backlog = tasks.filter(
+    t => !t.isPriority && !t.isToday && !t.recurrenceRule && !isResolvedStatus(t.status),
+  );
   // Every task with a recurrence rule — a management list, matching
   // extension's recurringTemplates (App.tsx). Can overlap with the sections
   // above (a recurring task with an active occurrence also shows under

@@ -1,10 +1,10 @@
 import type { SyncEntity } from '@pomodoso/api';
 import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, writeExtra, writePullCursor } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
-import { and, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, workspace } from '@/db/schema';
+import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
@@ -40,6 +40,67 @@ const DEVICE_ID_KEY = 'device_id';
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Records that this workspace's Today/Priorities membership changed, so the
+ *  next push sends it.
+ *
+ *  Called from the toggles rather than inferred, because membership lives on
+ *  the task rows and those deliberately don't bump their own `updatedAt`
+ *  when it changes — there would otherwise be nothing to notice. */
+export function markTaskOrderDirty(workspaceId: string): void {
+  const ts = nowIso();
+  db.insert(taskOrder)
+    .values({ workspaceId, updatedAt: ts, syncedAt: null })
+    .onConflictDoUpdate({ target: taskOrder.workspaceId, set: { updatedAt: ts } })
+    .run();
+}
+
+/** Task ids in one workspace that are in Today (or Priorities), ordered the
+ *  way the user sees them. `sortOrder` carries the position; the wire wants
+ *  an array, so the two translate through here in both directions. */
+function orderedIds(workspaceId: string, list: 'today' | 'priority'): string[] {
+  return db
+    .select({ id: task.id })
+    .from(task)
+    .where(
+      and(
+        eq(task.workspaceId, workspaceId),
+        isNull(task.deletedAt),
+        eq(list === 'today' ? task.isToday : task.isPriority, true),
+      ),
+    )
+    .orderBy(asc(task.sortOrder))
+    .all()
+    .map(r => r.id);
+}
+
+/** Writes a server-sent order onto the task rows it names.
+ *
+ *  Everything in the workspace is cleared first: an id absent from both
+ *  arrays means "not in Today or Priorities", and without the reset a task
+ *  removed from Today on another device would stay there forever here.
+ *  Membership is mutually exclusive, matching togglePriority/toggleToday.
+ *
+ *  `sortOrder` is only rewritten for tasks the arrays actually name —
+ *  backlog rows keep their own ordering, which this record says nothing
+ *  about. `task.updatedAt` is deliberately untouched (see db/schema.ts). */
+function applyTaskOrder(workspaceId: string, priorityIds: string[], todayIds: string[]): void {
+  db.update(task)
+    .set({ isPriority: false, isToday: false })
+    .where(eq(task.workspaceId, workspaceId))
+    .run();
+
+  const write = (ids: string[], field: 'isPriority' | 'isToday'): void => {
+    ids.forEach((id, index) => {
+      db.update(task)
+        .set({ [field]: true, sortOrder: index })
+        .where(and(eq(task.id, id), eq(task.workspaceId, workspaceId)))
+        .run();
+    });
+  };
+  write(priorityIds, 'isPriority');
+  write(todayIds, 'isToday');
 }
 
 function getSetting(key: string): string | undefined {
@@ -282,6 +343,25 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
+  // Today / Priorities membership. The arrays are derived from the task
+  // rows at push time rather than stored — the booleans are the source of
+  // truth on this client, and keeping a second copy would let the two
+  // drift. Only the timestamps live in task_order (see db/schema.ts).
+  const dirtyOrders = db
+    .select()
+    .from(taskOrder)
+    .where(or(isNull(taskOrder.syncedAt), lt(taskOrder.syncedAt, taskOrder.updatedAt)))
+    .all();
+  for (const o of dirtyOrders) {
+    entities.push(
+      toEntity('task_order', o.workspaceId, o.updatedAt, null, {
+        workspace_id: o.workspaceId,
+        priority_ids: orderedIds(o.workspaceId, 'priority'),
+        today_ids: orderedIds(o.workspaceId, 'today'),
+      }),
+    );
+  }
+
   // Device heartbeat — registers this install, same pattern as extension's.
   entities.push(
     toEntity('device', deviceId, nowIso(), null, {
@@ -347,6 +427,12 @@ async function push(client: TokenApiClient): Promise<void> {
       .where(and(eq(meeting.id, m.id), eq(meeting.updatedAt, m.updatedAt)))
       .run();
   }
+  for (const o of dirtyOrders) {
+    db.update(taskOrder)
+      .set({ syncedAt: ts })
+      .where(and(eq(taskOrder.workspaceId, o.workspaceId), eq(taskOrder.updatedAt, o.updatedAt)))
+      .run();
+  }
 }
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────
@@ -355,7 +441,14 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   const since = readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope);
   const response = await pullEntities(client, since);
 
-  for (const entity of response.entities) {
+  // task_order names task ids, so it has to land after the tasks it names —
+  // otherwise a first sync (where both arrive in the same batch, in whatever
+  // order the server listed them) would apply an order against rows that
+  // don't exist yet and silently drop Today membership.
+  const ordered = [...response.entities].sort(
+    (a, b) => Number(a.table === 'task_order') - Number(b.table === 'task_order'),
+  );
+  for (const entity of ordered) {
     applyEntity(entity);
   }
 
@@ -375,7 +468,12 @@ function applyEntity(entity: SyncEntity): void {
           id,
           name: String(data.name ?? 'Workspace'),
           color: String(data.color ?? '#6366f1'),
-          createdAt: existing?.createdAt ?? updated_at,
+          // The server's real created_at when it sends one. Falling back to
+          // updated_at makes every synced workspace look brand new, and
+          // useWorkspace picks the oldest when no active one is stored — so
+          // the fallback pinned the device to its own seeded workspace and
+          // the account's real ones could never become active.
+          createdAt: existing?.createdAt ?? (data.created_at as string | undefined) ?? updated_at,
           updatedAt: updated_at,
           deletedAt: deleted_at,
           syncedAt,
@@ -503,6 +601,24 @@ function applyEntity(entity: SyncEntity): void {
       db.insert(pomodoroSession)
         .values(row)
         .onConflictDoUpdate({ target: pomodoroSession.id, set: { ...row, id: undefined } as never })
+        .run();
+      break;
+    }
+
+    case 'task_order': {
+      const existing = db.select().from(taskOrder).where(eq(taskOrder.workspaceId, id)).all()[0];
+      if (existing && existing.updatedAt >= updated_at) return;
+      applyTaskOrder(
+        id,
+        Array.isArray(data.priority_ids) ? (data.priority_ids as string[]) : [],
+        Array.isArray(data.today_ids) ? (data.today_ids as string[]) : [],
+      );
+      db.insert(taskOrder)
+        .values({ workspaceId: id, updatedAt: updated_at, syncedAt })
+        .onConflictDoUpdate({
+          target: taskOrder.workspaceId,
+          set: { updatedAt: updated_at, syncedAt },
+        })
         .run();
       break;
     }
