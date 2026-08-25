@@ -11,6 +11,9 @@ import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
 import { untouchedSeedIds, dropSeedIfSupersededBy } from '@/utils/seed';
 import {
+  WIRE_KEYS, acceptRemoteSetting, isSettingDirty, markSettingSynced, readWireSetting, settingUpdatedAt,
+} from '@/utils/syncedSettings';
+import {
   discardLocalData,
   needsSyncChoice,
   recordSyncChoice,
@@ -21,21 +24,22 @@ import {
 import { creditedStart } from '@/utils/time';
 
 // Ports extension's syncEngine.ts (push/pull/LWW) for the tables mobile
-// actually has. Deliberately NOT ported yet, both documented gaps rather
-// than silent omissions:
-//   - user_setting (SYNCED_SETTINGS): extension bundles focus/short/long
-//     break + longBreakEvery into one `timer_settings` wire shape; mobile
-//     stores them as separate local keys (useSettings.ts). Needs a mapping
-//     layer at the sync boundary, not a quick add — separate PR.
-//   - task_order (priority_ids/today_ids per workspace): extension models
-//     Today/Priorities as an ordered list per workspace; mobile models it
-//     as isPriority/isToday booleans directly on the task row, with no
-//     ordering concept at all (display order is sortOrder). Reconciling
-//     these two shapes is real design work, not a mechanical port —
-//     separate PR. Until then, priority/today membership stays device-local.
-// pull() still handles both tables by simply ignoring them (no case in the
-// switch), rather than crashing on an entity type it doesn't recognize —
-// another client (extension/web) sharing this account may still push them.
+// actually has.
+//
+// The two shapes that needed reconciling — and that were listed here as gaps
+// for a long time — are now handled, each in its own module because neither
+// was a mechanical port:
+//   - user_setting: the extension bundles the five timer numbers into one
+//     `timer_settings` wire object; mobile keeps a row per setting. See
+//     utils/syncedSettings.ts.
+//   - task_order: the extension models Today/Priorities as ordered id lists
+//     per workspace; mobile models membership as booleans on the task row.
+//     See db/schema.ts's taskOrder and applyTaskOrder below.
+//
+// Still not synced, by choice: `timezone` (mobile derives its own from Intl
+// and has no stored preference to push) and the mobile-only display toggles
+// showHabitsInToday / showMeetingsInToday, which describe this device's
+// screen rather than the account.
 
 const SYNC_LAST_PULL_KEY = 'sync_last_pull';
 const DEVICE_ID_KEY = 'device_id';
@@ -376,6 +380,16 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
+  // Shared preferences. utils/syncedSettings.ts owns the reshaping between
+  // mobile's one-row-per-setting storage and the wire's bundled
+  // timer_settings — see that file for why neither side changed.
+  const dirtySettings = WIRE_KEYS.filter(isSettingDirty);
+  for (const key of dirtySettings) {
+    const value = readWireSetting(key);
+    if (value === undefined) continue;
+    entities.push(toEntity('user_setting', settingId(key), settingUpdatedAt(key), null, { key, value }));
+  }
+
   // Device heartbeat — registers this install, same pattern as extension's.
   entities.push(
     toEntity('device', deviceId, nowIso(), null, {
@@ -440,6 +454,9 @@ async function push(client: TokenApiClient): Promise<void> {
       .set({ syncedAt: ts })
       .where(and(eq(meeting.id, m.id), eq(meeting.updatedAt, m.updatedAt)))
       .run();
+  }
+  for (const key of dirtySettings) {
+    markSettingSynced(key, settingUpdatedAt(key));
   }
   for (const o of dirtyOrders) {
     db.update(taskOrder)
@@ -633,13 +650,21 @@ function applyEntity(entity: SyncEntity): void {
     }
 
     case 'user_setting': {
-      // Only the active-timer beacon for now. The rest of SYNCED_SETTINGS
-      // (timer durations, sounds, week start) needs a mapping layer, because
-      // the extension bundles focus/short/long break into one timer_settings
-      // object while mobile keeps them as separate keys — that is its own
-      // piece of work, and ignoring those keys here is deliberate rather
-      // than an oversight.
-      if (String(data.key ?? '') !== 'active_timer') return;
+      const settingKey = String(data.key ?? '');
+
+      // Shared preferences, reshaped by utils/syncedSettings.ts. Applied
+      // through acceptRemoteSetting so arriving values don't immediately
+      // queue themselves for a push back — two devices would otherwise
+      // trade the same setting forever.
+      if ((WIRE_KEYS as string[]).includes(settingKey)) {
+        if (deleted_at) return;
+        acceptRemoteSetting(settingKey as (typeof WIRE_KEYS)[number], data.value, updated_at);
+        break;
+      }
+
+      // Anything else that isn't the beacon is a key mobile has no local
+      // equivalent for (timezone) — left alone rather than stored unused.
+      if (settingKey !== 'active_timer') return;
 
       const value = data.value as Record<string, unknown> | null | undefined;
       if (deleted_at || value == null) {
