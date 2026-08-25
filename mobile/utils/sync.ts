@@ -1,13 +1,15 @@
 import type { SyncEntity } from '@pomodoso/api';
 import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, writeExtra, writePullCursor } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
-import { and, asc, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, not, or, lt, isNotNull } from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 import { db } from '@/db/client';
 import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
+import { untouchedSeedIds, dropSeedIfSupersededBy } from '@/utils/seed';
 import {
   discardLocalData,
   needsSyncChoice,
@@ -191,10 +193,18 @@ async function push(client: TokenApiClient): Promise<void> {
   const entities: SyncEntity[] = [];
   const deviceId = getDeviceId();
 
+  // Demo fixtures initDb wrote are excluded until the user touches them.
+  // They were never the user's, and pushing them put invented ticket refs
+  // ("POM-89 Fix flaky retry test in sync engine") into real accounts.
+  const seedIds = untouchedSeedIds();
+  const notSeeded = <C extends AnySQLiteColumn>(col: C, ids: string[]) =>
+    ids.length === 0 ? undefined : not(inArray(col, ids));
+
+
   const workspaces = db
     .select()
     .from(workspace)
-    .where(or(isNull(workspace.syncedAt), lt(workspace.syncedAt, workspace.updatedAt)))
+    .where(and(or(isNull(workspace.syncedAt), lt(workspace.syncedAt, workspace.updatedAt)), notSeeded(workspace.id, seedIds.workspace)))
     .all();
   for (const w of workspaces) {
     entities.push(toEntity('workspace', w.id, w.updatedAt, w.deletedAt, { name: w.name, color: w.color }));
@@ -219,7 +229,7 @@ async function push(client: TokenApiClient): Promise<void> {
   const tasks = db
     .select()
     .from(task)
-    .where(or(isNull(task.syncedAt), lt(task.syncedAt, task.updatedAt)))
+    .where(and(or(isNull(task.syncedAt), lt(task.syncedAt, task.updatedAt)), notSeeded(task.id, seedIds.task)))
     .all();
   for (const t of tasks) {
     entities.push(
@@ -284,7 +294,7 @@ async function push(client: TokenApiClient): Promise<void> {
   const habitRows = db
     .select()
     .from(habits)
-    .where(or(isNull(habits.syncedAt), lt(habits.syncedAt, habits.updatedAt)))
+    .where(and(or(isNull(habits.syncedAt), lt(habits.syncedAt, habits.updatedAt)), notSeeded(habits.id, seedIds.habits)))
     .all();
   for (const h of habitRows) {
     entities.push(
@@ -302,7 +312,7 @@ async function push(client: TokenApiClient): Promise<void> {
   const historyRows = db
     .select()
     .from(habitHistory)
-    .where(or(isNull(habitHistory.syncedAt), lt(habitHistory.syncedAt, habitHistory.updatedAt)))
+    .where(and(or(isNull(habitHistory.syncedAt), lt(habitHistory.syncedAt, habitHistory.updatedAt)), notSeeded(habitHistory.id, seedIds.habitHistory)))
     .all();
   for (const r of historyRows) {
     entities.push(
@@ -451,6 +461,11 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   for (const entity of ordered) {
     applyEntity(entity);
   }
+
+  // A device that had nothing but demo fixtures and just received an
+  // account's real content doesn't need to be asked anything — the
+  // fixtures go. Only fires when the user made nothing themselves.
+  dropSeedIfSupersededBy(response.entities.length);
 
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
 }
