@@ -6,7 +6,7 @@ import type {
   TaskRow, ProjectRow, WorkspaceRow,
   HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
 } from './db';
-import { habitDaysFromServer, habitFrequency, settingId, writeExtra, readExtra } from '@pomodoso/types';
+import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, readExtra, writePullCursor } from '@pomodoso/types';
 import type { TimerMode } from '@pomodoso/types';
 
 // ─── Settings keys synced to server ───────────────────────────────────────────
@@ -24,16 +24,17 @@ const SYNC_LAST_PULL_KEY = 'sync_last_pull';
 export type SyncStatus = 'disconnected' | 'connected' | 'syncing' | 'offline' | 'error';
 
 // ─── Module-level sync config (set by initSync) ────────────────────────────────
-let _config: { token: string; apiUrl: string } | null = null;
+let _config: { token: string; apiUrl: string; userId: string } | null = null;
 let _onStatus: ((s: SyncStatus) => void) | null = null;
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function initSync(
   token: string,
   apiUrl: string,
+  userId: string,
   onStatus: (s: SyncStatus) => void,
 ) {
-  _config = { token, apiUrl };
+  _config = { token, apiUrl, userId };
   _onStatus = onStatus;
 }
 
@@ -82,9 +83,9 @@ function classifyError(err: unknown): SyncStatus {
 
 function runSync() {
   if (!_config || !_onStatus) return;
-  const { token, apiUrl } = _config;
+  const { token, apiUrl, userId } = _config;
   _onStatus('syncing');
-  void syncAll(token, apiUrl)
+  void syncAll(token, apiUrl, userId)
     .then(() => _onStatus?.('connected'))
     .catch((err) => {
       console.warn('[sync]', err);
@@ -97,10 +98,14 @@ function runSync() {
 export async function syncAll(
   accessToken: string,
   apiUrl: string,
+  userId: string,
 ): Promise<void> {
   const client = new TokenApiClient(apiUrl, accessToken);
+  // Scoped so the cursor can't outlive the account or the backend it was
+  // issued by — switching either invalidates it into a full pull.
+  const scope = pullScope(userId, apiUrl);
   await push(client);
-  await pull(client);
+  await pull(client, scope);
   // Same-named workspaces/habits from other installs / imports converge into
   // one canonical id; if either moved anything, push the result right away.
   const workspacesChanged = await normalizeWorkspaces();
@@ -127,7 +132,7 @@ export async function performBackgroundSync(): Promise<boolean> {
     | undefined;
   if (!ent?.features?.sync) return false;
 
-  await syncAll(session.access_token, apiUrl);
+  await syncAll(session.access_token, apiUrl, session.user.id);
   return true;
 }
 
@@ -420,9 +425,9 @@ function detectBrowser(): string {
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
-async function pull(client: TokenApiClient): Promise<void> {
+async function pull(client: TokenApiClient, scope: string): Promise<void> {
   const sinceRow = await db.settings.get(SYNC_LAST_PULL_KEY);
-  const since = sinceRow?.value as string | undefined;
+  const since = readPullCursor(sinceRow?.value as string | undefined, scope);
 
   const response = await pullEntities(client, since);
 
@@ -435,7 +440,7 @@ async function pull(client: TokenApiClient): Promise<void> {
     setApplyingRemote(false);
   }
 
-  await db.settings.put({ key: SYNC_LAST_PULL_KEY, value: response.server_time });
+  await db.settings.put({ key: SYNC_LAST_PULL_KEY, value: writePullCursor(scope, response.server_time) });
 }
 
 async function applyEntity(entity: SyncEntity): Promise<void> {

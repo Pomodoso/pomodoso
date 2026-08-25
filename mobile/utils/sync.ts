@@ -1,5 +1,5 @@
 import type { SyncEntity } from '@pomodoso/api';
-import { habitDaysFromServer, habitFrequency, writeExtra } from '@pomodoso/types';
+import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, writeExtra, writePullCursor } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
 import { and, eq, isNull, or, lt, isNotNull } from 'drizzle-orm';
 
@@ -343,15 +343,15 @@ async function push(client: TokenApiClient): Promise<void> {
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
-async function pull(client: TokenApiClient): Promise<void> {
-  const since = getSetting(SYNC_LAST_PULL_KEY);
-  const response = await pullEntities(client, since ? (JSON.parse(since) as string) : undefined);
+async function pull(client: TokenApiClient, scope: string): Promise<void> {
+  const since = readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope);
+  const response = await pullEntities(client, since);
 
   for (const entity of response.entities) {
     applyEntity(entity);
   }
 
-  putSetting(SYNC_LAST_PULL_KEY, JSON.stringify(response.server_time));
+  putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
 }
 
 function applyEntity(entity: SyncEntity): void {
@@ -695,8 +695,11 @@ export async function syncNow(): Promise<void> {
   if (!session?.access_token) return;
 
   const client = new TokenApiClient(API_URL, session.access_token);
+  // Scoped so the cursor can't outlive the account or the backend it was
+  // issued by — switching either invalidates it into a full pull.
+  const scope = pullScope(session.user.id, API_URL);
   await push(client);
-  await pull(client);
+  await pull(client, scope);
   // Same-named workspaces from other installs/devices converge into one
   // canonical id; if that moved anything, push the result right away
   // (mirrors extension's syncAll).
