@@ -199,6 +199,11 @@ export const task = sqliteTable('task', {
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  // When the task reached done/cancelled. Distinct from updatedAt, which moves
+  // for any edit and for sync convergence — the web's Today view groups by
+  // this, and using updatedAt instead made every finished task resurface on
+  // whatever day it last synced.
+  completedAt: text('completed_at'),
   deletedAt: text('deleted_at'),
   syncedAt: text('synced_at'),
 });

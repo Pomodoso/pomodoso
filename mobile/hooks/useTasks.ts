@@ -199,7 +199,15 @@ export function useTasks() {
     if ((status === 'done' || status === 'cancelled') && current?.recurrence) {
       resolveRecurringOccurrence(id);
     } else {
-      db.update(task).set({ status, updatedAt: new Date().toISOString() }).where(eq(task.id, id)).run();
+      const nowIso = new Date().toISOString();
+      // Stamped when the task reaches a resolved status and cleared when it
+      // leaves one, mirroring extension's HomeState.tsx. Reopening a task
+      // should not leave it dated as finished.
+      const resolvedNow = isResolvedStatus(status);
+      db.update(task)
+        .set({ status, updatedAt: nowIso, completedAt: resolvedNow ? (current?.completedAt ?? nowIso) : null })
+        .where(eq(task.id, id))
+        .run();
     }
     // Matches extension's App.tsx (line ~707): plays regardless of whether
     // the recurring or one-off path handled it above, but only for 'done' —

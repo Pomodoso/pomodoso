@@ -241,6 +241,7 @@ async function push(client: TokenApiClient): Promise<void> {
         project_id: t.projectId,
         parent_id: null,
         ticket_id: t.ticketRef,
+        completed_at: t.completedAt,
         extra: taskExtra(t),
       }),
     );
@@ -543,6 +544,10 @@ function applyEntity(entity: SyncEntity): void {
           workspaceId,
           title: String(data.title ?? ''),
           ticketRef: (data.ticket_id as string | null) ?? null,
+          // Kept from the server when it has one, and never downgraded to
+          // null by a client that simply didn't send it — the same rule the
+          // backend's COALESCE enforces on the way up.
+          completedAt: (data.completed_at as string | null) ?? existing?.completedAt ?? null,
           meta: existing?.meta ?? null,
           status: (data.status as typeof task.$inferSelect.status) ?? 'todo',
           projectId: (data.project_id as string | null) ?? null,
@@ -565,6 +570,10 @@ function applyEntity(entity: SyncEntity): void {
             workspaceId,
             title: String(data.title ?? ''),
             ticketRef: (data.ticket_id as string | null) ?? null,
+          // Kept from the server when it has one, and never downgraded to
+          // null by a client that simply didn't send it — the same rule the
+          // backend's COALESCE enforces on the way up.
+          completedAt: (data.completed_at as string | null) ?? existing?.completedAt ?? null,
             status: (data.status as typeof task.$inferSelect.status) ?? 'todo',
             projectId: (data.project_id as string | null) ?? null,
             recurrence,

@@ -303,6 +303,19 @@ function initDb(): void {
     /* column already present */
   }
 
+  // Same additive pattern. Existing resolved tasks get updated_at as a
+  // starting point — the same guess the server-side backfill makes, and it
+  // stops them being pushed as null (which is what erased the column
+  // account-wide in the first place).
+  try {
+    expoDb.execSync('ALTER TABLE task ADD COLUMN completed_at TEXT;');
+    expoDb.execSync(
+      "UPDATE task SET completed_at = updated_at WHERE completed_at IS NULL AND status IN ('done','cancelled');",
+    );
+  } catch {
+    /* column already present */
+  }
+
   // Seeds one real-UUID workspace on first run — not a sentinel string id
   // like extension's old 'default' (a migration scar there, not a design
   // choice worth replicating, see schema.ts's workspace comment). Resolved

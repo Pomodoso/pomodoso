@@ -122,20 +122,27 @@ pub async fn get_history(
     }
 
     // ── Completed tasks per day ─────────────────────────────────────────────
-    // One-off tasks: status done/cancelled, bucketed by completed_at if some
-    // client set it, else updated_at. completed_at alone isn't a reliable
-    // signal — the extension's local Task model has no such field, so it
-    // never gets sent on sync push and stays NULL for virtually every real
-    // task; the extension's own "when did this happen" view (Tasks > History)
-    // falls back to updated_at for this exact reason. Recurring occurrences
-    // still come from extra.completedDates (already local YYYY-MM-DD strings,
-    // no tz conversion needed for those) and are fanned out separately below,
-    // independent of status, to avoid double-counting against the
-    // updated_at bucket.
+    // One-off tasks: status done/cancelled, bucketed by completed_at.
+    //
+    // This used to COALESCE to updated_at, on the premise that completed_at
+    // was null for virtually every task. That premise stopped holding (both
+    // clients now carry it, the upsert COALESCEs so an omitting client can't
+    // null it, and migration 014 backfilled what was lost), and the fallback
+    // was actively wrong: updated_at moves on every edit and every sync
+    // convergence, so a task finished months ago jumped into whatever day it
+    // last synced. A row with no completed_at is genuinely undated and is
+    // better absent from every bucket than counted in an arbitrary one.
+    //
+    // Recurring occurrences still come from extra.completedDates (already
+    // local YYYY-MM-DD strings, no tz conversion needed) and are fanned out
+    // separately below, independent of status, to avoid double-counting.
     let task_rows = sqlx::query!(
         r#"
         SELECT t.id, t.title, t.status, t.extra,
-               DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) as "effective_day!",
+               -- Nullable: a recurring task can match the completedDates
+               -- branch below with no completed_at of its own, and asserting
+               -- non-null here would fail decoding for it.
+               DATE(t.completed_at AT TIME ZONE $4) as "effective_day?",
                p.name  as "project_name?",
                p.color as "project_color?"
         FROM task t
@@ -144,7 +151,8 @@ pub async fn get_history(
           AND t.deleted_at IS NULL
           AND (
             (t.status IN ('done', 'cancelled')
-             AND DATE(COALESCE(t.completed_at, t.updated_at) AT TIME ZONE $4) BETWEEN $2 AND $3)
+             AND t.completed_at IS NOT NULL
+             AND DATE(t.completed_at AT TIME ZONE $4) BETWEEN $2 AND $3)
             OR t.extra ? 'completedDates'
           )
         "#,
@@ -164,7 +172,9 @@ pub async fn get_history(
             .is_some_and(|a| !a.is_empty());
 
         if !has_completed_dates && matches!(row.status.as_str(), "done" | "cancelled") {
-            if let Some(bucket) = days.get_mut(&row.effective_day) {
+            // Only rows that matched the first WHERE branch have a day, and
+            // that branch already required completed_at to be present.
+            if let Some(bucket) = row.effective_day.and_then(|d| days.get_mut(&d)) {
                 bucket.tasks_done.push(HistoryTask {
                     id: row.id,
                     title: row.title.clone(),
