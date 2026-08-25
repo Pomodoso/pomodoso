@@ -7,7 +7,14 @@ use crate::AppState;
 
 const APP_URL: &str = "https://pomodoso.com";
 // Brand mark for the email header. Must be an absolute, hosted URL (Gmail strips
-// data URIs / SVG). Served from the marketing site's public dir (email-logo.png).
+// data URIs / SVG).
+//
+// Lives in `web/public/`, because `web/` is what serves this apex domain — the
+// file was originally only in `marketing/public/`, which is deployed elsewhere,
+// so the URL fell through to the SPA's index.html. That returns 200 with
+// `text/html`, which every mail client renders as a broken image rather than a
+// missing one, so nothing about it looked like a 404. If this ever breaks
+// again, check the content type, not the status code.
 const LOGO_URL: &str = "https://pomodoso.com/email-logo.png";
 
 /// Fire-and-forget: spawns the send so the caller (a webhook / `/me`) returns
