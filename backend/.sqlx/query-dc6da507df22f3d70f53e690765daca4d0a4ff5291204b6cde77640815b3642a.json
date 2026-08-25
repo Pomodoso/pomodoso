@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,\n               t.project_id, t.workspace_id,\n               -- Computed here rather than in Rust: the timezone arrives as an\n               -- IANA string and Postgres is what understands it. Doing it in\n               -- Rust would mean pulling in chrono-tz for one comparison.\n               (t.completed_at IS NOT NULL\n                AND DATE(t.completed_at AT TIME ZONE $3) = $2) as \"resolved_on_date!\",\n               p.name  as \"project_name?\",\n               p.color as \"project_color?\",\n               w.name  as \"workspace_name!\",\n               w.color as \"workspace_color!\"\n        FROM task t\n        LEFT JOIN project p ON p.id = t.project_id\n        JOIN workspace w ON w.id = t.workspace_id\n        WHERE t.workspace_id = ANY($1)\n          AND t.deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "ticket_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "resolved_on_date!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "project_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "project_color?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "workspace_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "workspace_color!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dc6da507df22f3d70f53e690765daca4d0a4ff5291204b6cde77640815b3642a"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO task (\n          id, workspace_id, title, status, notes,\n          project_id, parent_id, ticket_id, completed_at, extra,\n          updated_at, deleted_at, synced_at\n        ) VALUES (\n          $1,$2,$3,$4,$5,$6,$7,$8,\n          -- Same rule as the conflict branch below, for a task arriving\n          -- already resolved that has never been seen here: nothing stored\n          -- to fall back to, so the push's own timestamp is the best\n          -- available answer for when it was finished. Casts are explicit\n          -- because reusing $11 in a second position otherwise leaves\n          -- Postgres inferring both parameters as text.\n          COALESCE($9::timestamptz, CASE WHEN $4 IN ('done', 'cancelled') THEN $11::timestamptz END),\n          $10,$11,$12,NOW()\n        )\n        ON CONFLICT (id) DO UPDATE SET\n          title        = EXCLUDED.title,\n          status       = EXCLUDED.status,\n          notes        = EXCLUDED.notes,\n          workspace_id = EXCLUDED.workspace_id,\n          project_id   = EXCLUDED.project_id,\n          parent_id    = EXCLUDED.parent_id,\n          ticket_id    = EXCLUDED.ticket_id,\n          -- COALESCE, not a plain overwrite: a client that doesn't carry\n          -- completed_at sends null for it, and a plain assignment lets that\n          -- null erase a real completion date another client recorded.\n          -- Mobile did exactly this (it had no such column and hardcoded\n          -- null), which wiped the column account-wide and made every done\n          -- task look finished on whatever day mobile last synced.\n          -- Clearing a completion date is not a thing any client asks for;\n          -- reopening a task changes `status`, and that still travels.\n          --\n          -- The third fallback exists because the extension's task model has\n          -- no completedAt field at all — it never sends one, so without this\n          -- every task finished there reaches the server null, and the web's\n          -- Today/History, which group by completed_at, have nothing to place\n          -- it by. Stamping the push's own updated_at is accurate rather than\n          -- a guess: at the moment of transition that IS when it was\n          -- finished. Guarded on the stored status not already being\n          -- resolved, so a later edit to an already-done task can't move the\n          -- date. Covers any future client that skips the field too.\n          completed_at = COALESCE(\n            EXCLUDED.completed_at,\n            task.completed_at,\n            CASE WHEN EXCLUDED.status IN ('done', 'cancelled')\n                  AND task.status NOT IN ('done', 'cancelled')\n                 THEN EXCLUDED.updated_at END\n          ),\n          extra        = EXCLUDED.extra,\n          updated_at   = EXCLUDED.updated_at,\n          deleted_at   = EXCLUDED.deleted_at,\n          synced_at    = NOW()\n        WHERE EXCLUDED.updated_at >= task.updated_at\n          AND task.workspace_id = ANY($13)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0b7e8eca3a9a21e47051c367631186db15deb7490d974d532ecbdc1ff636f82"
+}
