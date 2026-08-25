@@ -15,6 +15,10 @@ export interface WorkspaceInput {
 
 const ACTIVE_KEY = 'active_workspace_id';
 
+/** Stored in place of an id to mean "show every workspace at once".
+ *  Same sentinel the extension keeps in pom_active_ws. */
+export const ALL_SENTINEL = 'all';
+
 // db/client.ts's initDb seeds one workspace synchronously at module load,
 // unconditionally, before any component can mount — so `workspaces` is
 // never empty in practice, and a resolvable "current" workspace always
@@ -29,7 +33,15 @@ const ACTIVE_KEY = 'active_workspace_id';
 // session stayed pinned to whichever was oldest forever).
 export function useWorkspace(): {
   workspace: WorkspaceRow;
+  /** Always a real workspace — what new rows are written to. Never the
+   *  sentinel, so every insert satisfies the NOT NULL FK even while the user
+   *  is looking at everything at once. */
   workspaceId: string;
+  /** What lists filter by: a workspace id, or null for "show everything".
+   *  Kept separate from `workspaceId` precisely because reads and writes
+   *  want different answers under "All workspaces". */
+  scopeId: string | null;
+  isAll: boolean;
   workspaces: WorkspaceRow[];
   addWorkspace: (input: WorkspaceInput) => string;
   updateWorkspace: (id: string, input: WorkspaceInput) => void;
@@ -61,6 +73,13 @@ export function useWorkspace(): {
   } catch {
     effectiveActiveId = undefined;
   }
+
+  // "All workspaces" is a stored sentinel rather than a real id, matching
+  // extension's own 'all' in pom_active_ws. The extension can write it
+  // straight onto new rows (its workspaceId is nullable); mobile's is NOT
+  // NULL, so the sentinel only ever affects reads and `current` below still
+  // resolves to a real workspace for writes to land in.
+  const isAll = effectiveActiveId === ALL_SENTINEL;
 
   // Prefers the persisted active id, but only if it still points at a live
   // workspace — falls back to the oldest live one (the only meaningful
@@ -116,6 +135,8 @@ export function useWorkspace(): {
   return {
     workspace: current,
     workspaceId: current.id,
+    scopeId: isAll ? null : current.id,
+    isAll,
     workspaces: effectiveRows,
     addWorkspace,
     updateWorkspace,

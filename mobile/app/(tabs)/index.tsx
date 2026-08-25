@@ -32,7 +32,7 @@ function formatTime(totalSeconds: number): string {
 }
 
 export default function HomeScreen() {
-  const { workspace } = useWorkspace();
+  const { workspace, isAll } = useWorkspace();
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const { meetings } = useMeetings();
   const { settings } = useSettings();
@@ -86,13 +86,22 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Pressable style={styles.workspace} onPress={() => router.push('/workspaces')}>
-          <View style={[styles.workspaceDot, { backgroundColor: workspace.color }]}>
-            <Text style={styles.workspaceDotText}>{workspace.name[0]?.toUpperCase()}</Text>
+          <View style={[styles.workspaceDot, { backgroundColor: isAll ? colors.border : workspace.color }]}>
+            {isAll ? (
+              <Ionicons name="albums-outline" size={13} color={colors.textSecondary} />
+            ) : (
+              <Text style={styles.workspaceDotText}>{workspace.name[0]?.toUpperCase()}</Text>
+            )}
           </View>
-          <Text style={styles.workspaceName}>{workspace.name}</Text>
+          {/* Naming the scope rather than a workspace, so a mixed list is
+              never mistaken for one workspace's contents. */}
+          <Text style={styles.workspaceName}>{isAll ? 'All workspaces' : workspace.name}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.textTertiary} />
         </Pressable>
-        <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+        {/* navigate, not push: /settings resolves to the Settings tab, and
+            pushing a tab route stacks a second (tabs) navigator on top of the
+            first instead of switching to it. */}
+        <Pressable onPress={() => router.navigate('/settings')} hitSlop={8}>
           <Ionicons name="settings-outline" size={20} color={colors.textTertiary} />
         </Pressable>
       </View>

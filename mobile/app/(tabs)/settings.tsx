@@ -70,7 +70,7 @@ function NavRow({ icon, title, description, onPress, isLast }: NavRowProps): Rea
 
 export default function SettingsScreen(): React.JSX.Element {
   const auth = useAuth();
-  const { workspace } = useWorkspace();
+  const { workspace, isAll } = useWorkspace();
   const { settings } = useSettings();
   const notificationsGranted = useNotificationPermission();
   const isPro = auth.entitlements.features.sync;
@@ -97,7 +97,7 @@ export default function SettingsScreen(): React.JSX.Element {
         <View style={styles.group}>
           <NavRow icon="timer-outline" title="Timer defaults" description="Pomodoro duration and modes" onPress={() => router.push('/settings/timer-defaults')} />
           <NavRow icon="calendar-outline" title="Calendar" description="Google Calendar connection" onPress={() => router.push('/calendar')} />
-          <NavRow icon="grid-outline" title="Workspace" description={workspace.name} onPress={() => router.push('/workspaces')} />
+          <NavRow icon="grid-outline" title="Workspace" description={isAll ? "All workspaces" : workspace.name} onPress={() => router.push('/workspaces')} />
           <NavRow
             icon="musical-notes-outline"
             title="Sounds"

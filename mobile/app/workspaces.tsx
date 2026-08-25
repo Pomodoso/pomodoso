@@ -9,7 +9,7 @@ import { colors } from '@/constants/theme';
 import { WORKSPACE_PALETTE } from '@/constants/workspacePalette';
 import type { WorkspaceRow } from '@/db/schema';
 import { useAuth } from '@/hooks/useAuth';
-import { useWorkspace } from '@/hooks/useWorkspace';
+import { ALL_SENTINEL, useWorkspace } from '@/hooks/useWorkspace';
 
 // Mirrors extension's WorkspacesPage (SettingsState.tsx): inline rename +
 // fixed-swatch color edit per row, "can't delete the last workspace",
@@ -18,7 +18,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 // even though it can't actually matter here — db/client.ts's initDb always
 // seeds one before this screen could ever be reached).
 export default function WorkspacesScreen() {
-  const { workspaceId, workspaces, addWorkspace, updateWorkspace, removeWorkspace, setActiveWorkspace } = useWorkspace();
+  const { workspaceId, isAll, workspaces, addWorkspace, updateWorkspace, removeWorkspace, setActiveWorkspace } = useWorkspace();
   const auth = useAuth();
   const canAddWorkspace = auth.entitlements.features.multi_workspace || workspaces.length < 1;
 
@@ -63,6 +63,21 @@ export default function WorkspacesScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.hint}>Workspaces let you group tasks, habits, and sessions. Switch between them from Home.</Text>
 
+        {/* Only worth offering once there's more than one to combine. Listed
+            above the workspaces, not among them, because it isn't one — it's
+            the absence of a filter. */}
+        {workspaces.length > 1 && (
+          <Pressable style={styles.card} onPress={() => setActiveWorkspace(ALL_SENTINEL)}>
+            <View style={styles.wsMain}>
+              <View style={[styles.dot, styles.allDot]}>
+                <Ionicons name="albums-outline" size={15} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.wsName}>All workspaces</Text>
+              {isAll && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+            </View>
+          </Pressable>
+        )}
+
         {workspaces.map(ws =>
           editingId === ws.id ? (
             <View key={ws.id} style={[styles.card, styles.cardEditing]}>
@@ -90,12 +105,12 @@ export default function WorkspacesScreen() {
             </View>
           ) : (
             <View key={ws.id} style={styles.card}>
-              <Pressable style={styles.wsMain} onPress={() => setActiveWorkspace(ws.id)} disabled={ws.id === workspaceId}>
+              <Pressable style={styles.wsMain} onPress={() => setActiveWorkspace(ws.id)} disabled={!isAll && ws.id === workspaceId}>
                 <View style={[styles.dot, { backgroundColor: ws.color }]}>
                   <Text style={styles.dotText}>{ws.name[0]?.toUpperCase()}</Text>
                 </View>
                 <Text style={styles.wsName}>{ws.name}</Text>
-                {ws.id === workspaceId && <Ionicons name="checkmark" size={16} color={ws.color} />}
+                {!isAll && ws.id === workspaceId && <Ionicons name="checkmark" size={16} color={ws.color} />}
               </Pressable>
               {confirmDeleteId === ws.id ? (
                 <View style={styles.rowGap}>
@@ -244,5 +259,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 4,
   },
+  allDot: { backgroundColor: colors.border },
   newBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
 });
