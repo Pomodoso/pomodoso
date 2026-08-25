@@ -6,12 +6,16 @@ import type { HabitRow, HabitHistoryRow, ProjectRow, WorkspaceRow } from './db';
 // entitlements / sync_last_pull / *_synced_at are sync state: importing them makes the
 // sync engine believe data is already synced (or pulled), so nothing gets pushed and
 // incremental pulls skip server rows — that's how imported projects "disappeared".
+// sync_choice records an answer given on the device that made the backup, about that
+// device's data. Importing it would answer the question on behalf of a profile that
+// was never asked — and answering 'cloud' would wipe the rows just restored.
 const EXCLUDED_SETTINGS = new Set([
   'calendar_last_synced',
   'auth_session',
   'entitlements',
   'device_id',
   'sync_last_pull',
+  'sync_choice',
 ]);
 const isExcludedSetting = (key: string) =>
   EXCLUDED_SETTINGS.has(key) || key.endsWith('_synced_at');

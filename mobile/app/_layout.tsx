@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import 'react-native-reanimated';
 
 import { BrandSplash } from '@/components/BrandSplash';
+import { SyncChoiceModal } from '@/components/SyncChoiceModal';
 import { colors } from '@/constants/theme';
 import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
 
@@ -58,6 +59,10 @@ export default function RootLayout() {
       {/* Overlaid rather than rendered instead of the Stack, so the app is
           already mounted and settled behind it when it fades. */}
       {!introDone && <BrandSplash onDone={finishIntro} />}
+      {/* Renders itself only when there's a decision outstanding. Mounted at
+          the root because the cold-start sync can raise it before the user
+          has navigated anywhere. */}
+      <SyncChoiceModal />
     </View>
   );
 }

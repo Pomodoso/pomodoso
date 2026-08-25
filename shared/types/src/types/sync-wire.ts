@@ -174,3 +174,50 @@ export function readPullCursor(raw: string | undefined, scope: string): string |
 export function writePullCursor(scope: string, since: string): string {
   return JSON.stringify({ scope, since } satisfies PullCursor);
 }
+
+// ─── First-sign-in choice ─────────────────────────────────────────────────────
+
+/**
+ * What to do with a device's existing data when an account first signs in on
+ * it.
+ *
+ * Sync is LWW at the record level, so the default without asking is a union:
+ * local rows go up, account rows come down. That's right when the device was
+ * already yours and wrong for a borrowed one, a shared profile, or a device
+ * carrying test data signing into a real account — and it is close to
+ * irreversible, because afterwards both sides look identical and nothing
+ * records which rows came from where.
+ */
+export type SyncChoice =
+  /** Union both sides by LWW. What sync has always done. */
+  | 'merge'
+  /** Discard everything local, then pull the account fresh. */
+  | 'cloud';
+
+export interface StoredSyncChoice {
+  scope: string;
+  choice: SyncChoice;
+}
+
+/**
+ * Reads a stored choice, returning `undefined` — meaning "ask" — unless it
+ * can be proven to belong to `scope`.
+ *
+ * Scoped to the same (account, backend) pair as the pull cursor, so a device
+ * cannot end up holding an answer about one account while syncing another.
+ *
+ * Takes an already-parsed value rather than a string: the extension keeps
+ * native objects in IndexedDB while mobile keeps JSON in a TEXT column, so
+ * deserialisation is the clients' business and only the shape is shared.
+ */
+export function readSyncChoice(value: unknown, scope: string): SyncChoice | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const stored = value as Partial<StoredSyncChoice>;
+  if (stored.scope !== scope) return undefined;
+  return stored.choice === 'merge' || stored.choice === 'cloud' ? stored.choice : undefined;
+}
+
+/** Builds the value to store. Always paired with `readSyncChoice`. */
+export function writeSyncChoice(scope: string, choice: SyncChoice): StoredSyncChoice {
+  return { scope, choice };
+}
