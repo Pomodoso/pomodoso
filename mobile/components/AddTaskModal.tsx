@@ -1,21 +1,35 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
-import type { ProjectRow } from '@/db/schema';
+import type { ProjectRow, WorkspaceRow } from '@/db/schema';
 
 interface AddTaskModalProps {
   visible: boolean;
   projects: ProjectRow[];
   selectedProjectId: string | null;
+  /** Offered only under "All workspaces", where there is no active workspace
+   *  to infer a target from. Empty otherwise. Switching one clears the
+   *  selected project in the parent, since a project belongs to exactly one
+   *  workspace and the old choice can't survive the move. */
+  workspaces: WorkspaceRow[];
+  workspaceId: string;
+  onWorkspaceChange: (id: string) => void;
   onRequestProject: () => void;
   onSubmit: (title: string) => void;
   onCancel: () => void;
 }
 
-export function AddTaskModal({ visible, projects, selectedProjectId, onRequestProject, onSubmit, onCancel }: AddTaskModalProps) {
+export function AddTaskModal({
+  visible, projects, selectedProjectId, workspaces, workspaceId, onWorkspaceChange,
+  onRequestProject, onSubmit, onCancel,
+}: AddTaskModalProps) {
   const [title, setTitle] = useState('');
-  const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
+  // A project belongs to exactly one workspace, so the picker must only offer
+  // the chosen one's — otherwise a task lands referencing a project its own
+  // workspace doesn't contain.
+  const scoped = projects.filter(p => p.workspaceId === workspaceId);
+  const selectedProject = scoped.find(p => p.id === selectedProjectId) ?? null;
 
   function handleSubmit(): void {
     if (!title.trim()) return;
@@ -30,6 +44,10 @@ export function AddTaskModal({ visible, projects, selectedProjectId, onRequestPr
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
+      {/* The sheet sits at the bottom, so the keyboard covered the very field
+          it opens for. Padding rather than position: the sheet is already
+          bottom-anchored and position would fight its own layout. */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Pressable style={styles.backdrop} onPress={handleCancel}>
         <Pressable style={styles.sheet} onPress={e => e.stopPropagation()}>
           <Text style={styles.prompt}>New task</Text>
@@ -43,6 +61,20 @@ export function AddTaskModal({ visible, projects, selectedProjectId, onRequestPr
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
           />
+          {workspaces.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.wsRow} contentContainerStyle={styles.wsRowContent}>
+              {workspaces.map(w => (
+                <Pressable
+                  key={w.id}
+                  style={[styles.wsChip, w.id === workspaceId && styles.wsChipActive]}
+                  onPress={() => onWorkspaceChange(w.id)}
+                >
+                  <View style={[styles.projectDot, { backgroundColor: w.color }]} />
+                  <Text style={[styles.wsChipText, w.id === workspaceId && styles.wsChipTextActive]}>{w.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
           <Pressable style={styles.projectBtn} onPress={onRequestProject}>
             {selectedProject ? (
               <>
@@ -61,6 +93,7 @@ export function AddTaskModal({ visible, projects, selectedProjectId, onRequestPr
           </Pressable>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -101,6 +134,21 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   projectDot: { width: 10, height: 10, borderRadius: 5 },
+  wsRow: { marginBottom: 10 },
+  wsRowContent: { gap: 8, paddingRight: 4 },
+  wsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  wsChipActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  wsChipText: { fontSize: 12.5, color: colors.textSecondary },
+  wsChipTextActive: { color: colors.accent, fontWeight: '700' },
   projectBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.text },
   projectBtnTextMuted: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
   addBtn: {

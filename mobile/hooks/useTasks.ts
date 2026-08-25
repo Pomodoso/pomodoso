@@ -160,7 +160,10 @@ export function useTasks() {
     return { ...t, meta, recurrenceRule, completedOccurrences, links, noteEntries };
   });
 
-  function addTask(title: string, projectId: string | null = null): void {
+  // targetWorkspaceId is explicit because under "All workspaces" there is no
+  // active one to infer from — falling back silently would drop the task into
+  // whichever workspace happened to be the oldest.
+  function addTask(title: string, projectId: string | null = null, targetWorkspaceId?: string): void {
     const trimmed = title.trim();
     if (!trimmed) return;
     const maxSortOrder = (tasks ?? []).reduce((max, t) => Math.max(max, t.sortOrder), -1);
@@ -168,7 +171,7 @@ export function useTasks() {
     db.insert(task)
       .values({
         id: uid(),
-        workspaceId,
+        workspaceId: targetWorkspaceId ?? workspaceId,
         title: trimmed,
         ticketRef: null,
         meta: 'Not started',
@@ -264,12 +267,33 @@ export function useTasks() {
 
   function updateTask(
     id: string,
-    updates: { title?: string; projectId?: string | null; description?: string | null; ticketRef?: string | null },
+    updates: {
+      title?: string;
+      projectId?: string | null;
+      description?: string | null;
+      ticketRef?: string | null;
+      workspaceId?: string;
+    },
   ): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    // Moving a task between workspaces drags two things with it that don't
+    // survive the trip, so they're reset rather than left dangling:
+    //   - the project, which belongs to exactly one workspace
+    //   - Today/Priority membership, which is recorded per workspace in
+    //     task_order; leaving the flags set would put the task in the new
+    //     workspace's Today without it ever appearing in that order.
+    // Both orders are marked dirty so the old workspace also learns the task
+    // left its list.
+    const moving = updates.workspaceId != null && current != null && updates.workspaceId !== current.workspaceId;
+    const extra = moving ? { projectId: null, isToday: false, isPriority: false } : {};
     db.update(task)
-      .set({ ...updates, updatedAt: new Date().toISOString() })
+      .set({ ...updates, ...extra, updatedAt: new Date().toISOString() })
       .where(eq(task.id, id))
       .run();
+    if (moving && current && updates.workspaceId) {
+      markTaskOrderDirty(current.workspaceId);
+      markTaskOrderDirty(updates.workspaceId);
+    }
     triggerSync();
   }
 

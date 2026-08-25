@@ -15,6 +15,7 @@ import type { HistoryRange } from '@/hooks/useTaskHistory';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
@@ -40,8 +41,12 @@ export default function TasksScreen() {
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
+  const { workspaceId, isAll, workspaces } = useWorkspace();
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskProjectId, setNewTaskProjectId] = useState<string | null>(null);
+  // Seeded from the active workspace — under "All" that's the write fallback,
+  // which the chips then let the user override before submitting.
+  const [newTaskWorkspaceId, setNewTaskWorkspaceId] = useState<string>(workspaceId);
   const { requestProject: requestNewTaskProject, pickerProps: projectPickerProps } = useProjectPicker(setNewTaskProjectId);
   const [subTab, setSubTab] = useState<SubTab>('backlog');
   // Play means start when idle, and attach-to-the-running-pomodoro while a
@@ -223,7 +228,15 @@ export default function TasksScreen() {
         </ScrollView>
       )}
 
-      <Pressable style={styles.fab} onPress={() => setAddingTask(true)}>
+      <Pressable
+        style={styles.fab}
+        onPress={() => {
+          // Re-seed on open: the active workspace may have changed since the
+          // last time this sheet was used.
+          setNewTaskWorkspaceId(workspaceId);
+          setAddingTask(true);
+        }}
+      >
         <Ionicons name="add" size={26} color={colors.surface} />
       </Pressable>
 
@@ -233,9 +246,18 @@ export default function TasksScreen() {
         visible={addingTask}
         projects={projects}
         selectedProjectId={newTaskProjectId}
+        // Only under "All workspaces" is there a choice to make; with one
+        // active, the task belongs where the user is already looking.
+        workspaces={isAll ? workspaces : []}
+        workspaceId={newTaskWorkspaceId}
+        onWorkspaceChange={id => {
+          setNewTaskWorkspaceId(id);
+          // A project belongs to one workspace, so it can't survive the move.
+          setNewTaskProjectId(null);
+        }}
         onRequestProject={() => requestNewTaskProject(newTaskProjectId)}
         onSubmit={title => {
-          addTask(title, newTaskProjectId);
+          addTask(title, newTaskProjectId, newTaskWorkspaceId);
           setAddingTask(false);
           setNewTaskProjectId(null);
         }}
