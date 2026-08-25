@@ -13,6 +13,7 @@ import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR, STATUS_LABEL } from
 import { colors, fontMono } from '@/constants/theme';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { useSettings } from '@/hooks/useSettings';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
 import { useTasks } from '@/hooks/useTasks';
@@ -30,6 +31,7 @@ export default function TaskDetailScreen() {
     useTasks();
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
   const { projects, addProject, updateProject, removeProject } = useProjects();
+  const { workspaces } = useWorkspace();
   const { settings } = useSettings();
   const today = useTodayDate();
   const task = tasks.find(t => t.id === id);
@@ -237,6 +239,28 @@ export default function TaskDetailScreen() {
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </Pressable>
 
+        {workspaces.length > 1 && (
+          <>
+            <Text style={styles.sectionLabel}>Workspace</Text>
+            {/* Moving a task clears its project and its Today/Priority
+                membership — both belong to the workspace it is leaving. That
+                happens in updateTask, which also marks both workspaces'
+                orders dirty so the old one learns the task left its list. */}
+            <View style={styles.wsRow}>
+              {workspaces.map(w => (
+                <Pressable
+                  key={w.id}
+                  style={[styles.wsChip, w.id === task.workspaceId && styles.wsChipActive]}
+                  onPress={() => { if (w.id !== task.workspaceId) updateTask(task.id, { workspaceId: w.id }); }}
+                >
+                  <View style={[styles.dot, { backgroundColor: w.color }]} />
+                  <Text style={[styles.wsChipText, w.id === task.workspaceId && styles.wsChipTextActive]}>{w.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
         <Text style={styles.sectionLabel}>Project</Text>
         <Pressable style={styles.row} onPress={() => requestProject(task.projectId)}>
           {project ? (
@@ -410,6 +434,15 @@ const styles = StyleSheet.create({
     color: colors.info,
     minWidth: 90,
   },
+  wsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  wsChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 7, paddingHorizontal: 11,
+    borderRadius: 999, borderWidth: 1, borderColor: colors.border,
+  },
+  wsChipActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  wsChipText: { fontSize: 12.5, color: colors.textSecondary },
+  wsChipTextActive: { color: colors.accent, fontWeight: '700' },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
