@@ -330,7 +330,8 @@ pub async fn get_today(
                     // dropped out it came back through extra_done, which
                     // hardcodes true, and the same task flipped answer.
                     done_today: t.completed_dates.contains(&today_str)
-                        || (matches!(t.status.as_str(), "done" | "cancelled") && t.resolved_on_date),
+                        || (matches!(t.status.as_str(), "done" | "cancelled")
+                            && t.resolved_on_date),
                 })
             })
             .collect()
