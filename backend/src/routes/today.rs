@@ -204,6 +204,11 @@ pub async fn get_today(
         r#"
         SELECT t.id, t.title, t.status, t.completed_at, t.ticket_id, t.extra,
                t.project_id, t.workspace_id,
+               -- Computed here rather than in Rust: the timezone arrives as an
+               -- IANA string and Postgres is what understands it. Doing it in
+               -- Rust would mean pulling in chrono-tz for one comparison.
+               (t.completed_at IS NOT NULL
+                AND DATE(t.completed_at AT TIME ZONE $3) = $2) as "resolved_on_date!",
                p.name  as "project_name?",
                p.color as "project_color?",
                w.name  as "workspace_name!",
@@ -215,6 +220,8 @@ pub async fn get_today(
           AND t.deleted_at IS NULL
         "#,
         &ws_ids,
+        q.date,
+        tz,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -246,6 +253,9 @@ pub async fn get_today(
         title: String,
         status: String,
         completed_at: Option<DateTime<Utc>>,
+        /// Whether completed_at falls on the requested date, in the caller's
+        /// timezone. Postgres decides, since it is what parses the IANA name.
+        resolved_on_date: bool,
         ticket_id: Option<String>,
         project_id: Option<Uuid>,
         project_name: Option<String>,
@@ -276,6 +286,7 @@ pub async fn get_today(
                 title: row.title,
                 status: row.status,
                 completed_at: row.completed_at,
+                resolved_on_date: row.resolved_on_date,
                 ticket_id: row.ticket_id,
                 project_id: row.project_id,
                 project_name: row.project_name,
@@ -310,7 +321,16 @@ pub async fn get_today(
                     ticket_id: t.ticket_id.clone(),
                     position: i as i32,
                     recurring: t.recurring,
-                    done_today: t.completed_dates.contains(&today_str),
+                    // Two ways a task can be finished on this date, and both
+                    // count. Recurring ones record it in completedDates; a
+                    // one-off records it in completed_at and has no
+                    // completedDates at all — so checking only the former
+                    // reported a task resolved today as not-done, but *only*
+                    // while it was still in the Today list. The moment it
+                    // dropped out it came back through extra_done, which
+                    // hardcodes true, and the same task flipped answer.
+                    done_today: t.completed_dates.contains(&today_str)
+                        || (matches!(t.status.as_str(), "done" | "cancelled") && t.resolved_on_date),
                 })
             })
             .collect()
