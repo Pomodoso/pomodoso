@@ -88,7 +88,13 @@ export function needsSyncChoice(scope: string): boolean {
  *
  *  Settings and timer prefs survive: they're device preferences, not account
  *  content, and wiping them would reset the timer and theme as a side effect
- *  of a question about task data. */
+ *  of a question about task data.
+ *
+ *  A pomodoro running at this moment does stop, because the running session
+ *  *is* a pomodoro_session row and useTimer derives `active` from that table.
+ *  That's the honest outcome — the session is local data and the user chose
+ *  to discard local data — and it leaves nothing dangling, which keeping the
+ *  row while deleting its task would not. */
 export function discardLocalData(): void {
   db.delete(task).run();
   db.delete(project).run();

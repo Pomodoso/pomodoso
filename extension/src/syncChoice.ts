@@ -1,4 +1,4 @@
-import { readSyncChoice, writeSyncChoice, type SyncChoice } from '@pomodoso/types';
+import { IDLE_TIMER_STATE, readSyncChoice, writeSyncChoice, type SyncChoice } from '@pomodoso/types';
 
 import { db } from './db';
 
@@ -68,6 +68,17 @@ export async function discardLocalData(): Promise<void> {
   await db.transaction('rw', CONTENT_TABLES.map(t => db.table(t)), async () => {
     for (const name of CONTENT_TABLES) await db.table(name).clear();
   });
+
+  // The running timer lives in chrome.storage.local, not Dexie, so clearing
+  // the tables would leave it pointing at a task that no longer exists —
+  // the popup would show a pomodoro running against a blank title, and
+  // stopping it would write a session for a missing task.
+  //
+  // Mobile has no equivalent step: there the active session *is* a row in
+  // pomodoro_session, so it goes with the rest. Resetting here gives the two
+  // clients the same outcome, which is that discarding local data also stops
+  // a pomodoro that was running — the session is local data too.
+  await chrome.storage.local.set({ timerState: { ...IDLE_TIMER_STATE } });
 }
 
 // ─── Prompting ────────────────────────────────────────────────────────────────
