@@ -341,7 +341,17 @@ async fn push_task(
           id, workspace_id, title, status, notes,
           project_id, parent_id, ticket_id, completed_at, extra,
           updated_at, deleted_at, synced_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,
+          -- Same rule as the conflict branch below, for a task arriving
+          -- already resolved that has never been seen here: nothing stored
+          -- to fall back to, so the push's own timestamp is the best
+          -- available answer for when it was finished. Casts are explicit
+          -- because reusing $11 in a second position otherwise leaves
+          -- Postgres inferring both parameters as text.
+          COALESCE($9::timestamptz, CASE WHEN $4 IN ('done', 'cancelled') THEN $11::timestamptz END),
+          $10,$11,$12,NOW()
+        )
         ON CONFLICT (id) DO UPDATE SET
           title        = EXCLUDED.title,
           status       = EXCLUDED.status,
@@ -358,7 +368,23 @@ async fn push_task(
           -- task look finished on whatever day mobile last synced.
           -- Clearing a completion date is not a thing any client asks for;
           -- reopening a task changes `status`, and that still travels.
-          completed_at = COALESCE(EXCLUDED.completed_at, task.completed_at),
+          --
+          -- The third fallback exists because the extension's task model has
+          -- no completedAt field at all — it never sends one, so without this
+          -- every task finished there reaches the server null, and the web's
+          -- Today/History, which group by completed_at, have nothing to place
+          -- it by. Stamping the push's own updated_at is accurate rather than
+          -- a guess: at the moment of transition that IS when it was
+          -- finished. Guarded on the stored status not already being
+          -- resolved, so a later edit to an already-done task can't move the
+          -- date. Covers any future client that skips the field too.
+          completed_at = COALESCE(
+            EXCLUDED.completed_at,
+            task.completed_at,
+            CASE WHEN EXCLUDED.status IN ('done', 'cancelled')
+                  AND task.status NOT IN ('done', 'cancelled')
+                 THEN EXCLUDED.updated_at END
+          ),
           extra        = EXCLUDED.extra,
           updated_at   = EXCLUDED.updated_at,
           deleted_at   = EXCLUDED.deleted_at,
