@@ -266,11 +266,11 @@ export function App() {
     if (!canSync) { setSyncStatus('connected'); return; }
     if (typeof navigator !== 'undefined' && !navigator.onLine) { setSyncStatus('offline'); }
 
-    initSync(auth.session.access_token, API_URL!, setSyncStatus);
+    initSync(auth.session.access_token, API_URL!, auth.session.user.id, setSyncStatus);
 
     // Initial sync on login / popup open
     setSyncStatus('syncing');
-    void syncAll(auth.session.access_token, API_URL!)
+    void syncAll(auth.session.access_token, API_URL!, auth.session.user.id)
       .then(() => setSyncStatus('connected'))
       .catch((err) => {
         console.warn('[sync]', err);

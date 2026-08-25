@@ -102,3 +102,75 @@ export function settingId(key: string): string {
     .substring(0, 32);
   return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-5${hex.substring(13, 16)}-8${hex.substring(17, 20)}-${hex.substring(20, 32)}`;
 }
+
+// ─── Pull cursor ──────────────────────────────────────────────────────────────
+
+/**
+ * A stored pull cursor: the `server_time` from the last successful pull,
+ * tagged with the (account, backend) pair that issued it.
+ *
+ * Pull is incremental — the backend answers `WHERE updated_at > $since` — so
+ * the cursor is only meaningful against the exact server that produced it,
+ * for the exact account it was produced under. Both clients used to store a
+ * bare timestamp, which silently outlived both:
+ *
+ * - Repointing a build at a different backend (a dev tunnel to production)
+ *   left the device asking production for "everything since <a timestamp
+ *   another server invented>". Production answered with an almost empty
+ *   delta and the client treated that as up to date. The account's real
+ *   data, all of it older, was never requested again.
+ * - Signing out and into a second account reused the first account's
+ *   cursor, so the new account only ever received rows edited after that
+ *   moment.
+ *
+ * Neither fails loudly: an empty delta and a genuinely-nothing-changed delta
+ * look identical.
+ */
+export interface PullCursor {
+  scope: string;
+  since: string;
+}
+
+/**
+ * Identifies the (account, backend) pair a cursor belongs to.
+ *
+ * Both clients must build this identically — a device that computes the
+ * scope differently from the one that wrote the cursor discards it and does
+ * a full pull. That is the safe direction to fail, but it means a mismatch
+ * shows up as a permanent performance bug rather than an error.
+ */
+export function pullScope(userId: string, apiUrl: string): string {
+  return `${userId}@${apiUrl}`;
+}
+
+/**
+ * Reads a stored cursor, returning `undefined` — meaning "pull everything" —
+ * whenever it can't be proven to belong to `scope`.
+ *
+ * Unparseable and foreign cursors are both discarded rather than repaired.
+ * A full pull costs one large response; honouring a wrong cursor costs the
+ * user data they can see on another device and not this one.
+ *
+ * A bare-string cursor is what every install written before this existed
+ * has stored. There is no way to learn which account or backend issued it,
+ * so it is discarded too, and the resulting one-time full pull is also what
+ * repairs a device already holding a stale one.
+ */
+export function readPullCursor(raw: string | undefined, scope: string): string | undefined {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined;
+  const cursor = parsed as Partial<PullCursor>;
+  if (cursor.scope !== scope) return undefined;
+  return typeof cursor.since === 'string' ? cursor.since : undefined;
+}
+
+/** Serialises a cursor for storage. Always paired with `readPullCursor`. */
+export function writePullCursor(scope: string, since: string): string {
+  return JSON.stringify({ scope, since } satisfies PullCursor);
+}

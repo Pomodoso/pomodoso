@@ -4,9 +4,12 @@ import { test } from 'node:test';
 import {
   habitDaysFromServer,
   habitFrequency,
+  pullScope,
   readExtra,
+  readPullCursor,
   settingId,
   writeExtra,
+  writePullCursor,
   type ExtraBag,
 } from './sync-wire.ts';
 
@@ -125,4 +128,58 @@ test('settingId is stable and distinct per key', () => {
 
 test('settingId handles keys longer than the uuid it fills', () => {
   assert.match(settingId('a_very_long_setting_key_beyond_sixteen_bytes'), /^[0-9a-f-]{36}$/);
+});
+
+// ─── pull cursor ──────────────────────────────────────────────────────────────
+
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
+const PROD = 'https://api.pomodoso.com';
+const TUNNEL = 'https://pomodoso-mobile.t.pipehero.app';
+const T = '2026-08-24T10:00:00.000Z';
+
+test('a cursor round-trips within its own scope', () => {
+  const scope = pullScope(USER_A, PROD);
+  assert.equal(readPullCursor(writePullCursor(scope, T), scope), T);
+});
+
+test('a cursor from another backend is discarded', () => {
+  // The case that actually happened: a device synced against a dev tunnel,
+  // then had its API URL repointed at production. Honouring the tunnel's
+  // timestamp made production answer with a near-empty delta, which the
+  // client cannot distinguish from "nothing changed".
+  const stored = writePullCursor(pullScope(USER_A, TUNNEL), T);
+  assert.equal(readPullCursor(stored, pullScope(USER_A, PROD)), undefined);
+});
+
+test('a cursor from another account is discarded', () => {
+  const stored = writePullCursor(pullScope(USER_A, PROD), T);
+  assert.equal(readPullCursor(stored, pullScope(USER_B, PROD)), undefined);
+});
+
+test('a bare-timestamp cursor from before scoping is discarded', () => {
+  // What every pre-existing install has stored. Nothing records which
+  // account or backend issued it, so the only safe reading is none.
+  assert.equal(readPullCursor(JSON.stringify(T), pullScope(USER_A, PROD)), undefined);
+});
+
+test('missing and malformed cursors both mean a full pull', () => {
+  const scope = pullScope(USER_A, PROD);
+  assert.equal(readPullCursor(undefined, scope), undefined);
+  assert.equal(readPullCursor('', scope), undefined);
+  assert.equal(readPullCursor('not json at all', scope), undefined);
+  assert.equal(readPullCursor('null', scope), undefined);
+  assert.equal(readPullCursor('[]', scope), undefined);
+});
+
+test('a cursor with the right scope but no usable timestamp is discarded', () => {
+  const scope = pullScope(USER_A, PROD);
+  assert.equal(readPullCursor(JSON.stringify({ scope }), scope), undefined);
+  assert.equal(readPullCursor(JSON.stringify({ scope, since: 42 }), scope), undefined);
+});
+
+test('scopes are distinct across every axis that can change', () => {
+  assert.notEqual(pullScope(USER_A, PROD), pullScope(USER_B, PROD));
+  assert.notEqual(pullScope(USER_A, PROD), pullScope(USER_A, TUNNEL));
+  assert.equal(pullScope(USER_A, PROD), pullScope(USER_A, PROD));
 });
