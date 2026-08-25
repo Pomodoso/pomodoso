@@ -310,12 +310,19 @@ function initDb(): void {
   // workspaceId. Independent of the habits/tasks empty-table checks further
   // down — this only ever runs its own insert once, on whichever app run
   // first creates the workspace table.
+  // Every seeded id is registered (utils/seed.ts) so the rest of the app can
+  // tell demo content from the user's own. Without that distinction these
+  // rows were pushed into real accounts and made the first-sign-in prompt
+  // fire on every install.
+  const seeded: schema.SeedIds = { workspace: [], habits: [], habitHistory: [], task: [] };
+
   let workspaceRow = expoDb.getFirstSync<{ id: string }>('SELECT id FROM workspace WHERE deleted_at IS NULL LIMIT 1');
   if (!workspaceRow) {
     const now = new Date().toISOString();
     const id = uid();
     db.insert(schema.workspace).values({ id, name: 'Personal', color: '#4A6FA5', createdAt: now, updatedAt: now }).run();
     workspaceRow = { id };
+    seeded.workspace.push(id);
   }
   const workspaceId = workspaceRow.id;
 
@@ -327,9 +334,11 @@ function initDb(): void {
       const id = uid();
       habitIds[key] = id;
       db.insert(schema.habits).values({ ...def, id, createdAt: now, updatedAt: now }).run();
+      seeded.habits.push(id);
     }
     for (const row of seedHistory(habitIds)) {
       db.insert(schema.habitHistory).values({ ...row, updatedAt: now }).run();
+      seeded.habitHistory.push(row.id);
     }
   }
 
@@ -342,8 +351,32 @@ function initDb(): void {
   if (hasTasks?.count === 0) {
     const createdAt = new Date().toISOString();
     for (const seedTask of SEED_TASKS) {
-      db.insert(schema.task).values({ ...seedTask, id: uid(), workspaceId, createdAt, updatedAt: createdAt }).run();
+      const id = uid();
+      db.insert(schema.task).values({ ...seedTask, id, workspaceId, createdAt, updatedAt: createdAt }).run();
+      seeded.task.push(id);
     }
+  }
+
+  if (seeded.workspace.length || seeded.habits.length || seeded.task.length) {
+    const existingRaw = expoDb.getFirstSync<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?', [schema.SEED_IDS_KEY],
+    )?.value;
+    // Merged, not replaced: initDb seeds each table independently, so a run
+    // that only creates habits must not erase an earlier run's task ids.
+    let previous: schema.SeedIds = { workspace: [], habits: [], habitHistory: [], task: [] };
+    if (existingRaw) {
+      try { previous = { ...previous, ...(JSON.parse(existingRaw) as schema.SeedIds) }; } catch { /* keep empty */ }
+    }
+    const merged: schema.SeedIds = {
+      workspace: [...new Set([...previous.workspace, ...seeded.workspace])],
+      habits: [...new Set([...previous.habits, ...seeded.habits])],
+      habitHistory: [...new Set([...previous.habitHistory, ...seeded.habitHistory])],
+      task: [...new Set([...previous.task, ...seeded.task])],
+    };
+    db.insert(schema.settings)
+      .values({ key: schema.SEED_IDS_KEY, value: JSON.stringify(merged) })
+      .onConflictDoUpdate({ target: schema.settings.key, set: { value: JSON.stringify(merged) } })
+      .run();
   }
 }
 

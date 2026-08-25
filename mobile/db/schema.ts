@@ -291,3 +291,17 @@ export const taskOrder = sqliteTable('task_order', {
   updatedAt: text('updated_at').notNull(),
   syncedAt: text('synced_at'),
 });
+
+/** settings key under which initDb registers the ids of the demo rows it
+ *  wrote, so the app can tell its own fixtures from the user's data.
+ *  Declared here rather than beside the helpers in utils/seed.ts because
+ *  db/client.ts writes it during module init — importing utils/seed.ts from
+ *  there would close an import cycle before `db` itself exists. */
+export const SEED_IDS_KEY = 'seed_row_ids';
+
+export interface SeedIds {
+  workspace: string[];
+  habits: string[];
+  habitHistory: string[];
+  task: string[];
+}

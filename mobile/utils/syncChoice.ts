@@ -1,8 +1,9 @@
 import { pullScope, readSyncChoice, writeSyncChoice, type SyncChoice } from '@pomodoso/types';
-import { eq } from 'drizzle-orm';
+import { eq, not } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, workspace } from '@/db/schema';
+import { hasUserData } from '@/utils/seed';
+import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, timerPrefs, workspace } from '@/db/schema';
 
 // What happens the first time an account signs in on a device that already
 // has data of its own.
@@ -22,6 +23,8 @@ import { habits, habitHistory, meeting, pomodoroSession, project, settings, task
 // back into the same one does not.
 
 const SYNC_CHOICE_KEY = 'sync_choice';
+// Mirrors utils/sync.ts's own key — the one setting discardLocalData keeps.
+const DEVICE_ID_KEY = 'device_id';
 
 export type { SyncChoice };
 
@@ -59,14 +62,13 @@ export function recordSyncChoice(scope: string, choice: SyncChoice): void {
 
 /** Whether this device has anything of its own to lose.
  *
- *  Only the tables a user actually creates content in. Settings and timer
- *  prefs are excluded deliberately: they exist on every install from first
- *  launch, so counting them would make the question unskippable even on a
- *  device that has never been used. A fresh install has nothing to merge and
- *  is never asked. */
+ *  Counting rows was wrong: initDb seeds a workspace, four habits with a
+ *  fortnight of history and seven demo tasks on first launch, so every
+ *  install answered yes and the question was unskippable — the opposite of
+ *  what the original comment here claimed. utils/seed.ts knows which rows
+ *  the app wrote to itself and which the user made. */
 export function hasLocalData(): boolean {
-  const tables = [task, project, workspace, habits, habitHistory, pomodoroSession, meeting];
-  return tables.some(t => db.select().from(t).limit(1).all().length > 0);
+  return hasUserData();
 }
 
 /** True when sync must not run yet because the user hasn't answered.
@@ -86,9 +88,21 @@ export function needsSyncChoice(scope: string): boolean {
  *  into the account — destroying exactly the data the user just chose to
  *  keep. The rows are being abandoned, not deleted.
  *
- *  Settings and timer prefs survive: they're device preferences, not account
- *  content, and wiping them would reset the timer and theme as a side effect
- *  of a question about task data.
+ *  Settings and timer prefs go too. An earlier version kept them as "device
+ *  preferences", which left the device holding timer durations, week start
+ *  and a Google Calendar connection belonging to whatever was here before —
+ *  a half-wipe that reads as a bug when the answer given was "use my account
+ *  only". The rule is simpler: config comes from the account, data is either
+ *  merged or replaced.
+ *
+ *  `device_id` is the one survivor. It identifies this install rather than
+ *  describing any content, and regenerating it would register a second
+ *  device server-side for the same phone.
+ *
+ *  Mobile can afford to clear settings because the Supabase session lives in
+ *  SecureStore (lib/supabase.ts), not here — the extension keeps its session
+ *  in the equivalent table and must exclude it, or answering the question
+ *  signs you out mid-answer.
  *
  *  A pomodoro running at this moment does stop, because the running session
  *  *is* a pomodoro_session row and useTimer derives `active` from that table.
@@ -103,6 +117,9 @@ export function discardLocalData(): void {
   db.delete(habitHistory).run();
   db.delete(pomodoroSession).run();
   db.delete(meeting).run();
+  db.delete(taskOrder).run();
+  db.delete(timerPrefs).run();
+  db.delete(settings).where(not(eq(settings.key, DEVICE_ID_KEY))).run();
 }
 
 // ─── Prompting ────────────────────────────────────────────────────────────────

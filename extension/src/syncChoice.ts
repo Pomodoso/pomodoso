@@ -69,6 +69,23 @@ export async function discardLocalData(): Promise<void> {
     for (const name of CONTENT_TABLES) await db.table(name).clear();
   });
 
+  // Config goes with the content: keeping timer durations, sounds, week
+  // start and a Google Calendar connection from whatever was here before is
+  // a half-wipe, and reads as a bug when the answer given was "use my
+  // account only".
+  //
+  // Three keys survive, and each one would break something if it didn't:
+  //   auth_session   the popup reads the Supabase session from here
+  //                  (popup/useAuth.ts) — clearing it signs the user out
+  //                  midway through answering the question.
+  //   entitlements   gates whether sync may run at all; losing it strands
+  //                  the device as Free until the next /me round-trip.
+  //   device_id      identifies this install, not any content. Regenerating
+  //                  it registers a second device server-side for one browser.
+  const keep = new Set(['auth_session', 'entitlements', 'device_id']);
+  const settingKeys = (await db.settings.toCollection().primaryKeys()) as string[];
+  await db.settings.bulkDelete(settingKeys.filter(k => !keep.has(k)));
+
   // The running timer lives in chrome.storage.local, not Dexie, so clearing
   // the tables would leave it pointing at a task that no longer exists —
   // the popup would show a pomodoro running against a blank title, and
