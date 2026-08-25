@@ -20,8 +20,11 @@ export function TaskRow({ title, ticket, meta, status, projectColor, onPress, on
   const resolved = isResolvedStatus(status);
   const dotColor = STATUS_DOT_COLOR[status];
 
+  // The project is shown once, by the dot after the title. A left border in
+  // the same colour said the same thing twice, and its extra padding made
+  // rows with a project sit 3px narrower than rows without one.
   return (
-    <View style={[styles.row, projectColor && { borderLeftWidth: 3, borderLeftColor: projectColor, paddingLeft: 9 }]}>
+    <View style={styles.row}>
       <Pressable
         style={[styles.statusDot, { borderColor: dotColor }, status !== 'todo' && { backgroundColor: dotColor }]}
         onPress={onStatusPress}
