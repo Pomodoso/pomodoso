@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ProUpsell } from '@/components/ProUpsell';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
 import { syncNow } from '@/utils/sync';
@@ -70,25 +70,20 @@ export default function AccountSettingsScreen(): React.JSX.Element {
                 )}
               </Pressable>
             ) : (
-              <View style={styles.upgradeCard}>
-                <Text style={styles.fieldLabel}>Upgrade to Pro</Text>
-                <Text style={styles.hint}>Sync across devices · Unlimited workspaces · Web dashboard</Text>
-                <Pressable
-                  style={styles.actionBtn}
-                  onPress={() => {
-                    void WebBrowser.openBrowserAsync('https://pomodoso.com/pricing').catch(() => {
-                      Alert.alert('Could not open pricing page', 'Please try again later.');
-                    });
-                  }}
-                >
-                  <Text style={styles.actionBtnText}>Upgrade to Pro →</Text>
-                </Pressable>
-              </View>
+              <ProUpsell
+                title="Upgrade to Pro"
+                benefit="Sync across devices · Unlimited workspaces · Web dashboard · Full history"
+              />
             )}
           </>
         ) : (
           <View style={styles.field}>
-            <Text style={styles.hint}>Sign in to unlock sync and paid features once they launch. Your local data works fine without it.</Text>
+            {/* "once they launch" was written before billing shipped and
+                stopped being true. */}
+            <Text style={styles.hint}>
+              Sign in to sync this device with your other ones. Everything you already have keeps working offline
+              without an account.
+            </Text>
             <Pressable style={styles.actionBtn} onPress={() => router.push('/login')}>
               <Ionicons name="log-in-outline" size={15} color={colors.surface} />
               <Text style={styles.actionBtnText}>Sign in</Text>
@@ -125,15 +120,6 @@ const styles = StyleSheet.create({
   },
   accountEmail: { fontSize: 13.5, fontWeight: '600', color: colors.text },
   proHint: { color: colors.accent, fontWeight: '700' },
-  upgradeCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 4,
-  },
   field: { marginBottom: 18 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 },
   hint: { fontSize: 11, color: colors.textTertiary, marginTop: 6 },

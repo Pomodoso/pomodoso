@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ProUpsell } from '@/components/ProUpsell';
 import { colors } from '@/constants/theme';
 import { WORKSPACE_PALETTE } from '@/constants/workspacePalette';
 import type { WorkspaceRow } from '@/db/schema';
@@ -155,10 +156,10 @@ export default function WorkspacesScreen() {
             <Text style={styles.newBtnText}>New workspace</Text>
           </Pressable>
         ) : (
-          <View style={styles.upsell}>
-            <Text style={styles.upsellText}>Multiple workspaces require Pro</Text>
-            <Text style={styles.upsellPro}>Pro</Text>
-          </View>
+          <ProUpsell
+            title="Keep work and life apart"
+            benefit="Separate workspaces give each context its own tasks, projects and pomodoro history, so a report for one never counts the other."
+          />
         )}
       </ScrollView>
     </SafeAreaView>
@@ -244,18 +245,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   newBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
-  upsell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 4,
-  },
-  upsellText: { fontSize: 12.5, color: colors.textSecondary },
-  upsellPro: { fontSize: 11, fontWeight: '700', color: colors.accent },
 });
