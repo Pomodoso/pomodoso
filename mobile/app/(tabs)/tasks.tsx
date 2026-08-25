@@ -13,7 +13,7 @@ import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import type { HistoryRange } from '@/hooks/useTaskHistory';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
-import { useProjectPicker } from '@/hooks/useProjectPicker';
+import { useAddTask } from '@/hooks/useAddTask';
 import { useProjects } from '@/hooks/useProjects';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useStartPicker } from '@/hooks/useStartPicker';
@@ -42,15 +42,7 @@ export default function TasksScreen() {
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
   const { workspaceId, isAll, workspaces } = useWorkspace();
-  const [addingTask, setAddingTask] = useState(false);
-  const [newTaskProjectId, setNewTaskProjectId] = useState<string | null>(null);
-  // Seeded from the active workspace — under "All" that's the write fallback,
-  // which the chips then let the user override before submitting.
-  const [newTaskWorkspaceId, setNewTaskWorkspaceId] = useState<string>(workspaceId);
-  // The one definition of "projects available for the task being created" —
-  // shared by the sheet and the picker it opens.
-  const newTaskProjects = projects.filter(p => p.workspaceId === newTaskWorkspaceId);
-  const { requestProject: requestNewTaskProject, pickerProps: projectPickerProps } = useProjectPicker(setNewTaskProjectId);
+  const addTaskSheet = useAddTask();
   const [subTab, setSubTab] = useState<SubTab>('backlog');
   // Play means start when idle, and attach-to-the-running-pomodoro while a
   // focus session is going — so the button has to stay available in both.
@@ -231,55 +223,14 @@ export default function TasksScreen() {
         </ScrollView>
       )}
 
-      <Pressable
-        style={styles.fab}
-        onPress={() => {
-          // Re-seed on open: the active workspace may have changed since the
-          // last time this sheet was used.
-          setNewTaskWorkspaceId(workspaceId);
-          setAddingTask(true);
-        }}
-      >
+      <Pressable style={styles.fab} onPress={addTaskSheet.open}>
         <Ionicons name="add" size={26} color={colors.surface} />
       </Pressable>
 
       <StartModePicker {...pickerProps} />
       <StatusPicker {...statusPickerProps} />
-      <AddTaskModal
-        visible={addingTask}
-        projects={newTaskProjects}
-        selectedProjectId={newTaskProjectId}
-        // Only under "All workspaces" is there a choice to make; with one
-        // active, the task belongs where the user is already looking.
-        workspaces={isAll ? workspaces : []}
-        workspaceId={newTaskWorkspaceId}
-        onWorkspaceChange={id => {
-          setNewTaskWorkspaceId(id);
-          // A project belongs to one workspace, so it can't survive the move.
-          setNewTaskProjectId(null);
-        }}
-        onRequestProject={() => requestNewTaskProject(newTaskProjectId)}
-        onSubmit={title => {
-          addTask(title, newTaskProjectId, newTaskWorkspaceId);
-          setAddingTask(false);
-          setNewTaskProjectId(null);
-        }}
-        onCancel={() => {
-          setAddingTask(false);
-          setNewTaskProjectId(null);
-        }}
-      />
-      {/* Scoped to the workspace the new task is going into, not to the
-          active scope — under "All workspaces" those differ, and offering
-          another workspace's projects is how a task ends up referencing one
-          its own workspace doesn't contain. */}
-      <ProjectPicker
-        {...projectPickerProps}
-        projects={newTaskProjects}
-        onCreate={(name, color) => addProject(name, color, newTaskWorkspaceId)}
-        onUpdate={updateProject}
-        onRemove={removeProject}
-      />
+      <AddTaskModal {...addTaskSheet.modalProps} />
+      <ProjectPicker {...addTaskSheet.projectPickerProps} />
     </SafeAreaView>
   );
 }

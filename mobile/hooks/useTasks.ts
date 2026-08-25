@@ -163,27 +163,39 @@ export function useTasks() {
   // targetWorkspaceId is explicit because under "All workspaces" there is no
   // active one to infer from — falling back silently would drop the task into
   // whichever workspace happened to be the oldest.
-  function addTask(title: string, projectId: string | null = null, targetWorkspaceId?: string): void {
+  // intoToday is what makes a task added from the Today screen land where the
+  // user was looking. Without it the row goes to the backlog and the button
+  // reads as broken — you press + on Today and nothing appears on Today.
+  function addTask(
+    title: string,
+    projectId: string | null = null,
+    targetWorkspaceId?: string,
+    intoToday = false,
+  ): void {
     const trimmed = title.trim();
     if (!trimmed) return;
     const maxSortOrder = (tasks ?? []).reduce((max, t) => Math.max(max, t.sortOrder), -1);
     const now = new Date().toISOString();
+    const wsId = targetWorkspaceId ?? workspaceId;
     db.insert(task)
       .values({
         id: uid(),
-        workspaceId: targetWorkspaceId ?? workspaceId,
+        workspaceId: wsId,
         title: trimmed,
         ticketRef: null,
         meta: 'Not started',
         status: 'todo',
         projectId,
         isPriority: false,
-        isToday: false,
+        isToday: intoToday,
         sortOrder: maxSortOrder + 1,
         createdAt: now,
         updatedAt: now,
       })
       .run();
+    // Today membership travels as its own per-workspace record, so the task
+    // row alone becoming dirty isn't enough for it to reach other devices.
+    if (intoToday) markTaskOrderDirty(wsId);
     triggerSync();
   }
 

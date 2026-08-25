@@ -5,6 +5,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BreakBanner } from '@/components/BreakBanner';
+import { AddTaskModal } from '@/components/AddTaskModal';
+import { ProjectPicker } from '@/components/ProjectPicker';
 import { RemoteTimerBanner } from '@/components/RemoteTimerBanner';
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
@@ -15,6 +17,7 @@ import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
 import { useHabits } from '@/hooks/useHabits';
 import { isAllDayMeetingTime, parseMeetingTime, useMeetings } from '@/hooks/useMeetings';
+import { useAddTask } from '@/hooks/useAddTask';
 import { useProjects } from '@/hooks/useProjects';
 import { useSettings } from '@/hooks/useSettings';
 import { useStartPicker } from '@/hooks/useStartPicker';
@@ -34,6 +37,8 @@ function formatTime(totalSeconds: number): string {
 
 export default function HomeScreen() {
   const { workspace, isAll } = useWorkspace();
+  // intoToday: a task added from this screen belongs on this screen.
+  const addTaskSheet = useAddTask({ intoToday: true });
   const { habits, toggleHabit, incrementHabit } = useHabits();
   const { meetings } = useMeetings();
   const { settings } = useSettings();
@@ -317,6 +322,12 @@ export default function HomeScreen() {
 
       <StartModePicker {...pickerProps} />
       <StatusPicker {...statusPickerProps} />
+      <Pressable style={styles.fab} onPress={addTaskSheet.open}>
+        <Ionicons name="add" size={26} color={colors.surface} />
+      </Pressable>
+
+      <AddTaskModal {...addTaskSheet.modalProps} />
+      <ProjectPicker {...addTaskSheet.projectPickerProps} />
     </SafeAreaView>
   );
 }
@@ -341,7 +352,9 @@ const styles = StyleSheet.create({
   },
   workspaceDotText: { color: colors.surface, fontSize: 11, fontWeight: '700' },
   workspaceName: { fontSize: 15, fontWeight: '600', color: colors.text },
-  scroll: { paddingHorizontal: 20, paddingBottom: 24 },
+  // 100, not 24: the add button floats over the bottom of this list, and the
+  // last row has to be reachable underneath it. Matches the Tasks screen.
+  scroll: { paddingHorizontal: 20, paddingBottom: 100 },
   timerBlock: { alignItems: 'center', paddingVertical: 12 },
   modeToggle: {
     flexDirection: 'row',
@@ -424,6 +437,22 @@ const styles = StyleSheet.create({
   btnStop: { borderColor: colors.accentSoft },
   btnText: { fontSize: 14, fontWeight: '600', color: colors.text },
   btnStopText: { color: colors.accent },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
