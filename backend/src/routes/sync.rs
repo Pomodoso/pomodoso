@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use axum::{
     extract::{Query, State},
     Extension, Json,
@@ -7,6 +5,7 @@ use axum::{
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::{
     error::{AppError, Result},
@@ -141,6 +140,35 @@ pub async fn push(
             accepted += 1;
         }
     }
+
+    // Counts per table, and which install sent them.
+    //
+    // Every sync question this session took hours to answer — did the phone's
+    // sessions ever arrive, is this device pushing at all, which client wrote
+    // this row — was unanswerable because the sync path logged nothing. A
+    // client can only report what it *believes* it sent; this is the only
+    // place that knows what actually landed.
+    //
+    // Deliberately counts and identifiers only. Titles, notes and settings
+    // values are the user's content and have no business in a log line that
+    // ships to Railway and Sentry.
+    let device = body
+        .entities
+        .iter()
+        .find_map(|e| e.data.get("device_id").and_then(|v| v.as_str()))
+        .unwrap_or("unknown");
+    let mut per_table: BTreeMap<&str, usize> = BTreeMap::new();
+    for e in &body.entities {
+        *per_table.entry(e.table.as_str()).or_default() += 1;
+    }
+    tracing::info!(
+        user_id = %auth.id,
+        device_id = %device,
+        received = body.entities.len(),
+        accepted,
+        tables = ?per_table,
+        "sync push",
+    );
 
     Ok(Json(serde_json::json!({ "accepted": accepted })))
 }
@@ -1114,6 +1142,23 @@ pub async fn pull(
             deleted_at: None,
         });
     }
+
+    // The other half of the push log above. `since` matters most: an empty
+    // delta and a genuinely-nothing-changed delta look identical from the
+    // client, and telling them apart is exactly what #94's stale-cursor bug
+    // needed — a device asking for everything since a timestamp another
+    // server issued is obvious here and invisible anywhere else.
+    let mut per_table: BTreeMap<&str, usize> = BTreeMap::new();
+    for e in &entities {
+        *per_table.entry(e.table.as_str()).or_default() += 1;
+    }
+    tracing::info!(
+        user_id = %auth.id,
+        since = ?q.since,
+        returned = entities.len(),
+        tables = ?per_table,
+        "sync pull",
+    );
 
     Ok(Json(PullResponse {
         entities,
