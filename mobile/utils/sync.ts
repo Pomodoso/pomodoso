@@ -1,5 +1,5 @@
 import type { SyncEntity } from '@pomodoso/api';
-import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, writeExtra, writePullCursor } from '@pomodoso/types';
+import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, writePullCursor } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
 import { and, asc, eq, inArray, isNull, not, or, lt, isNotNull } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
@@ -39,6 +39,9 @@ import { creditedStart } from '@/utils/time';
 
 const SYNC_LAST_PULL_KEY = 'sync_last_pull';
 const DEVICE_ID_KEY = 'device_id';
+/** A timer running on some *other* device, as last announced. Local only —
+ *  never pushed, since it describes someone else's session. */
+const REMOTE_TIMER_KEY = 'active_timer_remote';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -629,6 +632,42 @@ function applyEntity(entity: SyncEntity): void {
       break;
     }
 
+    case 'user_setting': {
+      // Only the active-timer beacon for now. The rest of SYNCED_SETTINGS
+      // (timer durations, sounds, week start) needs a mapping layer, because
+      // the extension bundles focus/short/long break into one timer_settings
+      // object while mobile keeps them as separate keys — that is its own
+      // piece of work, and ignoring those keys here is deliberate rather
+      // than an oversight.
+      if (String(data.key ?? '') !== 'active_timer') return;
+
+      const value = data.value as Record<string, unknown> | null | undefined;
+      if (deleted_at || value == null) {
+        db.delete(settings).where(eq(settings.key, REMOTE_TIMER_KEY)).run();
+        return;
+      }
+      // Our own beacon, echoed back by the server. Without this guard the
+      // phone shows itself a banner saying its own timer runs "on another
+      // device" — the extension has the same check for the same reason.
+      if (value.device_id === getDeviceId()) {
+        db.delete(settings).where(eq(settings.key, REMOTE_TIMER_KEY)).run();
+        return;
+      }
+      const stored = getSetting(REMOTE_TIMER_KEY);
+      if (stored) {
+        try {
+          const prev = JSON.parse(stored) as { updated_at?: string };
+          // Beacons from two devices race; keep the newest rather than
+          // whichever happened to arrive last in this batch.
+          if (prev.updated_at && prev.updated_at >= updated_at) return;
+        } catch {
+          /* unparseable — overwrite it */
+        }
+      }
+      putSetting(REMOTE_TIMER_KEY, JSON.stringify({ ...value, updated_at }));
+      break;
+    }
+
     case 'task_order': {
       const existing = db.select().from(taskOrder).where(eq(taskOrder.workspaceId, id)).all()[0];
       if (existing && existing.updatedAt >= updated_at) return;
@@ -880,6 +919,63 @@ export async function resolveSyncChoiceAndSync(scope: string, choice: SyncChoice
   recordSyncChoice(scope, choice);
   resolveSyncChoice();
   await syncNow();
+}
+
+/** Announces the session that just started so other devices can show it.
+ *
+ *  Sent immediately rather than through triggerSync's 1.5s debounce: the
+ *  whole point is that the web dashboard and the extension popup light up
+ *  while the timer runs, and a debounce spends a meaningful slice of a
+ *  five-minute break. Mirrors extension's pushActiveTimer.
+ *
+ *  Failures are swallowed. A beacon is a courtesy to other screens — the
+ *  session itself is already recorded locally and syncs normally, so a lost
+ *  beacon costs visibility, never data. */
+export async function pushActiveTimer(
+  startedAt: string,
+  mode: string,
+  taskId: string | null,
+  durationSeconds: number | null,
+): Promise<void> {
+  await sendBeacon({
+    started_at: startedAt,
+    mode,
+    task_id: taskId,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    duration_seconds: durationSeconds,
+    device_id: getDeviceId(),
+  });
+}
+
+/** Retracts the beacon. Tombstoned rather than emptied, because that is what
+ *  the extension reads as "no timer running anywhere". */
+export async function clearActiveTimer(): Promise<void> {
+  await sendBeacon(null);
+}
+
+async function sendBeacon(value: Record<string, unknown> | null): Promise<void> {
+  if (!API_URL) return;
+  try {
+    const supabase = getMobileSupabase();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+    const ts = nowIso();
+    await pushEntities(new TokenApiClient(API_URL, session.access_token), {
+      entities: [
+        {
+          table: 'user_setting',
+          id: settingId('active_timer'),
+          data: { key: 'active_timer', value },
+          updated_at: ts,
+          deleted_at: value === null ? ts : null,
+        },
+      ],
+    });
+  } catch {
+    /* see above: visibility only */
+  }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
