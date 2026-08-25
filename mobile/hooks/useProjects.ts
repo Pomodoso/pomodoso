@@ -1,4 +1,4 @@
-import { asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -11,8 +11,16 @@ import { useWorkspace } from './useWorkspace';
 
 export function useProjects() {
   const { workspaceId } = useWorkspace();
+  // Scoped to the active workspace, matching extension's `inWs` (App.tsx).
+  // A project picker offering another workspace's projects would let a task
+  // end up referencing a project its own workspace doesn't contain.
   const { data: projects } = useLiveQuery(
-    db.select().from(project).where(isNull(project.deletedAt)).orderBy(asc(project.name)),
+    db
+      .select()
+      .from(project)
+      .where(and(isNull(project.deletedAt), eq(project.workspaceId, workspaceId)))
+      .orderBy(asc(project.name)),
+    [workspaceId],
   );
 
   function addProject(name: string, color: string = PROJECT_PALETTE[0]): string {

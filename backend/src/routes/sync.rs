@@ -795,7 +795,7 @@ pub async fn pull(
     // Workspaces — everything the user is a member of (changed since `since`)
     let workspaces = sqlx::query!(
         r#"
-        SELECT w.id, w.name, w.color, w.updated_at, w.deleted_at
+        SELECT w.id, w.name, w.color, w.created_at, w.updated_at, w.deleted_at
         FROM workspace w
         JOIN workspace_member m ON m.workspace_id = w.id
         WHERE m.user_id = $1
@@ -811,7 +811,17 @@ pub async fn pull(
         entities.push(SyncEntity {
             table: "workspace".into(),
             id: row.id.to_string(),
-            data: serde_json::json!({ "name": row.name, "color": row.color }),
+            // created_at travels because a client that has never seen this
+            // workspace has nothing to fall back on but `updated_at`, which
+            // makes every synced workspace look newly created. Mobile picks
+            // the *oldest* workspace when no active one is stored, so that
+            // made a device permanently prefer its own locally-seeded
+            // workspace over the account's real ones.
+            data: serde_json::json!({
+                "name": row.name,
+                "color": row.color,
+                "created_at": row.created_at,
+            }),
             updated_at: row.updated_at,
             deleted_at: row.deleted_at,
         });

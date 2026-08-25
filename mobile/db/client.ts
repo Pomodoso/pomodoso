@@ -285,6 +285,11 @@ function initDb(): void {
       deleted_at TEXT,
       synced_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS task_order (
+      workspace_id TEXT PRIMARY KEY NOT NULL,
+      updated_at TEXT NOT NULL,
+      synced_at TEXT
+    );
   `);
 
   // Additive on purpose, unlike the drop-and-recreate probes above. Those

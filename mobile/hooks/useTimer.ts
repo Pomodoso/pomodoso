@@ -83,14 +83,26 @@ export function useTimer() {
   // so the effect below fires once per session rather than re-triggering on
   // every render while pendingBreak/pendingNextFocus are non-null.
   const autoStartedForRef = useRef<string | null>(null);
+  const { workspaceId } = useWorkspace();
+  // Scoped to the active workspace, matching extension's `inWs` (App.tsx).
+  // Unscoped, the daily pomo count and today's focus total summed every
+  // workspace at once, and `active` could resolve to a session belonging to
+  // one the user isn't looking at.
   const { data: sessions } = useLiveQuery(
-    db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).orderBy(desc(pomodoroSession.startedAt)),
+    db
+      .select()
+      .from(pomodoroSession)
+      .where(and(isNull(pomodoroSession.deletedAt), eq(pomodoroSession.workspaceId, workspaceId)))
+      .orderBy(desc(pomodoroSession.startedAt)),
+    [workspaceId],
   );
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
-  const { data: tasks } = useLiveQuery(db.select().from(task).where(isNull(task.deletedAt)));
+  const { data: tasks } = useLiveQuery(
+    db.select().from(task).where(and(isNull(task.deletedAt), eq(task.workspaceId, workspaceId))),
+    [workspaceId],
+  );
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
   const { settings } = useSettings();
-  const { workspaceId } = useWorkspace();
 
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
   // shared (and persisted) across Home and Tasks, not a per-screen choice.
