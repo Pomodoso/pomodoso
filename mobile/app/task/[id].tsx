@@ -387,7 +387,15 @@ export default function TaskDetailScreen() {
       </ScrollView>
 
       <StatusPicker {...statusPickerProps} />
-      <ProjectPicker {...projectPickerProps} projects={projects} onCreate={addProject} onUpdate={updateProject} onRemove={removeProject} />
+      {/* The task's own workspace, which under "All workspaces" is not the
+          active one. */}
+      <ProjectPicker
+        {...projectPickerProps}
+        projects={projects.filter(p => p.workspaceId === task.workspaceId)}
+        onCreate={(name, color) => addProject(name, color, task.workspaceId)}
+        onUpdate={updateProject}
+        onRemove={removeProject}
+      />
       <RecurrenceFormModal
         visible={recurrenceModalVisible}
         initialRule={task.recurrenceRule}

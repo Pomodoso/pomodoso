@@ -23,10 +23,16 @@ export function useProjects() {
     [scopeId],
   );
 
-  function addProject(name: string, color: string = PROJECT_PALETTE[0]): string {
+  // targetWorkspaceId is explicit for the same reason addTask's is: under
+  // "All workspaces" the active one is a fallback, so a project created while
+  // filing a task into workspace B would otherwise land in whichever
+  // workspace happened to be oldest — and then not appear in B's picker.
+  function addProject(name: string, color: string = PROJECT_PALETTE[0], targetWorkspaceId?: string): string {
     const id = uid();
     const now = new Date().toISOString();
-    db.insert(project).values({ id, workspaceId, name: name.trim(), color, createdAt: now, updatedAt: now }).run();
+    db.insert(project)
+      .values({ id, workspaceId: targetWorkspaceId ?? workspaceId, name: name.trim(), color, createdAt: now, updatedAt: now })
+      .run();
     triggerSync();
     return id;
   }
