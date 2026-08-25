@@ -2,6 +2,11 @@
 
 ## v1.3.5 (In progress)
 
+### Sync
+
+- **Fix: signing into a different account no longer skips your data** — The pull cursor that tracks "what have I already downloaded" wasn't tied to the account or the server that issued it, so switching accounts left the new one only receiving rows edited after the previous account's last sync. Everything older stayed invisible, with sync reporting success throughout. The cursor is now scoped, and every device does one full pull on upgrade to repair itself.
+- **Ask before merging a device's data into an account** — Signing in on a device that already had tasks and habits on it merged the two silently. You're now asked once per account whether to combine them or keep only what's in your account, so a shared or test device can't quietly push its contents into a real one.
+
 
 ## v1.3.4
 
