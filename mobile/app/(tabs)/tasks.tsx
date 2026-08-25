@@ -47,6 +47,9 @@ export default function TasksScreen() {
   // Seeded from the active workspace — under "All" that's the write fallback,
   // which the chips then let the user override before submitting.
   const [newTaskWorkspaceId, setNewTaskWorkspaceId] = useState<string>(workspaceId);
+  // The one definition of "projects available for the task being created" —
+  // shared by the sheet and the picker it opens.
+  const newTaskProjects = projects.filter(p => p.workspaceId === newTaskWorkspaceId);
   const { requestProject: requestNewTaskProject, pickerProps: projectPickerProps } = useProjectPicker(setNewTaskProjectId);
   const [subTab, setSubTab] = useState<SubTab>('backlog');
   // Play means start when idle, and attach-to-the-running-pomodoro while a
@@ -244,7 +247,7 @@ export default function TasksScreen() {
       <StatusPicker {...statusPickerProps} />
       <AddTaskModal
         visible={addingTask}
-        projects={projects}
+        projects={newTaskProjects}
         selectedProjectId={newTaskProjectId}
         // Only under "All workspaces" is there a choice to make; with one
         // active, the task belongs where the user is already looking.
@@ -272,7 +275,7 @@ export default function TasksScreen() {
           its own workspace doesn't contain. */}
       <ProjectPicker
         {...projectPickerProps}
-        projects={projects.filter(p => p.workspaceId === newTaskWorkspaceId)}
+        projects={newTaskProjects}
         onCreate={(name, color) => addProject(name, color, newTaskWorkspaceId)}
         onUpdate={updateProject}
         onRemove={removeProject}
