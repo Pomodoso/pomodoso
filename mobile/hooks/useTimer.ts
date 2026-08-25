@@ -9,7 +9,7 @@ import { uid } from '@/utils/id';
 import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
 import { endPomodoroNotification, syncPomodoroNotification } from '@/utils/ongoingNotification';
 import { playSound } from '@/utils/sounds';
-import { triggerSync } from '@/utils/sync';
+import { clearActiveTimer, pushActiveTimer, triggerSync } from '@/utils/sync';
 import { secondsBetween } from '@/utils/time';
 
 import { useSettings } from './useSettings';
@@ -181,6 +181,11 @@ export function useTimer() {
       // play the sound twice for one real completion.
       if (result.changes > 0) {
         playSound(active.kind === 'focus' ? 'pomo-done' : 'break-done', settings.soundSettings);
+        // Same retraction as stopSession: a session that ran its course
+        // isn't running any more either, and other devices shouldn't keep
+        // counting it up. Guarded on winning the write for the same reason
+        // the sound is.
+        void clearActiveTimer();
         triggerSync();
       }
     }
@@ -379,6 +384,15 @@ export function useTimer() {
       // Matches extension's App.tsx: only pomodoro starts get a sound
       // (stopwatch doesn't), same event as a follow-up focus after a break.
       if (mode === 'pomodoro') playSound('focus-start', settings.soundSettings);
+      // Announce it so the web dashboard and the extension popup can show
+      // this session while it runs. Immediate, not through triggerSync: the
+      // beacon is only useful while the timer is actually going.
+      void pushActiveTimer(
+        startedAt,
+        mode,
+        taskId,
+        mode === 'pomodoro' ? settings.focusSeconds : null,
+      );
       // No triggerSync() here — an 'active' session is never itself pushed
       // (only completed focus sessions are, per push()'s filter); that
       // happens at the completion effect above. Firing it here would just
@@ -617,6 +631,9 @@ export function useTimer() {
         .set({ status: 'interrupted', endedAt, notificationId: cancelled ? null : active.notificationId, updatedAt: nowIso() })
         .where(and(eq(pomodoroSession.id, active.id), inArray(pomodoroSession.status, ['active', 'paused'])))
         .run();
+      // Retract the beacon: nothing is running here any more, and a stale one
+      // leaves other devices showing a timer that stopped.
+      void clearActiveTimer();
     } finally {
       isMutatingRef.current = false;
     }

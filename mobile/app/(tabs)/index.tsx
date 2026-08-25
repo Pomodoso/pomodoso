@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BreakBanner } from '@/components/BreakBanner';
+import { RemoteTimerBanner } from '@/components/RemoteTimerBanner';
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
@@ -107,6 +108,8 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Only draws when some other device announced a running session. */}
+        <RemoteTimerBanner />
         <View style={styles.timerBlock}>
           {display.status === 'idle' && pendingBreak ? (
             <BreakBanner
