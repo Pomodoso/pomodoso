@@ -2,10 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
+
+// Same destination the extension's Support row opens.
+const SUPPORT_URL = 'https://pomodoso.com/support';
 import { useAuth } from '@/hooks/useAuth';
 import { useSettings } from '@/hooks/useSettings';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -135,6 +139,27 @@ export default function SettingsScreen(): React.JSX.Element {
             </View>
             {notificationsGranted === false && <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />}
           </Pressable>
+        </View>
+
+        {/* Opens the web support page rather than embedding a chat SDK. The
+            privacy policy states that Crisp operates only on the web app, and
+            it was written for Google's OAuth verification — embedding the SDK
+            here would make a reviewed document false. Sending the user to the
+            site keeps that true, and costs no new dependency, no app size and
+            no extra third party to declare on the store privacy forms.
+            Mirrors the extension's own Support row. */}
+        <View style={styles.group}>
+          <NavRow
+            icon="help-circle-outline"
+            title="Support"
+            description="Get help at pomodoso.com"
+            onPress={() => {
+              void WebBrowser.openBrowserAsync(SUPPORT_URL).catch(() => {
+                Alert.alert('Could not open support', 'Please visit pomodoso.com/support.');
+              });
+            }}
+            isLast
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
