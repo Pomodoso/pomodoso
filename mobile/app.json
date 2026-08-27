@@ -12,7 +12,9 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pomodoso.app"
+      "bundleIdentifier": "com.pomodoso.app",
+      "appleTeamId": "35392GG43S",
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.pomodoso.app",
