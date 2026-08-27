@@ -83,6 +83,41 @@ name — `pomodoso-extension-v<version>.zip` against the Makefile's `pomodoso-<v
 — and every release from 1.1.2 on used the Makefile's. Two ways to build one thing is
 how you end up uploading the wrong file.
 
+## Mobile: local builds
+
+No EAS. Builds run on this machine, cost nothing and wait in no queue — EAS
+becomes worth it when a build has to happen without the Mac. Everything lives in
+`mobile/Makefile`:
+
+```bash
+cd mobile
+make devices                      # UDIDs of connected iPhones
+make ios DEVICE=<udid>            # Release build → iPhone
+make install DEVICE=<udid>        # install the last build without rebuilding
+make sim                          # Release build → booted simulator
+make prebuild                     # regenerate ios/ + android/ from app.json
+```
+
+**Use `make ios`, not `make ios-dev`, for real testing.** A Release build embeds
+the JS bundle, so the app runs with the Mac closed and off the network. A
+dev-client build fetches JS from Metro at launch and shows "No script URL
+provided" without it.
+
+`make install` exists because `expo run:ios` fails its *launch* step when the
+phone is locked — after having built and signed successfully. That target picks
+up the finished build instead of repeating twenty minutes of work.
+
+Signing comes from `ios.appleTeamId` in `mobile/app.json`. With the paid Apple
+Developer account a build lasts a year on the device; under the free personal
+team it expired after seven days.
+
+`ios.buildNumber` must increase on **every** upload of the same `version`, or
+App Store Connect rejects it. `version` is the marketing string users see.
+
+Run `make prebuild` after changing plugins, icons or entitlements in `app.json`
+— `expo run:ios` alone reuses whatever `ios/` already holds, which is why icon
+and splash changes appear to do nothing until it runs.
+
 ## Tests / CI
 
 ```bash
