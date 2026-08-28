@@ -9,7 +9,7 @@ import { BrandSplash } from '@/components/BrandSplash';
 import { SyncChoiceModal } from '@/components/SyncChoiceModal';
 import { colors } from '@/constants/theme';
 import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
-import { observeTransactions } from '@/utils/purchases';
+import { observeSignIn, observeTransactions } from '@/utils/purchases';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -41,6 +41,11 @@ export default function RootLayout() {
   // hour later, a purchase made on another device. No-ops when the native
   // module is absent, so a simulator or web build runs fine without it.
   useEffect(observeTransactions, []);
+
+  // Same reason, plus one more: this layout mounts exactly once. `useAuth` is
+  // a plain hook, so the same effect placed there ran once per mounted
+  // consumer.
+  useEffect(observeSignIn, []);
 
   useEffect(() => {
     if (error) throw error;

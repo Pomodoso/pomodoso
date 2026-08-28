@@ -459,13 +459,16 @@ async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<bool>
         return Ok(false);
     }
 
-    apply_update(state, event, &update).await.map(|_| true)
+    apply_update(state, event, &update, origin)
+        .await
+        .map(|_| true)
 }
 
 async fn apply_update(
     state: &AppState,
     event: &IapEvent,
     update: &SubscriptionUpdate,
+    origin: &str,
 ) -> Result<()> {
     let set_cancelled = update.cancelled_at == CancelledAt::Set;
     let clear_cancelled = update.cancelled_at == CancelledAt::Clear;
@@ -504,11 +507,27 @@ async fn apply_update(
     // invisible until the user complained, so make it loud.
     if result.rows_affected() == 0 {
         tracing::error!(
-            "iap: no subscription row for user {} — {:?} dropped",
+            "{origin}: no subscription row for user {} — {:?} dropped",
             event.user_id,
             event.kind
         );
+        return Ok(());
     }
+
+    // Success is logged too, not just failure. Without this the only record a
+    // purchase ever happened is the row it wrote, so "did this customer's
+    // payment land?" can only be answered by opening the database — which is
+    // precisely the question that arrives when someone has paid and is staring
+    // at a Free plan.
+    tracing::info!(
+        "{origin}: {:?} for user {} → plan={} status={} product={} period_end={:?}",
+        event.kind,
+        event.user_id,
+        update.plan.unwrap_or("(unchanged)"),
+        update.status,
+        event.product_id,
+        update.period_end,
+    );
 
     Ok(())
 }
