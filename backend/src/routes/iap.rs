@@ -272,14 +272,50 @@ fn grants_access(update: &SubscriptionUpdate) -> bool {
     matches!(update.plan, Some(plan) if plan != "free")
 }
 
-/// Guards the case where a user pays on the web and also has an old store
-/// subscription attached to the same account. A stale EXPIRED from that store
-/// subscription must not revoke a live Stripe one. Grants still apply, so a
-/// genuine move from Stripe to IAP works.
-pub fn should_apply(stored_provider: Option<&str>, update: &SubscriptionUpdate) -> bool {
+/// Which `payment_provider` a transaction is recorded under.
+///
+/// Sandbox purchases are recorded separately rather than being turned away.
+/// App Review tests in-app purchases in the sandbox environment, against this
+/// production backend, so refusing them means the reviewer watches the purchase
+/// succeed on Apple's side and the app never unlock — a rejection. Apple's own
+/// receipt-validation guidance points the same way: verify against production,
+/// and honour the receipt anyway when it turns out to be a sandbox one.
+///
+/// The exposure is bounded, because a sandbox transaction can only come from a
+/// development or TestFlight build, never from the App Store one. Giving those
+/// grants their own provider keeps them findable instead of indistinguishable
+/// from money.
+pub fn provider_for(environment: Environment) -> &'static str {
+    match environment {
+        Environment::Production => "apple",
+        Environment::Sandbox => "apple_sandbox",
+    }
+}
+
+/// Whether this event may touch the stored row.
+///
+/// Two separate protections:
+///
+/// - A stale store EXPIRED must not revoke a live Stripe subscription. Grants
+///   still apply, so a genuine move from Stripe to IAP works.
+/// - A sandbox purchase cost nobody anything, so it must never overwrite a row
+///   that someone actually paid for. It may only create a row or update one
+///   that is already sandbox-owned.
+pub fn should_apply(
+    stored_provider: Option<&str>,
+    environment: Environment,
+    update: &SubscriptionUpdate,
+) -> bool {
     if stored_provider == Some("stripe") && !grants_access(update) {
         return false;
     }
+
+    if environment == Environment::Sandbox
+        && !matches!(stored_provider, None | Some("apple_sandbox"))
+    {
+        return false;
+    }
+
     true
 }
 
@@ -429,17 +465,6 @@ async fn handle(state: &AppState, kind: EventKind, tx: &Transaction, origin: &st
 /// into an error so the app leaves the transaction unfinished and Apple hands
 /// it back later.
 async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<bool> {
-    // Sandbox purchases cost nothing. Accepting one in production is giving
-    // Pro away to anyone who can run the app against a sandbox Apple ID, so
-    // this is off unless deliberately switched on for store testing.
-    if event.environment == Environment::Sandbox && !state.config.apple_accept_sandbox {
-        tracing::warn!(
-            "{origin}: refused a sandbox transaction for user {} — set APPLE_ACCEPT_SANDBOX=true to allow",
-            event.user_id
-        );
-        return Ok(false);
-    }
-
     let update = resolve(event);
 
     let stored_provider = sqlx::query_scalar!(
@@ -450,11 +475,12 @@ async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<bool>
     .await?
     .flatten();
 
-    if !should_apply(stored_provider.as_deref(), &update) {
+    if !should_apply(stored_provider.as_deref(), event.environment, &update) {
         tracing::warn!(
-            "{origin}: skipped {:?} for user {} — row is owned by stripe",
+            "{origin}: skipped {:?} for user {} — row is owned by {:?}",
             event.kind,
-            event.user_id
+            event.user_id,
+            stored_provider.as_deref().unwrap_or("nobody")
         );
         return Ok(false);
     }
@@ -484,17 +510,18 @@ async fn apply_update(
                 ELSE cancelled_at
             END,
             current_period_end = COALESCE($5, current_period_end),
-            payment_provider = 'apple',
-            store_transaction_id = COALESCE($6, store_transaction_id),
-            store_product_id = COALESCE($7, store_product_id),
+            payment_provider = $6,
+            store_transaction_id = COALESCE($7, store_transaction_id),
+            store_product_id = COALESCE($8, store_product_id),
             updated_at = NOW()
-        WHERE user_id = $8
+        WHERE user_id = $9
         "#,
         update.plan,
         update.status,
         set_cancelled,
         clear_cancelled,
         update.period_end,
+        provider_for(event.environment),
         event.transaction_id,
         event.product_id,
         event.user_id,
@@ -520,11 +547,12 @@ async fn apply_update(
     // precisely the question that arrives when someone has paid and is staring
     // at a Free plan.
     tracing::info!(
-        "{origin}: {:?} for user {} → plan={} status={} product={} period_end={:?}",
+        "{origin}: {:?} for user {} → plan={} status={} provider={} product={} period_end={:?}",
         event.kind,
         event.user_id,
         update.plan.unwrap_or("(unchanged)"),
         update.status,
+        provider_for(event.environment),
         event.product_id,
         update.period_end,
     );
@@ -938,7 +966,11 @@ mod tests {
             EventKind::AutoRenewOff,
         ] {
             assert!(
-                !should_apply(Some("stripe"), &resolve(&handled(kind, &tx()))),
+                !should_apply(
+                    Some("stripe"),
+                    Environment::Production,
+                    &resolve(&handled(kind, &tx()))
+                ),
                 "{kind:?} should not touch a stripe-owned row"
             );
         }
@@ -948,6 +980,7 @@ mod tests {
     fn a_stripe_user_can_still_move_to_a_store_subscription() {
         assert!(should_apply(
             Some("stripe"),
+            Environment::Production,
             &resolve(&handled(EventKind::Grant, &tx()))
         ));
     }
@@ -962,6 +995,7 @@ mod tests {
 
         assert!(should_apply(
             Some("stripe"),
+            Environment::Production,
             &resolve(&handled(EventKind::Grant, &tx_from(v)))
         ));
     }
@@ -978,10 +1012,65 @@ mod tests {
                 EventKind::Revoked,
             ] {
                 assert!(
-                    should_apply(provider, &resolve(&handled(kind, &tx()))),
+                    should_apply(
+                        provider,
+                        Environment::Production,
+                        &resolve(&handled(kind, &tx()))
+                    ),
                     "provider {provider:?} should apply {kind:?}"
                 );
             }
         }
+    }
+
+    // ─── Sandbox ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn sandbox_and_production_are_recorded_under_different_providers() {
+        assert_eq!(provider_for(Environment::Production), "apple");
+        assert_eq!(provider_for(Environment::Sandbox), "apple_sandbox");
+    }
+
+    #[test]
+    fn a_sandbox_purchase_cannot_overwrite_a_row_someone_paid_for() {
+        // The whole reason sandbox gets its own provider. A TestFlight tester
+        // who also subscribes for real must not have their paid row replaced by
+        // a purchase that moved no money.
+        for provider in [Some("stripe"), Some("apple"), Some("google")] {
+            assert!(
+                !should_apply(
+                    provider,
+                    Environment::Sandbox,
+                    &resolve(&handled(EventKind::Grant, &tx()))
+                ),
+                "sandbox should not overwrite a {provider:?}-owned row"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sandbox_purchase_applies_to_a_new_or_sandbox_owned_row() {
+        // Which is what lets App Review complete a purchase at all.
+        for provider in [None, Some("apple_sandbox")] {
+            assert!(
+                should_apply(
+                    provider,
+                    Environment::Sandbox,
+                    &resolve(&handled(EventKind::Grant, &tx()))
+                ),
+                "sandbox should apply to a {provider:?} row"
+            );
+        }
+    }
+
+    #[test]
+    fn a_real_purchase_can_take_over_a_sandbox_row() {
+        // A tester who later pays for real: the sandbox grant must not be a
+        // one-way door that locks the account out of a genuine subscription.
+        assert!(should_apply(
+            Some("apple_sandbox"),
+            Environment::Production,
+            &resolve(&handled(EventKind::Grant, &tx()))
+        ));
     }
 }
