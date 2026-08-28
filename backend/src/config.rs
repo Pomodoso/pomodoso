@@ -18,8 +18,10 @@ pub struct Config {
     pub stripe_pro_monthly_price_id: Option<String>,
     pub stripe_founder_lifetime_price_id: Option<String>,
 
-    // Optional — store (App Store / Play) billing won't work without this
-    pub revenuecat_webhook_secret: Option<String>,
+    /// Whether to honour App Store transactions from the Sandbox environment.
+    /// Sandbox purchases cost nothing, so this is off everywhere except while
+    /// deliberately testing the store flow. See `routes::iap::apply`.
+    pub apple_accept_sandbox: bool,
 
     // Optional — emails won't send without this
     pub postmark_server_token: Option<String>,
@@ -46,14 +48,16 @@ impl Config {
             stripe_founder_lifetime_price_id: std::env::var("STRIPE_FOUNDER_LIFETIME_PRICE_ID")
                 .ok(),
 
-            // A blank value counts as unset — .env.example ships the key empty.
-            revenuecat_webhook_secret: std::env::var("REVENUECAT_WEBHOOK_SECRET")
-                .ok()
-                .filter(|s| !s.is_empty()),
+            // Anything but an explicit "true" is off: this one hands out paid
+            // plans for free when it is wrong, so it does not get to default on
+            // through a typo.
+            apple_accept_sandbox: std::env::var("APPLE_ACCEPT_SANDBOX")
+                .map(|v| v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
 
-            // A blank value counts as unset, same as the RevenueCat secret above:
-            // Railway keeps emptied variables rather than removing them, and an
-            // empty token would send every request to Postmark to be rejected.
+            // A blank value counts as unset: Railway keeps emptied variables
+            // rather than removing them, and an empty token would send every
+            // request to Postmark to be rejected.
             postmark_server_token: std::env::var("POSTMARK_SERVER_TOKEN")
                 .ok()
                 .filter(|s| !s.is_empty()),
@@ -65,8 +69,11 @@ impl Config {
         if cfg.stripe_secret_key.is_none() {
             tracing::warn!("STRIPE_SECRET_KEY not set — billing endpoints will return 501");
         }
-        if cfg.revenuecat_webhook_secret.is_none() {
-            tracing::warn!("REVENUECAT_WEBHOOK_SECRET not set — store purchases will be rejected");
+        if cfg.apple_accept_sandbox {
+            tracing::warn!(
+                "APPLE_ACCEPT_SANDBOX=true — sandbox purchases will grant paid plans. \
+                 Turn this off outside store testing."
+            );
         }
         if cfg.postmark_server_token.is_none() {
             tracing::warn!("POSTMARK_SERVER_TOKEN not set — emails will not be sent");
