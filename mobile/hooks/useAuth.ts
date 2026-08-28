@@ -7,6 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 
 import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
+import { forgetPurchaser, identifyPurchaser } from '@/utils/purchases';
 
 // Matches @pomodoso/types' FREE_ENTITLEMENTS exactly (kept as a literal here
 // rather than importing the value — same Metro-can't-resolve-a-value-import-
@@ -45,6 +46,11 @@ export interface AuthState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-reads entitlements from the backend. Called after a purchase: the
+   *  store confirms to RevenueCat, RevenueCat webhooks our backend, and only
+   *  then does /me report Pro — so the app has to ask again rather than
+   *  trusting what the purchase sheet returned. */
+  refreshEntitlements: () => Promise<void>;
 }
 
 // Extracts access_token/refresh_token from a Supabase auth redirect URL and
@@ -202,16 +208,34 @@ export function useAuth(): AuthState {
     await supabaseUpdatePassword(getMobileSupabase(), newPassword);
   }, []);
 
+  // Detaches the RevenueCat identity too, so a second account on this device
+  // doesn't inherit the first one's purchases from the SDK's local cache.
   const signOut = useCallback(async () => {
+    await forgetPurchaser();
     await supabaseSignOut(getMobileSupabase());
     setSession(null);
     setEntitlements(FREE_ENTITLEMENTS);
   }, []);
 
+  // The webhook rejects any event whose app_user_id isn't one of our UUIDs,
+  // so a purchase made without this is invisible to the backend. Runs on
+  // every session change rather than once at mount, since the user can sign
+  // in long after launch.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (userId) void identifyPurchaser(userId);
+  }, [session?.user.id]);
+
+  const refreshEntitlements = useCallback(async () => {
+    const token = session?.access_token;
+    if (token) await fetchEntitlements(token);
+  }, [session?.access_token, fetchEntitlements]);
+
   return {
     session,
     entitlements,
     loading,
+    refreshEntitlements,
     isConfigured: isAuthConfigured(),
     signIn,
     signUp,

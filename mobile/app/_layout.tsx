@@ -9,6 +9,7 @@ import { BrandSplash } from '@/components/BrandSplash';
 import { SyncChoiceModal } from '@/components/SyncChoiceModal';
 import { colors } from '@/constants/theme';
 import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
+import { configurePurchases } from '@/utils/purchases';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -34,6 +35,13 @@ export default function RootLayout() {
   const finishIntro = useCallback(() => setIntroDone(true), []);
 
   useSyncLifecycle();
+
+  // Started once, before anything can open the paywall. No-ops without a
+  // RevenueCat key so a local build runs with purchasing unavailable rather
+  // than crashing on launch.
+  useEffect(() => {
+    configurePurchases();
+  }, []);
 
   useEffect(() => {
     if (error) throw error;

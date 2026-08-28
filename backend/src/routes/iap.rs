@@ -32,6 +32,10 @@ pub enum EventKind {
     Cancellation,
     Expiration,
     BillingIssue,
+    /// A one-off, non-subscription purchase — the lifetime tier. It never
+    /// renews and never expires, so it is the only event that grants access
+    /// with no period end and can never be followed by an EXPIRATION.
+    NonRenewingPurchase,
 }
 
 impl EventKind {
@@ -44,6 +48,7 @@ impl EventKind {
             "CANCELLATION" => Self::Cancellation,
             "EXPIRATION" => Self::Expiration,
             "BILLING_ISSUE" => Self::BillingIssue,
+            "NON_RENEWING_PURCHASE" => Self::NonRenewingPurchase,
             _ => return None,
         })
     }
@@ -168,6 +173,18 @@ pub fn resolve(event: &IapEvent) -> SubscriptionUpdate {
             status: "active",
             cancelled_at: CancelledAt::Set,
             period_end: event.expires_at,
+        },
+
+        // Lifetime. Distinct from the subscription branch above in two ways
+        // that both matter: the plan is founder_lifetime rather than pro (it
+        // is what models.rs resolves and what the welcome email keys off),
+        // and period_end stays None — a lifetime purchase has no end, and
+        // writing one would make it look like a subscription about to lapse.
+        EventKind::NonRenewingPurchase => SubscriptionUpdate {
+            plan: Some("founder_lifetime"),
+            status: "active",
+            cancelled_at: CancelledAt::Clear,
+            period_end: None,
         },
 
         EventKind::Expiration => SubscriptionUpdate {
@@ -433,12 +450,7 @@ mod tests {
 
     #[test]
     fn ignores_event_types_we_do_not_act_on() {
-        for kind in [
-            "TEST",
-            "TRANSFER",
-            "SUBSCRIBER_ALIAS",
-            "NON_RENEWING_PURCHASE",
-        ] {
+        for kind in ["TEST", "TRANSFER", "SUBSCRIBER_ALIAS"] {
             assert_eq!(
                 parse_event(&payload(kind)),
                 Parsed::Ignore("unhandled event type"),
@@ -493,6 +505,21 @@ mod tests {
             assert_eq!(update.status, "active", "for event {kind}");
             assert_eq!(update.cancelled_at, CancelledAt::Clear, "for event {kind}");
         }
+    }
+
+    #[test]
+    fn lifetime_grants_founder_lifetime_with_no_end_date() {
+        // The lifetime tier arrives as NON_RENEWING_PURCHASE, which this used
+        // to ignore outright — someone paying for it got nothing back. Two
+        // things separate it from a subscription: the plan is
+        // founder_lifetime, not pro, and there is no period end. Writing an
+        // expiry would make a permanent purchase look like a lapsing one.
+        let update = resolve(&handled("NON_RENEWING_PURCHASE"));
+
+        assert_eq!(update.plan, Some("founder_lifetime"));
+        assert_eq!(update.status, "active");
+        assert_eq!(update.cancelled_at, CancelledAt::Clear);
+        assert_eq!(update.period_end, None, "a lifetime purchase does not end");
     }
 
     #[test]
