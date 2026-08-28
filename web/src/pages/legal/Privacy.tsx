@@ -212,8 +212,8 @@ export default function Privacy() {
             <h2 className="text-white font-semibold text-lg mb-3">Contact</h2>
             <p>
               Privacy questions:{' '}
-              <a href="mailto:alberto@paparelli.com.ar" className="text-orange-400 hover:text-orange-300 underline">
-                alberto@paparelli.com.ar
+              <a href="mailto:privacy@pomodoso.com" className="text-orange-400 hover:text-orange-300 underline">
+                privacy@pomodoso.com
               </a>
             </p>
           </section>
