@@ -40,7 +40,7 @@ export default function Gdpr() {
             },
             {
               title: 'Sub-processors',
-              body: 'We rely on the following third-party processors to operate the service, each handling only the data needed for its function: Supabase (authentication), Railway (backend hosting and database), Vercel (web hosting), Stripe (payments), Resend (transactional email), Sentry (error monitoring and crash reporting), Crisp (support chat — your email/name when you start a conversation), and Google Analytics (anonymous usage analytics).',
+              body: 'We rely on the following third-party processors to operate the service, each handling only the data needed for its function: Supabase (authentication), Railway (backend hosting and database), Vercel (web hosting), Stripe (payments), Postmark (transactional email), Sentry (error monitoring and crash reporting), Crisp (support chat — your email/name when you start a conversation), and Google Analytics (anonymous usage analytics).',
             },
             {
               title: 'Cookies & analytics',

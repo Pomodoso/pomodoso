@@ -1,135 +1,169 @@
-//! In-app purchase billing (App Store / Play Store) via RevenueCat webhooks.
+//! In-app purchase billing, straight from the App Store.
 //!
 //! Mirrors `billing.rs` for the store-purchased side of the same subscription
-//! row. RevenueCat is identified with our own `user.id` as its `app_user_id`,
-//! so events map straight onto `subscription.user_id` with no lookup table.
+//! row. There is no billing intermediary: Apple signs everything it sends,
+//! `apple::jws` verifies the signature against Apple's pinned root, and what
+//! comes out is trusted for exactly as far as the signature reaches.
 //!
-//! The parsing and event-mapping below are pure functions so they can be tested
-//! without a database or a live RevenueCat account.
+//! Two paths write the same row, deliberately:
+//!
+//! - `POST /webhooks/app-store` — App Store Server Notifications V2. The
+//!   authority on the subscription lifecycle: renewals, cancellations, billing
+//!   failures and refunds only ever arrive here, long after the app last ran.
+//! - `POST /iap/verify` — the app posting the transaction it just received.
+//!   Makes a purchase apply immediately instead of whenever the notification
+//!   lands, and it is the *only* reliable path for the lifetime tier, which
+//!   Apple does not consistently send notifications for.
+//!
+//! Both funnel into one `resolve` → `apply_update`, so the two can't drift.
+//!
+//! The parsing and mapping below are pure functions, testable without a
+//! database, a network, or an Apple account.
 
-use axum::{
-    body::Bytes,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-};
+use axum::{body::Bytes, extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
+    apple::{self, Environment, Transaction},
     error::{AppError, Result},
+    middleware::auth::AuthUser,
     AppState,
 };
 
+// ─── Products ─────────────────────────────────────────────────────────────────
+
+/// What each App Store product grants.
+///
+/// Mapped by product ID and nothing else. The previous implementation inferred
+/// the plan from the *event type*, which happened to work only because the
+/// lifetime tier was the one non-renewing product; adding any second one-off
+/// product would have silently granted the wrong plan.
+fn plan_for(product_id: &str) -> Option<&'static str> {
+    Some(match product_id {
+        "com.pomodoso.app.pro.monthly" | "com.pomodoso.app.pro.annual" => "pro",
+        "com.pomodoso.app.founder.lifetime" => "founder_lifetime",
+        _ => return None,
+    })
+}
+
 // ─── Event model ──────────────────────────────────────────────────────────────
 
+/// Apple's notification vocabulary, reduced to the six outcomes that change
+/// what a user may do. Everything else Apple sends is real but inert to us.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
-    InitialPurchase,
-    Renewal,
-    ProductChange,
-    Uncancellation,
-    Cancellation,
-    Expiration,
+    /// Bought, renewed, resubscribed, or switched between our two plans.
+    Grant,
+    /// Auto-renew turned off. On the App Store this means "will not renew",
+    /// *not* "access revoked" — the user keeps Pro until EXPIRED lands at the
+    /// end of the period they already paid for.
+    AutoRenewOff,
+    AutoRenewOn,
+    /// Payment failed; Apple is retrying, possibly inside a grace period.
     BillingIssue,
-    /// A one-off, non-subscription purchase — the lifetime tier. It never
-    /// renews and never expires, so it is the only event that grants access
-    /// with no period end and can never be followed by an EXPIRATION.
-    NonRenewingPurchase,
+    Expired,
+    /// Refunded, or revoked (family sharing withdrawn). Access ends now.
+    Revoked,
 }
 
-impl EventKind {
-    fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "INITIAL_PURCHASE" => Self::InitialPurchase,
-            "RENEWAL" => Self::Renewal,
-            "PRODUCT_CHANGE" => Self::ProductChange,
-            "UNCANCELLATION" => Self::Uncancellation,
-            "CANCELLATION" => Self::Cancellation,
-            "EXPIRATION" => Self::Expiration,
-            "BILLING_ISSUE" => Self::BillingIssue,
-            "NON_RENEWING_PURCHASE" => Self::NonRenewingPurchase,
-            _ => return None,
-        })
-    }
-}
+/// Maps `notificationType` + `subtype` onto an outcome.
+///
+/// Returning `None` is the normal fate of most notification types — price
+/// consent requests, renewal extensions, consumption requests and Apple's own
+/// TEST ping are all things we acknowledge and ignore.
+fn kind_for(notification_type: &str, subtype: Option<&str>) -> Option<EventKind> {
+    Some(match (notification_type, subtype) {
+        ("SUBSCRIBED", _)
+        | ("DID_RENEW", _)
+        | ("DID_CHANGE_RENEWAL_PREF", _)
+        | ("OFFER_REDEEMED", _)
+        | ("ONE_TIME_CHARGE", _) => EventKind::Grant,
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Store {
-    Apple,
-    Google,
-}
+        ("DID_CHANGE_RENEWAL_STATUS", Some("AUTO_RENEW_DISABLED")) => EventKind::AutoRenewOff,
+        ("DID_CHANGE_RENEWAL_STATUS", Some("AUTO_RENEW_ENABLED")) => EventKind::AutoRenewOn,
 
-impl Store {
-    fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "APP_STORE" | "MAC_APP_STORE" => Self::Apple,
-            "PLAY_STORE" => Self::Google,
-            _ => return None,
-        })
-    }
+        ("DID_FAIL_TO_RENEW", _) | ("GRACE_PERIOD_EXPIRED", _) => EventKind::BillingIssue,
 
-    fn provider(self) -> &'static str {
-        match self {
-            Self::Apple => "apple",
-            Self::Google => "google",
-        }
-    }
+        ("EXPIRED", _) => EventKind::Expired,
+        ("REFUND", _) | ("REVOKE", _) => EventKind::Revoked,
+
+        _ => return None,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IapEvent {
     pub kind: EventKind,
     pub user_id: Uuid,
-    pub store: Store,
-    pub product_id: Option<String>,
+    /// Resolved from the product ID when the event was built, so `resolve`
+    /// cannot be reached with a product we don't sell.
+    pub plan: &'static str,
+    pub product_id: String,
     pub transaction_id: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    pub environment: Environment,
 }
 
-/// Outcome of reading a webhook body. Anything we can't act on is an explicit
-/// `Ignore` with a reason rather than an error — RevenueCat retries on non-2xx,
-/// and a payload we structurally don't handle will never succeed on retry.
+/// Outcome of reading a payload. Anything we can't act on is an explicit
+/// `Ignore` with a reason rather than an error: Apple retries on non-2xx, and
+/// a payload we structurally don't handle will never succeed on retry.
 #[derive(Debug, PartialEq)]
 pub enum Parsed {
     Handle(Box<IapEvent>),
     Ignore(&'static str),
 }
 
-pub fn parse_event(payload: &Value) -> Parsed {
-    let event = &payload["event"];
+/// Turns a verified transaction into an event.
+///
+/// Every check here is on a payload Apple has already signed. The signature
+/// proves the App Store issued it; these decide whether it is *ours* and
+/// whether it means anything.
+pub fn event_from(kind: EventKind, tx: &Transaction) -> Parsed {
+    // A signature from Apple says "the App Store issued this", not "for your
+    // app". Without this, a transaction from any other developer's app carries
+    // a perfectly valid chain.
+    if tx.bundle_id.as_deref() != Some(apple::BUNDLE_ID) {
+        return Parsed::Ignore("transaction belongs to another app");
+    }
 
-    let Some(kind) = event["type"].as_str().and_then(EventKind::parse) else {
-        return Parsed::Ignore("unhandled event type");
+    let Some(environment) = Environment::parse(tx.environment.as_deref()) else {
+        return Parsed::Ignore("unknown environment");
     };
 
-    let Some(store) = event["store"].as_str().and_then(Store::parse) else {
-        return Parsed::Ignore("unknown store");
-    };
-
-    // A purchase made before the user logged in carries RevenueCat's anonymous
-    // id ("$RCAnonymousID:..."), which belongs to no account of ours. The app
-    // calls logIn() after auth, which triggers a TRANSFER and re-fires the
-    // subscriber's events under the real id.
-    let Some(user_id) = event["app_user_id"]
-        .as_str()
+    // The app sets this at purchase time; without it a transaction belongs to
+    // an Apple ID and to no account of ours.
+    let Some(user_id) = tx
+        .app_account_token
+        .as_deref()
         .and_then(|s| Uuid::parse_str(s).ok())
     else {
-        return Parsed::Ignore("app_user_id is not one of our user ids");
+        return Parsed::Ignore("no appAccountToken tying this to one of our users");
+    };
+
+    let Some(plan) = plan_for(&tx.product_id) else {
+        return Parsed::Ignore("product we do not sell");
+    };
+
+    // A refunded purchase revokes access no matter which notification carried
+    // it. Apple stamps revocationDate on the transaction itself, and trusting
+    // the notification type alone would let a REFUND arriving as some other
+    // event keep the plan alive.
+    let kind = if tx.is_revoked() {
+        EventKind::Revoked
+    } else {
+        kind
     };
 
     Parsed::Handle(Box::new(IapEvent {
         kind,
         user_id,
-        store,
-        product_id: event["product_id"].as_str().map(str::to_string),
-        transaction_id: event["original_transaction_id"]
-            .as_str()
-            .or_else(|| event["transaction_id"].as_str())
-            .map(str::to_string),
-        expires_at: event["expiration_at_ms"]
-            .as_i64()
-            .and_then(DateTime::from_timestamp_millis),
+        plan,
+        product_id: tx.product_id.clone(),
+        transaction_id: tx.stable_id(),
+        expires_at: tx.expires_at(),
+        environment,
     }))
 }
 
@@ -153,44 +187,30 @@ pub struct SubscriptionUpdate {
 
 pub fn resolve(event: &IapEvent) -> SubscriptionUpdate {
     match event.kind {
-        // Access granted or restored.
-        EventKind::InitialPurchase
-        | EventKind::Renewal
-        | EventKind::ProductChange
-        | EventKind::Uncancellation => SubscriptionUpdate {
-            plan: Some("pro"),
+        // The plan comes from the product. For the lifetime tier that is
+        // `founder_lifetime` with `period_end` left None — Apple sends no
+        // expiry for a non-consumable, and inventing one would make a
+        // permanent purchase look like a subscription about to lapse.
+        EventKind::Grant => SubscriptionUpdate {
+            plan: Some(event.plan),
             status: "active",
             cancelled_at: CancelledAt::Clear,
             period_end: event.expires_at,
         },
 
-        // Auto-renew turned off. On the stores this means "will not renew", not
-        // "access revoked" — the user keeps Pro until EXPIRATION lands at the
-        // end of the paid period. Same split as Stripe's subscription.updated
-        // vs subscription.deleted.
-        EventKind::Cancellation => SubscriptionUpdate {
+        // Auto-renew off. Same split as Stripe's subscription.updated vs
+        // subscription.deleted: flag it, keep access, wait for EXPIRED.
+        EventKind::AutoRenewOff => SubscriptionUpdate {
             plan: None,
             status: "active",
             cancelled_at: CancelledAt::Set,
             period_end: event.expires_at,
         },
 
-        // Lifetime. Distinct from the subscription branch above in two ways
-        // that both matter: the plan is founder_lifetime rather than pro (it
-        // is what models.rs resolves and what the welcome email keys off),
-        // and period_end stays None — a lifetime purchase has no end, and
-        // writing one would make it look like a subscription about to lapse.
-        EventKind::NonRenewingPurchase => SubscriptionUpdate {
-            plan: Some("founder_lifetime"),
+        EventKind::AutoRenewOn => SubscriptionUpdate {
+            plan: None,
             status: "active",
             cancelled_at: CancelledAt::Clear,
-            period_end: None,
-        },
-
-        EventKind::Expiration => SubscriptionUpdate {
-            plan: Some("free"),
-            status: "cancelled",
-            cancelled_at: CancelledAt::Set,
             period_end: event.expires_at,
         },
 
@@ -200,17 +220,24 @@ pub fn resolve(event: &IapEvent) -> SubscriptionUpdate {
             cancelled_at: CancelledAt::Leave,
             period_end: event.expires_at,
         },
+
+        EventKind::Expired | EventKind::Revoked => SubscriptionUpdate {
+            plan: Some("free"),
+            status: "cancelled",
+            cancelled_at: CancelledAt::Set,
+            period_end: event.expires_at,
+        },
     }
 }
 
 fn grants_access(update: &SubscriptionUpdate) -> bool {
-    update.plan == Some("pro")
+    matches!(update.plan, Some(plan) if plan != "free")
 }
 
 /// Guards the case where a user pays on the web and also has an old store
-/// subscription attached to the same account. A stale EXPIRATION from that
-/// store subscription must not revoke a live Stripe one. Grants still apply, so
-/// a genuine move from Stripe to IAP works.
+/// subscription attached to the same account. A stale EXPIRED from that store
+/// subscription must not revoke a live Stripe one. Grants still apply, so a
+/// genuine move from Stripe to IAP works.
 pub fn should_apply(stored_provider: Option<&str>, update: &SubscriptionUpdate) -> bool {
     if stored_provider == Some("stripe") && !grants_access(update) {
         return false;
@@ -220,61 +247,147 @@ pub fn should_apply(stored_provider: Option<&str>, update: &SubscriptionUpdate) 
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 
-/// Compares the shared secret without leaking its content through timing.
-///
-/// An empty `expected` never matches. `REVENUECAT_WEBHOOK_SECRET=` (present but
-/// blank, which is how .env.example ships it) reaches here as `Some("")`, and
-/// without this guard it would equal the empty string an unauthenticated caller
-/// sends by omitting the header entirely — opening the endpoint to anyone.
-fn secret_matches(expected: &str, provided: &str) -> bool {
-    if expected.is_empty() {
-        return false;
-    }
-    let (a, b) = (expected.as_bytes(), provided.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+#[derive(Deserialize)]
+struct SignedPayload {
+    #[serde(rename = "signedPayload")]
+    signed_payload: String,
 }
 
-/// RevenueCat webhook handler. RevenueCat sends the configured value verbatim
-/// in the Authorization header — there is no payload signature to verify.
-pub async fn revenuecat_webhook(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<StatusCode> {
-    let secret = state
-        .config
-        .revenuecat_webhook_secret
-        .as_deref()
-        .ok_or_else(|| {
-            tracing::warn!("revenuecat webhook: no webhook secret configured");
+/// App Store Server Notifications V2.
+///
+/// Unauthenticated by design and safe that way: the request body *is* the
+/// credential. A caller who cannot produce a payload signed by Apple's chain
+/// gets nothing through, which is a stronger guarantee than the shared header
+/// secret this endpoint used to compare — that secret sat in two dashboards
+/// and leaked to whoever could read either.
+pub async fn app_store_webhook(State(state): State<AppState>, body: Bytes) -> Result<StatusCode> {
+    let envelope: SignedPayload =
+        serde_json::from_slice(&body).map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let notification: apple::Notification =
+        apple::jws::verify(&envelope.signed_payload).map_err(|e| {
+            tracing::warn!("app store webhook: signature rejected — {e}");
             AppError::Unauthorized
         })?;
 
-    let provided = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default();
+    // Apple's own id for this delivery. Worth carrying into every log line:
+    // it is the only handle that ties what we saw to what Apple believes it
+    // sent, and retries repeat it.
+    let uuid = notification.notification_uuid.as_deref().unwrap_or("-");
 
-    if !secret_matches(secret, provided) {
-        tracing::warn!("revenuecat webhook: authorization mismatch");
-        return Err(AppError::Unauthorized);
-    }
+    let Some(kind) = kind_for(
+        &notification.notification_type,
+        notification.subtype.as_deref(),
+    ) else {
+        tracing::info!(
+            "app store webhook [{uuid}]: ignoring {} {:?}",
+            notification.notification_type,
+            notification.subtype
+        );
+        return Ok(StatusCode::OK);
+    };
 
-    let payload: Value =
-        serde_json::from_slice(&body).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    // The transaction is a JWS of its own, and the outer signature says
+    // nothing about it. Verifying only the envelope would leave the part that
+    // decides who gets what unchecked.
+    let Some(signed_tx) = notification
+        .data
+        .as_ref()
+        .and_then(|d| d.signed_transaction_info.as_deref())
+    else {
+        tracing::info!(
+            "app store webhook [{uuid}]: {} carried no transaction",
+            notification.notification_type
+        );
+        return Ok(StatusCode::OK);
+    };
 
-    let event = match parse_event(&payload) {
-        Parsed::Handle(e) => *e,
+    let tx: Transaction = apple::jws::verify(signed_tx).map_err(|e| {
+        tracing::warn!("app store webhook [{uuid}]: transaction signature rejected — {e}");
+        AppError::Unauthorized
+    })?;
+
+    handle(&state, kind, &tx, &format!("app store webhook [{uuid}]")).await?;
+
+    Ok(StatusCode::OK)
+}
+
+// ─── Client-side verification ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct VerifyRequest {
+    /// The `JWSTransaction` StoreKit handed the app.
+    pub signed_transaction: String,
+}
+
+/// The app reporting a purchase or a restore.
+///
+/// Being signed in is not what makes this trustworthy — the JWS is. The
+/// authenticated user is used for one thing: refusing to credit a transaction
+/// whose `appAccountToken` names somebody else. Without that check, signing
+/// into a second account on a device that has already bought Pro would let it
+/// claim the first account's purchase.
+pub async fn verify_transaction(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Json(req): Json<VerifyRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let tx: Transaction = apple::jws::verify(&req.signed_transaction).map_err(|e| {
+        tracing::warn!("iap verify: signature rejected for user {} — {e}", auth.id);
+        AppError::BadRequest("transaction signature is not valid".into())
+    })?;
+
+    let event = match event_from(EventKind::Grant, &tx) {
+        Parsed::Handle(e) => e,
         Parsed::Ignore(reason) => {
-            tracing::info!("revenuecat webhook: ignored ({reason})");
-            return Ok(StatusCode::OK);
+            tracing::info!("iap verify: ignored for user {} ({reason})", auth.id);
+            return Ok(Json(serde_json::json!({ "ok": true })));
         }
     };
 
-    let update = resolve(&event);
+    if event.user_id != auth.id {
+        tracing::warn!(
+            "iap verify: user {} posted a transaction belonging to {}",
+            auth.id,
+            event.user_id
+        );
+        return Err(AppError::Unauthorized);
+    }
+
+    apply(&state, &event, "iap verify").await?;
+
+    // A body rather than a bare 204: the app's HTTP client parses every
+    // response as JSON, and an empty one would throw on success.
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+// ─── Shared application ───────────────────────────────────────────────────────
+
+/// Builds the event from a verified transaction and writes it. Shared so the
+/// webhook and the client path can never disagree about what a purchase means.
+async fn handle(state: &AppState, kind: EventKind, tx: &Transaction, origin: &str) -> Result<()> {
+    match event_from(kind, tx) {
+        Parsed::Handle(event) => apply(state, &event, origin).await,
+        Parsed::Ignore(reason) => {
+            tracing::info!("{origin}: ignored ({reason})");
+            Ok(())
+        }
+    }
+}
+
+async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<()> {
+    // Sandbox purchases cost nothing. Accepting one in production is giving
+    // Pro away to anyone who can run the app against a sandbox Apple ID, so
+    // this is off unless deliberately switched on for store testing.
+    if event.environment == Environment::Sandbox && !state.config.apple_accept_sandbox {
+        tracing::warn!(
+            "{origin}: refused a sandbox transaction for user {} — set APPLE_ACCEPT_SANDBOX=true to allow",
+            event.user_id
+        );
+        return Ok(());
+    }
+
+    let update = resolve(event);
 
     let stored_provider = sqlx::query_scalar!(
         "SELECT payment_provider FROM subscription WHERE user_id = $1",
@@ -286,16 +399,14 @@ pub async fn revenuecat_webhook(
 
     if !should_apply(stored_provider.as_deref(), &update) {
         tracing::warn!(
-            "revenuecat webhook: skipped {:?} for user {} — row is owned by stripe",
+            "{origin}: skipped {:?} for user {} — row is owned by stripe",
             event.kind,
             event.user_id
         );
-        return Ok(StatusCode::OK);
+        return Ok(());
     }
 
-    apply_update(&state, &event, &update).await?;
-
-    Ok(StatusCode::OK)
+    apply_update(state, event, &update).await
 }
 
 async fn apply_update(
@@ -317,18 +428,17 @@ async fn apply_update(
                 ELSE cancelled_at
             END,
             current_period_end = COALESCE($5, current_period_end),
-            payment_provider = $6,
-            store_transaction_id = COALESCE($7, store_transaction_id),
-            store_product_id = COALESCE($8, store_product_id),
+            payment_provider = 'apple',
+            store_transaction_id = COALESCE($6, store_transaction_id),
+            store_product_id = COALESCE($7, store_product_id),
             updated_at = NOW()
-        WHERE user_id = $9
+        WHERE user_id = $8
         "#,
         update.plan,
         update.status,
         set_cancelled,
         clear_cancelled,
         update.period_end,
-        event.store.provider(),
         event.transaction_id,
         event.product_id,
         event.user_id,
@@ -341,7 +451,7 @@ async fn apply_update(
     // invisible until the user complained, so make it loud.
     if result.rows_affected() == 0 {
         tracing::error!(
-            "revenuecat webhook: no subscription row for user {} — {:?} dropped",
+            "iap: no subscription row for user {} — {:?} dropped",
             event.user_id,
             event.kind
         );
@@ -358,198 +468,296 @@ mod tests {
     use serde_json::json;
 
     const USER: &str = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    const MONTHLY: &str = "com.pomodoso.app.pro.monthly";
+    const ANNUAL: &str = "com.pomodoso.app.pro.annual";
+    const LIFETIME: &str = "com.pomodoso.app.founder.lifetime";
+    const EXPIRES_MS: i64 = 1_757_678_400_000;
 
-    fn payload(event_type: &str) -> Value {
+    fn tx_json() -> serde_json::Value {
         json!({
-            "api_version": "1.0",
-            "event": {
-                "type": event_type,
-                "id": "evt_1",
-                "app_user_id": USER,
-                "product_id": "pomodoso_pro_monthly",
-                "store": "APP_STORE",
-                "environment": "PRODUCTION",
-                "transaction_id": "txn_1",
-                "original_transaction_id": "orig_txn_1",
-                "purchased_at_ms": 1_755_000_000_000i64,
-                "expiration_at_ms": 1_757_678_400_000i64,
-                "entitlement_ids": ["pro"],
-            }
+            "transactionId": "txn_1",
+            "originalTransactionId": "orig_txn_1",
+            "bundleId": apple::BUNDLE_ID,
+            "productId": MONTHLY,
+            "purchaseDate": 1_755_000_000_000i64,
+            "expiresDate": EXPIRES_MS,
+            "type": "Auto-Renewable Subscription",
+            "appAccountToken": USER,
+            "inAppOwnershipType": "PURCHASED",
+            "environment": "Production",
         })
     }
 
-    fn handled(event_type: &str) -> IapEvent {
-        match parse_event(&payload(event_type)) {
+    fn tx_from(v: serde_json::Value) -> Transaction {
+        serde_json::from_value(v).expect("test transaction should deserialise")
+    }
+
+    fn tx() -> Transaction {
+        tx_from(tx_json())
+    }
+
+    fn handled(kind: EventKind, tx: &Transaction) -> IapEvent {
+        match event_from(kind, tx) {
             Parsed::Handle(e) => *e,
-            Parsed::Ignore(r) => panic!("expected {event_type} to be handled, ignored: {r}"),
+            Parsed::Ignore(r) => panic!("expected {kind:?} to be handled, ignored: {r}"),
         }
     }
 
-    // ─── Parsing ──────────────────────────────────────────────────────────────
+    // ─── Products ─────────────────────────────────────────────────────────────
 
     #[test]
-    fn parses_a_full_initial_purchase() {
-        let event = handled("INITIAL_PURCHASE");
+    fn every_product_we_sell_maps_to_a_plan() {
+        // These strings are the contract with App Store Connect. A typo here
+        // is a paying customer who gets nothing, and nothing else would fail.
+        assert_eq!(plan_for(MONTHLY), Some("pro"));
+        assert_eq!(plan_for(ANNUAL), Some("pro"));
+        assert_eq!(plan_for(LIFETIME), Some("founder_lifetime"));
+    }
 
-        assert_eq!(event.kind, EventKind::InitialPurchase);
+    #[test]
+    fn an_unknown_product_grants_nothing() {
+        assert_eq!(plan_for("com.pomodoso.app.something.else"), None);
+
+        let mut v = tx_json();
+        v["productId"] = json!("com.someone.else.pro");
+        assert_eq!(
+            event_from(EventKind::Grant, &tx_from(v)),
+            Parsed::Ignore("product we do not sell")
+        );
+    }
+
+    // ─── Notification vocabulary ──────────────────────────────────────────────
+
+    #[test]
+    fn purchase_shaped_notifications_grant() {
+        for (t, sub) in [
+            ("SUBSCRIBED", Some("INITIAL_BUY")),
+            ("SUBSCRIBED", Some("RESUBSCRIBE")),
+            ("DID_RENEW", None),
+            ("DID_RENEW", Some("BILLING_RECOVERY")),
+            ("DID_CHANGE_RENEWAL_PREF", Some("UPGRADE")),
+            ("ONE_TIME_CHARGE", None),
+        ] {
+            assert_eq!(kind_for(t, sub), Some(EventKind::Grant), "for {t} {sub:?}");
+        }
+    }
+
+    #[test]
+    fn renewal_status_splits_on_subtype() {
+        // Both arrive as DID_CHANGE_RENEWAL_STATUS. Reading the type alone
+        // would treat re-enabling auto-renew as cancelling it.
+        assert_eq!(
+            kind_for("DID_CHANGE_RENEWAL_STATUS", Some("AUTO_RENEW_DISABLED")),
+            Some(EventKind::AutoRenewOff)
+        );
+        assert_eq!(
+            kind_for("DID_CHANGE_RENEWAL_STATUS", Some("AUTO_RENEW_ENABLED")),
+            Some(EventKind::AutoRenewOn)
+        );
+        assert_eq!(kind_for("DID_CHANGE_RENEWAL_STATUS", None), None);
+    }
+
+    #[test]
+    fn failure_and_ending_notifications_map_as_expected() {
+        assert_eq!(
+            kind_for("DID_FAIL_TO_RENEW", Some("GRACE_PERIOD")),
+            Some(EventKind::BillingIssue)
+        );
+        assert_eq!(
+            kind_for("DID_FAIL_TO_RENEW", None),
+            Some(EventKind::BillingIssue)
+        );
+        assert_eq!(
+            kind_for("EXPIRED", Some("VOLUNTARY")),
+            Some(EventKind::Expired)
+        );
+        assert_eq!(kind_for("REFUND", None), Some(EventKind::Revoked));
+        assert_eq!(kind_for("REVOKE", None), Some(EventKind::Revoked));
+    }
+
+    #[test]
+    fn notifications_we_do_not_act_on_are_ignored() {
+        for t in [
+            "TEST",
+            "CONSUMPTION_REQUEST",
+            "PRICE_INCREASE",
+            "RENEWAL_EXTENDED",
+            "SUBSCRIPTION_PRICE_CONSENT_REQUEST",
+        ] {
+            assert_eq!(kind_for(t, None), None, "for {t}");
+        }
+    }
+
+    // ─── Building an event ────────────────────────────────────────────────────
+
+    #[test]
+    fn reads_a_full_subscription_transaction() {
+        let event = handled(EventKind::Grant, &tx());
+
         assert_eq!(event.user_id, Uuid::parse_str(USER).unwrap());
-        assert_eq!(event.store, Store::Apple);
-        assert_eq!(event.product_id.as_deref(), Some("pomodoso_pro_monthly"));
+        assert_eq!(event.plan, "pro");
+        assert_eq!(event.product_id, MONTHLY);
+        assert_eq!(event.environment, Environment::Production);
         assert_eq!(
             event.expires_at,
-            DateTime::from_timestamp_millis(1_757_678_400_000)
+            DateTime::from_timestamp_millis(EXPIRES_MS)
         );
     }
 
     #[test]
     fn prefers_the_original_transaction_id_over_the_renewal_one() {
-        // Each renewal mints a fresh transaction_id; only the original is stable
-        // across the life of the subscription, so that is what we key on.
+        // Each renewal mints a fresh transactionId; only the original is
+        // stable across the life of the subscription, so that is what we key on.
         assert_eq!(
-            handled("RENEWAL").transaction_id.as_deref(),
+            handled(EventKind::Grant, &tx()).transaction_id.as_deref(),
             Some("orig_txn_1")
         );
     }
 
     #[test]
-    fn falls_back_to_transaction_id_when_there_is_no_original() {
-        let mut p = payload("INITIAL_PURCHASE");
-        p["event"]["original_transaction_id"] = Value::Null;
-
-        match parse_event(&p) {
-            Parsed::Handle(e) => assert_eq!(e.transaction_id.as_deref(), Some("txn_1")),
-            Parsed::Ignore(r) => panic!("should have been handled: {r}"),
-        }
-    }
-
-    #[test]
-    fn maps_play_store_and_mac_app_store() {
-        for (raw, expected) in [
-            ("PLAY_STORE", Store::Google),
-            ("MAC_APP_STORE", Store::Apple),
-        ] {
-            let mut p = payload("INITIAL_PURCHASE");
-            p["event"]["store"] = json!(raw);
-            match parse_event(&p) {
-                Parsed::Handle(e) => assert_eq!(e.store, expected, "for store {raw}"),
-                Parsed::Ignore(r) => panic!("{raw} should have been handled: {r}"),
-            }
-        }
-    }
-
-    #[test]
-    fn ignores_anonymous_purchases_made_before_login() {
-        let mut p = payload("INITIAL_PURCHASE");
-        p["event"]["app_user_id"] = json!("$RCAnonymousID:8c9f2b1a");
+    fn falls_back_to_the_transaction_id_when_there_is_no_original() {
+        let mut v = tx_json();
+        v["originalTransactionId"] = json!(null);
 
         assert_eq!(
-            parse_event(&p),
-            Parsed::Ignore("app_user_id is not one of our user ids")
+            handled(EventKind::Grant, &tx_from(v))
+                .transaction_id
+                .as_deref(),
+            Some("txn_1")
         );
     }
 
     #[test]
-    fn ignores_event_types_we_do_not_act_on() {
-        for kind in ["TEST", "TRANSFER", "SUBSCRIBER_ALIAS"] {
-            assert_eq!(
-                parse_event(&payload(kind)),
-                Parsed::Ignore("unhandled event type"),
-                "for event {kind}"
-            );
-        }
-    }
+    fn a_transaction_from_another_app_is_refused() {
+        // Apple's signature proves the App Store issued the transaction, not
+        // that it was issued for us. Any other developer could otherwise
+        // present a genuinely signed purchase from their own app.
+        let mut v = tx_json();
+        v["bundleId"] = json!("com.someone.else.app");
 
-    #[test]
-    fn ignores_stores_we_do_not_sell_through() {
-        // Stripe purchases also flow through RevenueCat for some setups; ours
-        // are handled by billing.rs and must not be double-processed here.
-        let mut p = payload("INITIAL_PURCHASE");
-        p["event"]["store"] = json!("STRIPE");
-
-        assert_eq!(parse_event(&p), Parsed::Ignore("unknown store"));
-    }
-
-    #[test]
-    fn ignores_a_structurally_empty_body() {
         assert_eq!(
-            parse_event(&json!({})),
-            Parsed::Ignore("unhandled event type")
+            event_from(EventKind::Grant, &tx_from(v)),
+            Parsed::Ignore("transaction belongs to another app")
         );
     }
 
     #[test]
-    fn tolerates_a_missing_expiration() {
-        // Lifetime / non-expiring grants arrive without expiration_at_ms.
-        let mut p = payload("INITIAL_PURCHASE");
-        p["event"]["expiration_at_ms"] = Value::Null;
+    fn a_purchase_with_no_account_token_belongs_to_nobody() {
+        let mut v = tx_json();
+        v["appAccountToken"] = json!(null);
 
-        match parse_event(&p) {
-            Parsed::Handle(e) => assert_eq!(e.expires_at, None),
-            Parsed::Ignore(r) => panic!("should have been handled: {r}"),
-        }
+        assert_eq!(
+            event_from(EventKind::Grant, &tx_from(v)),
+            Parsed::Ignore("no appAccountToken tying this to one of our users")
+        );
+    }
+
+    #[test]
+    fn an_account_token_that_is_not_a_uuid_is_refused() {
+        let mut v = tx_json();
+        v["appAccountToken"] = json!("not-a-uuid");
+
+        assert_eq!(
+            event_from(EventKind::Grant, &tx_from(v)),
+            Parsed::Ignore("no appAccountToken tying this to one of our users")
+        );
+    }
+
+    #[test]
+    fn sandbox_is_recognised_rather_than_silently_treated_as_production() {
+        let mut v = tx_json();
+        v["environment"] = json!("Sandbox");
+
+        assert_eq!(
+            handled(EventKind::Grant, &tx_from(v)).environment,
+            Environment::Sandbox
+        );
+    }
+
+    #[test]
+    fn a_refunded_transaction_revokes_whatever_the_notification_claimed() {
+        // The trap: a REFUND can reach us carrying a transaction that still
+        // looks like a healthy purchase. revocationDate on the transaction is
+        // the authority, so even a Grant flips.
+        let mut v = tx_json();
+        v["revocationDate"] = json!(1_756_000_000_000i64);
+
+        let event = handled(EventKind::Grant, &tx_from(v));
+
+        assert_eq!(event.kind, EventKind::Revoked);
+        assert_eq!(resolve(&event).plan, Some("free"));
     }
 
     // ─── Event → state ────────────────────────────────────────────────────────
 
     #[test]
-    fn purchase_and_renewal_grant_pro() {
-        for kind in [
-            "INITIAL_PURCHASE",
-            "RENEWAL",
-            "PRODUCT_CHANGE",
-            "UNCANCELLATION",
-        ] {
-            let update = resolve(&handled(kind));
+    fn a_subscription_grant_activates_pro_until_the_period_end() {
+        let update = resolve(&handled(EventKind::Grant, &tx()));
 
-            assert_eq!(update.plan, Some("pro"), "for event {kind}");
-            assert_eq!(update.status, "active", "for event {kind}");
-            assert_eq!(update.cancelled_at, CancelledAt::Clear, "for event {kind}");
-        }
+        assert_eq!(update.plan, Some("pro"));
+        assert_eq!(update.status, "active");
+        assert_eq!(update.cancelled_at, CancelledAt::Clear);
+        assert_eq!(
+            update.period_end,
+            DateTime::from_timestamp_millis(EXPIRES_MS)
+        );
     }
 
     #[test]
     fn lifetime_grants_founder_lifetime_with_no_end_date() {
-        // The lifetime tier arrives as NON_RENEWING_PURCHASE, which this used
-        // to ignore outright — someone paying for it got nothing back. Two
-        // things separate it from a subscription: the plan is
-        // founder_lifetime, not pro, and there is no period end. Writing an
-        // expiry would make a permanent purchase look like a lapsing one.
-        let update = resolve(&handled("NON_RENEWING_PURCHASE"));
+        // Apple sends no expiresDate for a non-consumable. Writing one would
+        // make a permanent purchase look like a subscription about to lapse.
+        let mut v = tx_json();
+        v["productId"] = json!(LIFETIME);
+        v["expiresDate"] = json!(null);
+        v["type"] = json!("Non-Consumable");
+
+        let update = resolve(&handled(EventKind::Grant, &tx_from(v)));
 
         assert_eq!(update.plan, Some("founder_lifetime"));
         assert_eq!(update.status, "active");
-        assert_eq!(update.cancelled_at, CancelledAt::Clear);
         assert_eq!(update.period_end, None, "a lifetime purchase does not end");
     }
 
     #[test]
     fn cancellation_keeps_access_until_the_period_ends() {
-        // The trap: on the stores CANCELLATION means auto-renew off, not access
-        // revoked. Dropping the user to free here would cut off someone who has
-        // already paid for the rest of the month.
-        let update = resolve(&handled("CANCELLATION"));
+        // On the App Store, auto-renew off means "will not renew", not "access
+        // revoked". Dropping the user to free here would cut off someone who
+        // has already paid for the rest of the month.
+        let update = resolve(&handled(EventKind::AutoRenewOff, &tx()));
 
         assert_eq!(update.plan, None);
         assert_eq!(update.status, "active");
         assert_eq!(update.cancelled_at, CancelledAt::Set);
         assert_eq!(
             update.period_end,
-            DateTime::from_timestamp_millis(1_757_678_400_000)
+            DateTime::from_timestamp_millis(EXPIRES_MS)
         );
     }
 
     #[test]
-    fn expiration_is_what_actually_drops_the_user_to_free() {
-        let update = resolve(&handled("EXPIRATION"));
+    fn re_enabling_auto_renew_clears_the_cancellation() {
+        let update = resolve(&handled(EventKind::AutoRenewOn, &tx()));
 
-        assert_eq!(update.plan, Some("free"));
-        assert_eq!(update.status, "cancelled");
-        assert_eq!(update.cancelled_at, CancelledAt::Set);
+        assert_eq!(update.plan, None);
+        assert_eq!(update.status, "active");
+        assert_eq!(update.cancelled_at, CancelledAt::Clear);
     }
 
     #[test]
-    fn billing_issue_marks_past_due_without_revoking_the_plan() {
-        let update = resolve(&handled("BILLING_ISSUE"));
+    fn expiry_and_refund_are_what_actually_drop_the_user_to_free() {
+        for kind in [EventKind::Expired, EventKind::Revoked] {
+            let update = resolve(&handled(kind, &tx()));
+
+            assert_eq!(update.plan, Some("free"), "for {kind:?}");
+            assert_eq!(update.status, "cancelled", "for {kind:?}");
+            assert_eq!(update.cancelled_at, CancelledAt::Set, "for {kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_billing_issue_marks_past_due_without_revoking_the_plan() {
+        let update = resolve(&handled(EventKind::BillingIssue, &tx()));
 
         assert_eq!(update.plan, None);
         assert_eq!(update.status, "past_due");
@@ -559,59 +767,57 @@ mod tests {
     // ─── Stripe guard ─────────────────────────────────────────────────────────
 
     #[test]
-    fn a_stale_store_expiration_cannot_revoke_a_stripe_subscription() {
-        let expiration = resolve(&handled("EXPIRATION"));
-
-        assert!(!should_apply(Some("stripe"), &expiration));
-        assert!(!should_apply(
-            Some("stripe"),
-            &resolve(&handled("BILLING_ISSUE"))
-        ));
-        assert!(!should_apply(
-            Some("stripe"),
-            &resolve(&handled("CANCELLATION"))
-        ));
+    fn a_stale_store_expiry_cannot_revoke_a_stripe_subscription() {
+        for kind in [
+            EventKind::Expired,
+            EventKind::Revoked,
+            EventKind::BillingIssue,
+            EventKind::AutoRenewOff,
+        ] {
+            assert!(
+                !should_apply(Some("stripe"), &resolve(&handled(kind, &tx()))),
+                "{kind:?} should not touch a stripe-owned row"
+            );
+        }
     }
 
     #[test]
     fn a_stripe_user_can_still_move_to_a_store_subscription() {
-        let purchase = resolve(&handled("INITIAL_PURCHASE"));
+        assert!(should_apply(
+            Some("stripe"),
+            &resolve(&handled(EventKind::Grant, &tx()))
+        ));
+    }
 
-        assert!(should_apply(Some("stripe"), &purchase));
+    #[test]
+    fn lifetime_counts_as_a_grant_for_the_stripe_guard() {
+        // grants_access used to compare against "pro" literally, which made a
+        // lifetime purchase look like a revocation and left Stripe owning the
+        // row of someone who had just paid 99 dollars.
+        let mut v = tx_json();
+        v["productId"] = json!(LIFETIME);
+
+        assert!(should_apply(
+            Some("stripe"),
+            &resolve(&handled(EventKind::Grant, &tx_from(v)))
+        ));
     }
 
     #[test]
     fn store_owned_and_brand_new_rows_apply_every_event() {
-        for provider in [None, Some("apple"), Some("google")] {
+        for provider in [None, Some("apple")] {
             for kind in [
-                "INITIAL_PURCHASE",
-                "CANCELLATION",
-                "EXPIRATION",
-                "BILLING_ISSUE",
+                EventKind::Grant,
+                EventKind::AutoRenewOff,
+                EventKind::Expired,
+                EventKind::BillingIssue,
+                EventKind::Revoked,
             ] {
                 assert!(
-                    should_apply(provider, &resolve(&handled(kind))),
-                    "provider {provider:?} should apply {kind}"
+                    should_apply(provider, &resolve(&handled(kind, &tx()))),
+                    "provider {provider:?} should apply {kind:?}"
                 );
             }
         }
-    }
-
-    // ─── Auth ─────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn secret_comparison_accepts_only_an_exact_match() {
-        assert!(secret_matches("s3cret", "s3cret"));
-        assert!(!secret_matches("s3cret", "s3creT"));
-        assert!(!secret_matches("s3cret", "s3cret "));
-        assert!(!secret_matches("s3cret", ""));
-        assert!(!secret_matches("", "s3cret"));
-    }
-
-    #[test]
-    fn a_blank_configured_secret_does_not_authorize_a_blank_header() {
-        // Both sides empty is the dangerous case: REVENUECAT_WEBHOOK_SECRET=
-        // set but blank, against a caller that just omits the header.
-        assert!(!secret_matches("", ""));
     }
 }

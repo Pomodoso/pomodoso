@@ -1,3 +1,4 @@
+mod apple;
 mod config;
 mod db;
 mod email;
@@ -90,12 +91,15 @@ async fn main() -> anyhow::Result<()> {
         // Public routes — no auth
         .route("/health", get(routes::health::health))
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
-        .route(
-            "/webhooks/revenuecat",
-            post(routes::iap::revenuecat_webhook),
-        )
+        // App Store Server Notifications. No auth layer and none needed: the
+        // body is a JWS signed by Apple, and the signature is the credential.
+        .route("/webhooks/app-store", post(routes::iap::app_store_webhook))
         // Protected routes — auth applied per-route to avoid affecting public routes after merge
         .route("/me", get(routes::me::get_me).route_layer(auth.clone()))
+        .route(
+            "/iap/verify",
+            post(routes::iap::verify_transaction).route_layer(auth.clone()),
+        )
         .route(
             "/me/entitlements",
             get(routes::me::get_entitlements).route_layer(auth.clone()),

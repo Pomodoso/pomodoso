@@ -1,103 +1,95 @@
-import Purchases, { LOG_LEVEL, type CustomerInfo, type PurchasesPackage } from 'react-native-purchases';
+import { TokenApiClient } from '@pomodoso/api';
 
-// RevenueCat sits between the App Store and our backend. The store tells
-// RevenueCat about a purchase, RevenueCat webhooks /iap/webhook, and that
-// writes the subscription row the entitlements resolve from.
+import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
+import * as iap from '@/modules/pomodoso-iap';
+import type { IapProduct, SignedTransaction } from '@/modules/pomodoso-iap';
+
+// Purchases go straight to StoreKit, and the proof goes straight to our
+// backend. There is no billing service in between.
 //
-// The app never decides who is Pro. It asks the store to complete a purchase
-// and then re-reads entitlements from our own /me — because a client that
-// grants itself access is a client that can be made to grant itself access.
-// CustomerInfo is used only to know whether a purchase went through, never
-// as the source of truth for what the user may do.
+// The app never decides who is Pro. StoreKit hands it a transaction signed by
+// Apple; the backend verifies that signature against Apple's root certificate
+// and writes the subscription row the entitlements resolve from. What the
+// purchase sheet returned is only ever used to know whether to ask.
+//
+// The ordering below is load-bearing: a transaction is finished only *after*
+// the backend accepts it. Anything left unfinished is handed back by Apple on
+// the next launch, so a dropped request or a crash mid-purchase becomes a
+// retry rather than someone who paid and got nothing.
 
-const API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY;
+/** Our products, in the order the paywall shows them. */
+export const PRODUCT_IDS = [
+  'com.pomodoso.app.pro.monthly',
+  'com.pomodoso.app.pro.annual',
+  'com.pomodoso.app.founder.lifetime',
+] as const;
 
-/** RevenueCat's own identifier for the bundle of products we sell. Configured
- *  in their dashboard; the app asks for "the current offering" rather than
- *  naming products, so pricing and packaging can change without a release. */
-export const OFFERING_ID = 'default';
-
-let configured = false;
+export type PurchaseOutcome =
+  | 'purchased'
+  /** The most common outcome of opening a paywall. Not an error. */
+  | 'cancelled'
+  /** Ask to Buy, or a payment method needing action. May land hours later. */
+  | 'pending'
+  /** Charged, but the backend hasn't confirmed it yet. Apple will re-deliver. */
+  | 'unverified'
+  | 'failed';
 
 export function isPurchasesConfigured(): boolean {
-  return Boolean(API_KEY);
+  return iap.isAvailable() && Boolean(API_URL);
 }
 
 /**
- * Starts the SDK. Safe to call more than once.
+ * The products to show, straight from the App Store — localised titles and
+ * prices in the user's own currency.
  *
- * Deliberately does not throw when the key is missing: a build without one
- * (a local dev build, or CI) should run with purchasing unavailable rather
- * than crash on launch. Callers check isPurchasesConfigured().
+ * StoreKit returns them in arbitrary order, so they are re-sorted into
+ * PRODUCT_IDS order here. Anything the store doesn't return (not yet approved,
+ * unavailable in this storefront) simply doesn't appear.
  */
-export function configurePurchases(): void {
-  if (configured || !API_KEY) return;
-  Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.ERROR);
-  Purchases.configure({ apiKey: API_KEY });
-  configured = true;
-}
-
-/**
- * Ties store purchases to our account.
- *
- * The webhook rejects any event whose app_user_id isn't one of our UUIDs
- * (iap.rs's parse_event), so without this every purchase is invisible to the
- * backend. A purchase made before signing in carries RevenueCat's anonymous
- * id; logging in afterwards triggers a TRANSFER and re-fires the events under
- * the real id, which is why buying-then-signing-in still resolves.
- */
-export async function identifyPurchaser(userId: string): Promise<void> {
-  if (!configured) return;
+export async function loadProducts(): Promise<IapProduct[]> {
   try {
-    await Purchases.logIn(userId);
+    const products = await iap.getProducts([...PRODUCT_IDS]);
+    return [...products].sort(
+      (a, b) => productRank(a.id) - productRank(b.id),
+    );
   } catch (err) {
-    console.warn('[purchases] logIn failed', err);
-  }
-}
-
-/** Detaches the account on sign-out, so a second user on the same device
- *  doesn't inherit the first one's purchases in the SDK's local cache. */
-export async function forgetPurchaser(): Promise<void> {
-  if (!configured) return;
-  try {
-    await Purchases.logOut();
-  } catch (err) {
-    console.warn('[purchases] logOut failed', err);
-  }
-}
-
-/** The packages to show, straight from the store — localised titles and
- *  prices in the user's own currency. Hardcoding prices here would show the
- *  wrong ones to anyone outside the US and go stale on every price change. */
-export async function loadPackages(): Promise<PurchasesPackage[]> {
-  if (!configured) return [];
-  try {
-    const offerings = await Purchases.getOfferings();
-    return offerings.current?.availablePackages ?? [];
-  } catch (err) {
-    console.warn('[purchases] getOfferings failed', err);
+    console.warn('[purchases] getProducts failed', err);
     return [];
   }
 }
 
-export type PurchaseOutcome = 'purchased' | 'cancelled' | 'failed';
+function productRank(id: string): number {
+  const index = PRODUCT_IDS.indexOf(id as (typeof PRODUCT_IDS)[number]);
+  return index === -1 ? PRODUCT_IDS.length : index;
+}
 
 /**
- * Runs the store's purchase sheet.
+ * Runs the store's purchase sheet and reports the result to the backend.
  *
- * A user cancelling is not an error and must not surface as one — it is the
- * most common outcome of opening a paywall, and an error alert for it reads
- * as a broken app.
+ * `userId` becomes the transaction's `appAccountToken`, which Apple then
+ * carries inside every signed payload about this purchase for as long as it
+ * exists — including the renewal notifications that arrive years later, with
+ * the app long since closed. It is the only thing tying an Apple ID to one of
+ * our accounts, so a purchase made without it is invisible to the backend.
  */
-export async function buy(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
+export async function buy(
+  productId: string,
+  userId: string,
+  accessToken: string,
+): Promise<PurchaseOutcome> {
+  let result;
   try {
-    await Purchases.purchasePackage(pkg);
-    return 'purchased';
+    result = await iap.purchase(productId, userId);
   } catch (err) {
-    if ((err as { userCancelled?: boolean }).userCancelled) return 'cancelled';
     console.warn('[purchases] purchase failed', err);
     return 'failed';
   }
+
+  if (result.status !== 'purchased' || !result.transaction) {
+    return result.status;
+  }
+
+  return (await deliver(result.transaction, accessToken)) ? 'purchased' : 'unverified';
 }
 
 /**
@@ -105,14 +97,91 @@ export async function buy(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
  *
  * Required by App Store review, not optional: an app that sells anything
  * without a restore path is rejected. It also covers the real cases —
- * reinstalling, a new device, or an account whose webhook never landed.
+ * reinstalling, a new device, or a purchase whose delivery never landed.
+ *
+ * Returns how many the backend accepted, which is what tells the UI apart from
+ * "nothing to restore".
  */
-export async function restore(): Promise<CustomerInfo | null> {
-  if (!configured) return null;
+export async function restorePurchases(accessToken: string): Promise<number> {
+  let transactions: SignedTransaction[];
   try {
-    return await Purchases.restorePurchases();
+    transactions = await iap.restore();
   } catch (err) {
     console.warn('[purchases] restore failed', err);
-    return null;
+    return 0;
   }
+
+  const applied = await Promise.all(transactions.map(tx => deliver(tx, accessToken)));
+  return applied.filter(Boolean).length;
+}
+
+/**
+ * Picks up anything Apple is still holding: a purchase whose delivery failed
+ * last run, or one made on another device.
+ *
+ * Silent — no password prompt — so it is safe to call on launch and whenever a
+ * session appears.
+ */
+export async function drainPendingTransactions(accessToken: string): Promise<void> {
+  try {
+    for (const tx of await iap.currentEntitlements()) {
+      await deliver(tx, accessToken);
+    }
+  } catch (err) {
+    console.warn('[purchases] draining pending transactions failed', err);
+  }
+}
+
+/**
+ * Watches for transactions that arrive outside a purchase call — renewals, an
+ * Ask to Buy approved an hour later, a purchase made on another device.
+ *
+ * The token is read when the event fires rather than captured here: these
+ * arrive minutes to months after registration, by which time a token captured
+ * at startup would be long expired.
+ *
+ * Returns an unsubscribe function.
+ */
+export function observeTransactions(): () => void {
+  const subscription = iap.addTransactionListener(tx => {
+    void (async () => {
+      const token = await currentAccessToken();
+      // Nothing to do while signed out. The transaction stays unfinished, so
+      // Apple offers it again once there is a session to attach it to.
+      if (!token) return;
+      await deliver(tx, token);
+    })();
+  });
+
+  return () => subscription?.remove();
+}
+
+/**
+ * Sends one transaction to the backend and, only if it is accepted, tells
+ * StoreKit it has been delivered.
+ *
+ * Returning false without finishing is the whole point: an unfinished
+ * transaction is Apple's own retry queue, and it costs nothing to leave one
+ * there. Finishing on failure would throw the receipt away.
+ */
+async function deliver(tx: SignedTransaction, accessToken: string): Promise<boolean> {
+  if (!API_URL) return false;
+
+  try {
+    await new TokenApiClient(API_URL, accessToken).post('/iap/verify', {
+      signed_transaction: tx.jws,
+    });
+  } catch (err) {
+    console.warn('[purchases] backend did not accept transaction', err);
+    return false;
+  }
+
+  await iap.finish(tx.id);
+  return true;
+}
+
+async function currentAccessToken(): Promise<string | null> {
+  if (!isAuthConfigured()) return null;
+  const { data } = await getMobileSupabase().auth.getSession();
+  return data.session?.access_token ?? null;
 }

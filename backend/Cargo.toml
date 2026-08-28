@@ -35,5 +35,14 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 
+# Apple signs App Store notifications and StoreKit transactions with a
+# certificate chain carried in the JWS header. Verifying that chain against
+# Apple's pinned root is what lets us trust a purchase without a middleman.
+base64 = "0.22"
+x509-parser = { version = "0.16", features = ["verify"] }
+
 [dev-dependencies]
 axum-test = "20"
+# Mints a throwaway CA chain so the JWS verifier can be tested against
+# payloads we sign ourselves — including the ones it must reject.
+rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
