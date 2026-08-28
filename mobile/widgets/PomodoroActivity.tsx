@@ -20,30 +20,31 @@ export interface PomodoroActivityProps {
   pausedAtMs: number | null; // set only while paused
 }
 
-function kindLabel(mode: PomodoroActivityProps['mode'], kind: PomodoroActivityProps['kind']): string {
-  if (mode === 'stopwatch') return 'Stopwatch';
-  if (kind === 'short_break') return 'Short break';
-  if (kind === 'long_break') return 'Long break';
-  return 'Focus session';
-}
-
-function kindIcon(kind: PomodoroActivityProps['kind']): string {
-  return kind === 'focus' ? '🍅' : '☕';
-}
-
-// STOPWATCH_HORIZON: Text's timerInterval needs a real upper bound even for
-// an open-ended stopwatch (SwiftUI has no "count up forever" mode). Past
-// this bound the native timer stops advancing while the app's own timer
-// keeps going, visibly desyncing the Lock Screen/Dynamic Island — an
-// earlier version of this used 24h, which Greptile correctly flagged as
-// reachable by a real (if unusual) continuously-running stopwatch session.
-// 30 days is comfortably beyond any plausible single session without
-// adding the complexity of periodically reissuing update() to push the
-// horizon forward — nobody runs one uninterrupted stopwatch for a month.
-const STOPWATCH_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
-
+// Everything this function needs lives inside it, and that is not a style
+// choice — it is the only thing that works.
+//
+// The 'widget' directive makes babel-preset-expo replace this function with a
+// string of its own source (params + body, nothing else) which the native
+// side evaluates at render time. Module scope does not travel. Helpers and
+// constants declared outside were ReferenceErrors the moment the Live
+// Activity tried to draw, and a throw here produces no nodes at all — which
+// iOS renders as an empty banner on the Lock Screen with no error anywhere.
 const PomodoroActivity = (props: PomodoroActivityProps, environment: LiveActivityEnvironment) => {
   'widget';
+  // Text's timerInterval needs a real upper bound even for an open-ended
+  // stopwatch (SwiftUI has no "count up forever"). Past this the native timer
+  // stops advancing while the app's keeps going. 30 days is beyond any
+  // plausible single session.
+  const STOPWATCH_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
+  const label =
+    props.mode === 'stopwatch'
+      ? 'Stopwatch'
+      : props.kind === 'short_break'
+        ? 'Short break'
+        : props.kind === 'long_break'
+          ? 'Long break'
+          : 'Focus session';
+  const icon = props.kind === 'focus' ? '🍅' : '☕';
   const accentColor = environment.colorScheme === 'dark' ? '#FFFFFF' : '#C8553D';
   const lower = new Date(props.startedAtMs);
   const upper =
@@ -52,8 +53,6 @@ const PomodoroActivity = (props: PomodoroActivityProps, environment: LiveActivit
       : new Date(props.startedAtMs + STOPWATCH_HORIZON_MS);
   const pauseTime = props.pausedAtMs != null ? new Date(props.pausedAtMs) : undefined;
   const countsDown = props.plannedDurationSeconds != null;
-  const label = kindLabel(props.mode, props.kind);
-  const icon = kindIcon(props.kind);
 
   const timerText = (size: number) => (
     <Text timerInterval={{ lower, upper }} countsDown={countsDown} pauseTime={pauseTime} modifiers={[font({ size, weight: 'bold' })]} />
