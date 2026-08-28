@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- How `make archive` exports the .ipa that goes to TestFlight.
+
+       app-store-connect is the distribution channel, not a promise to
+       publish: a build uploaded this way lands in TestFlight and stays
+       there until it is explicitly submitted for review. -->
+  <key>method</key>
+  <string>app-store-connect</string>
+
+  <key>teamID</key>
+  <string>35392GG43S</string>
+
+  <!-- Xcode resolves the distribution certificate and provisioning profiles
+       itself, including the widget extension's. Managing them by hand means
+       a second set of files to keep in sync every time an entitlement
+       changes, and the widget target makes that two sets. -->
+  <key>signingStyle</key>
+  <string>automatic</string>
+
+  <!-- Ships dSYMs so crash reports arrive symbolicated. Without this a stack
+       trace from a tester is a list of hex addresses. -->
+  <key>uploadSymbols</key>
+  <true/>
+
+  <!-- Off deliberately. Bitcode is long deprecated and Apple no longer
+       accepts it; leaving it on produces a warning at best. -->
+  <key>uploadBitcode</key>
+  <false/>
+
+  <key>destination</key>
+  <string>export</string>
+</dict>
+</plist>

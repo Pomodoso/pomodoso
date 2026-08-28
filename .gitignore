@@ -17,3 +17,5 @@ extra_files
 design
 test-results/
 playwright-report/
+# mobile archive/export output — a .xcarchive and a 23 MB .ipa per build
+mobile/build/

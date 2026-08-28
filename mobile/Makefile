@@ -15,7 +15,7 @@ BUILD   := $(shell node -p "require('./app.json').expo.ios.buildNumber")
 DEVICE ?=
 PORT   ?= 8084
 
-.PHONY: help devices ios ios-dev sim install prebuild version
+.PHONY: help devices ios ios-dev sim install prebuild version archive upload testflight bump
 
 help:
 	@echo "Pomodoso mobile — $(VERSION) (build $(BUILD))"
@@ -29,6 +29,12 @@ help:
 	@echo "  make prebuild       regenerate ios/ and android/ from app.json"
 	@echo
 	@echo "  DEVICE=<udid> selects a device; PORT=<n> moves Metro."
+	@echo
+	@echo "TestFlight:"
+	@echo "  make bump           increment ios.buildNumber"
+	@echo "  make archive        build + export a signed .ipa"
+	@echo "  make upload         send the .ipa to App Store Connect"
+	@echo "  make testflight     bump, archive and upload in one go"
 
 devices:
 	@xcrun xctrace list devices 2>/dev/null | grep -i iphone | grep -v Simulator || echo "no iPhone connected"
@@ -69,3 +75,62 @@ prebuild:
 version:
 	@echo "version    $(VERSION)   (marketing version, shown in the App Store)"
 	@echo "build      $(BUILD)     (must increase on every upload of the same version)"
+
+# ─── TestFlight ───────────────────────────────────────────────────────────────
+#
+# Local, no EAS. Three steps that can each be run alone, because when an
+# upload fails it is almost never the build that was wrong.
+#
+# One-time setup, both in App Store Connect and both yours to do:
+#   1. Create the app (bundle id com.pomodoso.app).
+#   2. Users and Access → Integrations → App Store Connect API → generate a
+#      key with the "App Manager" role. Save the .p8 to
+#      ~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8 and note the Key ID
+#      and Issuer ID — the .p8 downloads exactly once.
+#
+# Then export these (a shell profile, not this file — the key id and issuer
+# are account credentials and this file is public):
+#   export ASC_KEY_ID=…
+#   export ASC_ISSUER_ID=…
+
+ARCHIVE := build/Pomodoso.xcarchive
+IPA_DIR := build/ipa
+
+# App Store Connect rejects a second upload carrying a buildNumber it has
+# already seen, even after the first was deleted. Rejection happens after the
+# whole upload, so it is worth spending a second here rather than ten minutes
+# there.
+bump:
+	@node -e "const fs=require('fs'),p='app.json',c=JSON.parse(fs.readFileSync(p));\
+	  const n=String(Number(c.expo.ios.buildNumber||0)+1);c.expo.ios.buildNumber=n;\
+	  fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');console.log('buildNumber →',n)"
+	npx expo prebuild --platform ios
+
+archive:
+	@rm -rf $(ARCHIVE) $(IPA_DIR)
+	cd ios && xcodebuild archive \
+	  -workspace Pomodoso.xcworkspace \
+	  -scheme Pomodoso \
+	  -configuration Release \
+	  -destination "generic/platform=iOS" \
+	  -archivePath ../$(ARCHIVE) \
+	  -allowProvisioningUpdates
+	xcodebuild -exportArchive \
+	  -archivePath $(ARCHIVE) \
+	  -exportOptionsPlist ExportOptions.plist \
+	  -exportPath $(IPA_DIR) \
+	  -allowProvisioningUpdates
+	@echo "→ $(IPA_DIR)/Pomodoso.ipa"
+
+upload:
+	@test -n "$$ASC_KEY_ID"    || (echo "ASC_KEY_ID is not set — see the Makefile header"; exit 1)
+	@test -n "$$ASC_ISSUER_ID" || (echo "ASC_ISSUER_ID is not set — see the Makefile header"; exit 1)
+	@test -f $(IPA_DIR)/Pomodoso.ipa || (echo "no .ipa — run 'make archive' first"; exit 1)
+	xcrun altool --upload-app \
+	  --type ios \
+	  --file $(IPA_DIR)/Pomodoso.ipa \
+	  --apiKey $$ASC_KEY_ID \
+	  --apiIssuer $$ASC_ISSUER_ID
+	@echo "→ uploaded. Processing in App Store Connect takes a few minutes."
+
+testflight: bump archive upload
