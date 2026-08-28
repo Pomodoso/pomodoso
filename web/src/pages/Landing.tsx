@@ -6,7 +6,7 @@ import { Seo } from '../seo.tsx'
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/pomodoso/kloaflkoffpkpldhaipegeabhhkijhbj'
 const ACCENT = '#f97316'
-const CONTACT = 'hello@pomodose.app'
+const CONTACT = 'hello@pomodoso.com'
 
 const card: React.CSSProperties = {
   background: 'linear-gradient(150deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.02) 100%)',

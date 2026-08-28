@@ -16,7 +16,7 @@ export default function Gdpr() {
             },
             {
               title: 'Data controller',
-              body: 'The data controller for Pomodoso Pro cloud services is the Pomodoso team. You can contact us at hello@pomodose.app for any data-related requests.',
+              body: 'The data controller for Pomodoso Pro cloud services is the Pomodoso team. You can contact us at privacy@pomodoso.com for any data-related requests.',
             },
             {
               title: 'What data we collect (Pro only)',
@@ -32,7 +32,7 @@ export default function Gdpr() {
             },
             {
               title: 'Your rights',
-              body: 'As an EU resident, you have the right to: access your personal data, correct inaccurate data, request deletion of your data, restrict or object to processing, and data portability. To exercise any of these rights, contact us at hello@pomodose.app.',
+              body: 'As an EU resident, you have the right to: access your personal data, correct inaccurate data, request deletion of your data, restrict or object to processing, and data portability. To exercise any of these rights, contact us at privacy@pomodoso.com.',
             },
             {
               title: 'Data transfers',
