@@ -79,7 +79,10 @@ export interface Entitlements {
 
 /** Where a subscription was bought. Drives the manage-subscription affordance
  *  only — never read this to decide whether a feature is enabled. */
-export type PaymentProvider = 'stripe' | 'apple' | 'google';
+/** `apple_sandbox` is a real purchase flow that moved no money: App Review and
+ *  TestFlight both buy through Apple's sandbox. Kept distinct so those grants
+ *  can be found later rather than passing for revenue. */
+export type PaymentProvider = 'stripe' | 'apple' | 'apple_sandbox' | 'google';
 
 export interface BillingInfo {
   payment_provider: PaymentProvider | null;
