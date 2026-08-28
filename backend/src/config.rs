@@ -22,8 +22,8 @@ pub struct Config {
     pub revenuecat_webhook_secret: Option<String>,
 
     // Optional — emails won't send without this
-    pub resend_api_key: Option<String>,
-    pub resend_from_email: Option<String>,
+    pub postmark_server_token: Option<String>,
+    pub postmark_from_email: Option<String>,
 }
 
 impl Config {
@@ -51,8 +51,15 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
 
-            resend_api_key: std::env::var("RESEND_API_KEY").ok(),
-            resend_from_email: std::env::var("RESEND_FROM_EMAIL").ok(),
+            // A blank value counts as unset, same as the RevenueCat secret above:
+            // Railway keeps emptied variables rather than removing them, and an
+            // empty token would send every request to Postmark to be rejected.
+            postmark_server_token: std::env::var("POSTMARK_SERVER_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            postmark_from_email: std::env::var("POSTMARK_FROM_EMAIL")
+                .ok()
+                .filter(|s| !s.is_empty()),
         };
 
         if cfg.stripe_secret_key.is_none() {
@@ -61,8 +68,8 @@ impl Config {
         if cfg.revenuecat_webhook_secret.is_none() {
             tracing::warn!("REVENUECAT_WEBHOOK_SECRET not set — store purchases will be rejected");
         }
-        if cfg.resend_api_key.is_none() {
-            tracing::warn!("RESEND_API_KEY not set — emails will not be sent");
+        if cfg.postmark_server_token.is_none() {
+            tracing::warn!("POSTMARK_SERVER_TOKEN not set — emails will not be sent");
         }
 
         Ok(cfg)
