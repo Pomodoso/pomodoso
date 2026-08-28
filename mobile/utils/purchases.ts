@@ -133,6 +133,34 @@ export async function drainPendingTransactions(accessToken: string): Promise<voi
 }
 
 /**
+ * Drains whatever Apple is holding whenever a session appears.
+ *
+ * Subscribes to Supabase directly rather than living in a `useEffect`, because
+ * `useAuth` is a plain hook and not a context: every component that calls it
+ * runs its own copy of every effect. On the account screen that is three live
+ * instances, so a drain placed there fired three times per sign-in — three
+ * POSTs and three writes for one event. Confirmed in production logs, as two
+ * identical `iap verify` lines a millisecond apart.
+ *
+ * Only SIGNED_IN and INITIAL_SESSION are acted on. TOKEN_REFRESHED fires
+ * roughly hourly and re-posting every owned entitlement on that clock buys
+ * nothing.
+ *
+ * Returns an unsubscribe function.
+ */
+export function observeSignIn(): () => void {
+  if (!isAuthConfigured()) return () => {};
+
+  const { data } = getMobileSupabase().auth.onAuthStateChange((event, session) => {
+    if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
+    const token = session?.access_token;
+    if (token) void drainPendingTransactions(token);
+  });
+
+  return () => data.subscription.unsubscribe();
+}
+
+/**
  * Watches for transactions that arrive outside a purchase call — renewals, an
  * Ask to Buy approved an hour later, a purchase made on another device.
  *
