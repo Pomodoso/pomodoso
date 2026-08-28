@@ -219,13 +219,17 @@ export function useAuth(): AuthState {
 
   // Picks up anything Apple is still holding for this Apple ID: a purchase
   // whose delivery failed last run, or one made on another device. Runs on
-  // every session change rather than once at mount, since the user can sign in
-  // long after launch — and buying before signing in is a real path, which
-  // this is what recovers.
+  // sign-in rather than once at mount, since the user can sign in long after
+  // launch.
+  //
+  // Keyed on the user rather than the token deliberately: Supabase rotates the
+  // access token roughly hourly, and keying on that would re-post every owned
+  // entitlement once an hour for no gain.
   useEffect(() => {
     const token = session?.access_token;
     if (token) void drainPendingTransactions(token);
-  }, [session?.access_token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id]);
 
   const refreshEntitlements = useCallback(async () => {
     const token = session?.access_token;

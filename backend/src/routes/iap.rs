@@ -55,7 +55,17 @@ fn plan_for(product_id: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
     /// Bought, renewed, resubscribed, or switched between our two plans.
+    /// Only ever comes from a notification, so it is safe to read it as
+    /// "auto-renew is on" and clear a previous cancellation.
     Grant,
+    /// The app reporting that this Apple ID owns the product.
+    ///
+    /// Distinct from `Grant` because it says nothing about auto-renew: the app
+    /// re-asserts ownership on every sign-in, and StoreKit keeps reporting a
+    /// cancelled subscription as owned until its period ends. Treating that as
+    /// a grant would wipe the cancellation flag `AUTO_RENEW_DISABLED` had set,
+    /// and the account screen would quietly claim the plan still renews.
+    Confirm,
     /// Auto-renew turned off. On the App Store this means "will not renew",
     /// *not* "access revoked" — the user keeps Pro until EXPIRED lands at the
     /// end of the period they already paid for.
@@ -168,7 +178,9 @@ pub fn event_from(kind: EventKind, tx: &Transaction) -> Parsed {
     // Ignoring rather than revoking is deliberate: it can't be weaponised in
     // either direction, and a genuinely missed expiry is Apple's retry to fix,
     // not this path's.
-    if kind == EventKind::Grant && matches!(tx.expires_at(), Some(end) if end <= Utc::now()) {
+    if matches!(kind, EventKind::Grant | EventKind::Confirm)
+        && matches!(tx.expires_at(), Some(end) if end <= Utc::now())
+    {
         return Parsed::Ignore("grant for a period that already ended");
     }
 
@@ -211,6 +223,16 @@ pub fn resolve(event: &IapEvent) -> SubscriptionUpdate {
             plan: Some(event.plan),
             status: "active",
             cancelled_at: CancelledAt::Clear,
+            period_end: event.expires_at,
+        },
+
+        // Same access, but the cancellation flag is left alone: the app
+        // re-asserts ownership on every sign-in, and a subscription with
+        // auto-renew already off is still owned until its period ends.
+        EventKind::Confirm => SubscriptionUpdate {
+            plan: Some(event.plan),
+            status: "active",
+            cancelled_at: CancelledAt::Leave,
             period_end: event.expires_at,
         },
 
@@ -353,7 +375,7 @@ pub async fn verify_transaction(
         AppError::BadRequest("transaction signature is not valid".into())
     })?;
 
-    let event = match event_from(EventKind::Grant, &tx) {
+    let event = match event_from(EventKind::Confirm, &tx) {
         Parsed::Handle(e) => e,
         Parsed::Ignore(reason) => {
             tracing::info!("iap verify: ignored for user {} ({reason})", auth.id);
@@ -707,6 +729,33 @@ mod tests {
     }
 
     #[test]
+    fn confirming_ownership_grants_without_clearing_a_cancellation() {
+        // The app re-asserts ownership on every sign-in, and StoreKit keeps
+        // reporting a cancelled subscription as owned until its period ends.
+        // Treating that as a grant would wipe the flag AUTO_RENEW_DISABLED set
+        // and the account screen would claim the plan still renews.
+        let update = resolve(&handled(EventKind::Confirm, &tx()));
+
+        assert_eq!(update.plan, Some("pro"));
+        assert_eq!(update.status, "active");
+        assert_eq!(update.cancelled_at, CancelledAt::Leave);
+    }
+
+    #[test]
+    fn only_a_notification_can_clear_a_cancellation() {
+        // Restated as the invariant it is: nothing the app posts may undo the
+        // cancellation, because the app cannot know that auto-renew is back on.
+        assert_eq!(
+            resolve(&handled(EventKind::Grant, &tx())).cancelled_at,
+            CancelledAt::Clear
+        );
+        assert_ne!(
+            resolve(&handled(EventKind::Confirm, &tx())).cancelled_at,
+            CancelledAt::Clear
+        );
+    }
+
+    #[test]
     fn a_grant_whose_period_already_ended_is_refused() {
         // The replay this exists to stop: /iap/verify accepts any Apple-signed
         // transaction the app posts, and entitlements resolve from `plan`
@@ -716,10 +765,15 @@ mod tests {
         let mut v = tx_json();
         v["expiresDate"] = json!(LAPSED_MS);
 
-        assert_eq!(
-            event_from(EventKind::Grant, &tx_from(v)),
-            Parsed::Ignore("grant for a period that already ended")
-        );
+        // Both directions: the replay arrives as Confirm, but a stale
+        // notification must not grant either.
+        for kind in [EventKind::Grant, EventKind::Confirm] {
+            assert_eq!(
+                event_from(kind, &tx_from(v.clone())),
+                Parsed::Ignore("grant for a period that already ended"),
+                "for {kind:?}"
+            );
+        }
     }
 
     #[test]
@@ -898,6 +952,7 @@ mod tests {
         for provider in [None, Some("apple")] {
             for kind in [
                 EventKind::Grant,
+                EventKind::Confirm,
                 EventKind::AutoRenewOff,
                 EventKind::Expired,
                 EventKind::BillingIssue,
