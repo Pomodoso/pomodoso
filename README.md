@@ -114,6 +114,31 @@ team it expired after seven days.
 `ios.buildNumber` must increase on **every** upload of the same `version`, or
 App Store Connect rejects it. `version` is the marketing string users see.
 
+### TestFlight
+
+```bash
+cd mobile
+make archive        # build + export a signed .ipa
+make upload         # send it to App Store Connect
+make testflight     # bump, archive, upload
+```
+
+One-time setup, both in App Store Connect:
+
+1. Create the app with bundle id `com.pomodoso.app`.
+2. **Users and Access → Integrations → App Store Connect API** → generate a key
+   with the **App Manager** role. Save the `.p8` to
+   `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8` — it downloads exactly
+   once — and export `ASC_KEY_ID` and `ASC_ISSUER_ID` from your shell profile.
+
+The `.p8` is a real upload credential and this repo is public, so it stays
+outside it. The Team ID in `app.json` is not: it ships inside every signed
+binary and is readable from any App Store download.
+
+`make bump` runs on its own inside `make testflight`. App Store Connect rejects
+a build carrying a `buildNumber` it has already seen — even after that build was
+deleted — and it rejects it *after* the whole upload finishes.
+
 Run `make prebuild` after changing plugins, icons or entitlements in `app.json`
 — `expo run:ios` alone reuses whatever `ios/` already holds, which is why icon
 and splash changes appear to do nothing until it runs.
