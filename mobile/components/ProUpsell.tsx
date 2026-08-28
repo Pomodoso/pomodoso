@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { Paywall } from '@/components/Paywall';
 
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
@@ -21,23 +23,13 @@ import { useAuth } from '@/hooks/useAuth';
 // Pro users never see this — callers render it only when the feature is
 // locked, so it deliberately has no third state.
 
-const PRICING_URL = 'https://pomodoso.com/pricing';
-
 export function ProUpsell({ title, benefit }: { title: string; benefit: string }): React.JSX.Element {
   const auth = useAuth();
   const signedIn = Boolean(auth.session);
 
-  function openPricing(): void {
-    // Opens the web pricing page, matching what Account & Sync already does.
-    // This is the surface ADR 0003's native IAP paywall replaces: App Store
-    // guideline 3.1.1 treats sending users out to buy as anti-steering, so
-    // this cannot ship to the App Store as-is. Kept identical to the
-    // existing behaviour rather than adding a second variant of it, so
-    // there's one thing to swap when the products exist.
-    void WebBrowser.openBrowserAsync(PRICING_URL).catch(() => {
-      Alert.alert('Could not open pricing page', 'Please try again later.');
-    });
-  }
+  // Opens the in-app purchase sheet. It used to open pomodoso.com/pricing,
+  // which App Store guideline 3.1.1 treats as anti-steering and rejects.
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   return (
     <View style={styles.card}>
@@ -48,9 +40,12 @@ export function ProUpsell({ title, benefit }: { title: string; benefit: string }
       <Text style={styles.benefit}>{benefit}</Text>
 
       {signedIn ? (
-        <Pressable style={styles.cta} onPress={openPricing}>
-          <Text style={styles.ctaText}>Upgrade to Pro →</Text>
-        </Pressable>
+        <>
+          <Pressable style={styles.cta} onPress={() => setPaywallOpen(true)}>
+            <Text style={styles.ctaText}>Upgrade to Pro</Text>
+          </Pressable>
+          <Paywall visible={paywallOpen} onClose={() => setPaywallOpen(false)} />
+        </>
       ) : (
         <>
           <Pressable style={styles.cta} onPress={() => router.push('/login')}>
