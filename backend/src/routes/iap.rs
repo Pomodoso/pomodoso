@@ -156,6 +156,22 @@ pub fn event_from(kind: EventKind, tx: &Transaction) -> Parsed {
         kind
     };
 
+    // A grant whose period has already ended is not a grant.
+    //
+    // This is what stops a replay: /iap/verify accepts any Apple-signed
+    // transaction from the app, and `Entitlements` resolves purely from
+    // `subscription.plan` — it never reads `current_period_end`. Without this,
+    // someone whose subscription lapsed could re-post the still-genuine JWS
+    // from that old subscription and be Pro again indefinitely, since the
+    // EXPIRED notification that would revoke it was already sent and gone.
+    //
+    // Ignoring rather than revoking is deliberate: it can't be weaponised in
+    // either direction, and a genuinely missed expiry is Apple's retry to fix,
+    // not this path's.
+    if kind == EventKind::Grant && matches!(tx.expires_at(), Some(end) if end <= Utc::now()) {
+        return Parsed::Ignore("grant for a period that already ended");
+    }
+
     Parsed::Handle(Box::new(IapEvent {
         kind,
         user_id,
@@ -354,7 +370,15 @@ pub async fn verify_transaction(
         return Err(AppError::Unauthorized);
     }
 
-    apply(&state, &event, "iap verify").await?;
+    // A refusal has to reach the app as an error. Answering "ok" would make it
+    // finish the transaction, and a finished transaction is one Apple never
+    // offers again — throwing away the receipt for a purchase we declined
+    // only because sandbox is currently switched off.
+    if !apply(&state, &event, "iap verify").await? {
+        return Err(AppError::BadRequest(
+            "this purchase was not accepted".into(),
+        ));
+    }
 
     // A body rather than a bare 204: the app's HTTP client parses every
     // response as JSON, and an empty one would throw on success.
@@ -367,7 +391,7 @@ pub async fn verify_transaction(
 /// webhook and the client path can never disagree about what a purchase means.
 async fn handle(state: &AppState, kind: EventKind, tx: &Transaction, origin: &str) -> Result<()> {
     match event_from(kind, tx) {
-        Parsed::Handle(event) => apply(state, &event, origin).await,
+        Parsed::Handle(event) => apply(state, &event, origin).await.map(|_| ()),
         Parsed::Ignore(reason) => {
             tracing::info!("{origin}: ignored ({reason})");
             Ok(())
@@ -375,7 +399,14 @@ async fn handle(state: &AppState, kind: EventKind, tx: &Transaction, origin: &st
     }
 }
 
-async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<()> {
+/// Writes the event, or declines to.
+///
+/// `Ok(false)` means a deliberate refusal rather than a failure, and the two
+/// callers want opposite things from it: the webhook still answers 200 so Apple
+/// stops retrying something we will never accept, while `/iap/verify` turns it
+/// into an error so the app leaves the transaction unfinished and Apple hands
+/// it back later.
+async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<bool> {
     // Sandbox purchases cost nothing. Accepting one in production is giving
     // Pro away to anyone who can run the app against a sandbox Apple ID, so
     // this is off unless deliberately switched on for store testing.
@@ -384,7 +415,7 @@ async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<()> {
             "{origin}: refused a sandbox transaction for user {} — set APPLE_ACCEPT_SANDBOX=true to allow",
             event.user_id
         );
-        return Ok(());
+        return Ok(false);
     }
 
     let update = resolve(event);
@@ -403,10 +434,10 @@ async fn apply(state: &AppState, event: &IapEvent, origin: &str) -> Result<()> {
             event.kind,
             event.user_id
         );
-        return Ok(());
+        return Ok(false);
     }
 
-    apply_update(state, event, &update).await
+    apply_update(state, event, &update).await.map(|_| true)
 }
 
 async fn apply_update(
@@ -471,7 +502,19 @@ mod tests {
     const MONTHLY: &str = "com.pomodoso.app.pro.monthly";
     const ANNUAL: &str = "com.pomodoso.app.pro.annual";
     const LIFETIME: &str = "com.pomodoso.app.founder.lifetime";
-    const EXPIRES_MS: i64 = 1_757_678_400_000;
+
+    /// Long past — a subscription that lapsed years ago.
+    const LAPSED_MS: i64 = 1_600_000_000_000;
+
+    /// A month out, computed once per run rather than hardcoded.
+    ///
+    /// A fixed date would eventually drift into the past, and because grants
+    /// are refused once their period has ended, every grant test would quietly
+    /// stop asserting anything the day it did.
+    fn expires_ms() -> i64 {
+        static V: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+        *V.get_or_init(|| (Utc::now() + chrono::Duration::days(30)).timestamp_millis())
+    }
 
     fn tx_json() -> serde_json::Value {
         json!({
@@ -480,7 +523,7 @@ mod tests {
             "bundleId": apple::BUNDLE_ID,
             "productId": MONTHLY,
             "purchaseDate": 1_755_000_000_000i64,
-            "expiresDate": EXPIRES_MS,
+            "expiresDate": expires_ms(),
             "type": "Auto-Renewable Subscription",
             "appAccountToken": USER,
             "inAppOwnershipType": "PURCHASED",
@@ -600,7 +643,7 @@ mod tests {
         assert_eq!(event.environment, Environment::Production);
         assert_eq!(
             event.expires_at,
-            DateTime::from_timestamp_millis(EXPIRES_MS)
+            DateTime::from_timestamp_millis(expires_ms())
         );
     }
 
@@ -664,6 +707,53 @@ mod tests {
     }
 
     #[test]
+    fn a_grant_whose_period_already_ended_is_refused() {
+        // The replay this exists to stop: /iap/verify accepts any Apple-signed
+        // transaction the app posts, and entitlements resolve from `plan`
+        // alone — never from current_period_end. Someone whose subscription
+        // lapsed could re-post its still-genuine JWS and be Pro indefinitely,
+        // because the EXPIRED that would revoke it was sent long ago.
+        let mut v = tx_json();
+        v["expiresDate"] = json!(LAPSED_MS);
+
+        assert_eq!(
+            event_from(EventKind::Grant, &tx_from(v)),
+            Parsed::Ignore("grant for a period that already ended")
+        );
+    }
+
+    #[test]
+    fn only_grants_are_gated_on_the_expiry_date() {
+        // An EXPIRED or a REFUND carrying a date in the past is exactly what
+        // those events look like. Gating them the same way would make a lapsed
+        // subscription impossible to revoke.
+        let mut v = tx_json();
+        v["expiresDate"] = json!(LAPSED_MS);
+
+        for kind in [EventKind::Expired, EventKind::Revoked] {
+            assert_eq!(
+                resolve(&handled(kind, &tx_from(v.clone()))).plan,
+                Some("free"),
+                "for {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lifetime_purchase_never_looks_expired() {
+        // No expiresDate at all, so the expiry gate must not treat "absent" as
+        // "in the past" and refuse the one product that never ends.
+        let mut v = tx_json();
+        v["productId"] = json!(LIFETIME);
+        v["expiresDate"] = json!(null);
+
+        assert_eq!(
+            resolve(&handled(EventKind::Grant, &tx_from(v))).plan,
+            Some("founder_lifetime")
+        );
+    }
+
+    #[test]
     fn sandbox_is_recognised_rather_than_silently_treated_as_production() {
         let mut v = tx_json();
         v["environment"] = json!("Sandbox");
@@ -699,7 +789,7 @@ mod tests {
         assert_eq!(update.cancelled_at, CancelledAt::Clear);
         assert_eq!(
             update.period_end,
-            DateTime::from_timestamp_millis(EXPIRES_MS)
+            DateTime::from_timestamp_millis(expires_ms())
         );
     }
 
@@ -731,7 +821,7 @@ mod tests {
         assert_eq!(update.cancelled_at, CancelledAt::Set);
         assert_eq!(
             update.period_end,
-            DateTime::from_timestamp_millis(EXPIRES_MS)
+            DateTime::from_timestamp_millis(expires_ms())
         );
     }
 
