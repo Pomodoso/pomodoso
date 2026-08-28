@@ -1,4 +1,4 @@
-//! Transactional email via Resend. Best-effort: a failure never breaks the
+//! Transactional email via Postmark. Best-effort: a failure never breaks the
 //! request that triggered it — errors are logged and swallowed.
 
 use serde_json::json;
@@ -20,24 +20,39 @@ const LOGO_URL: &str = "https://pomodoso.com/email-logo.png";
 /// Fire-and-forget: spawns the send so the caller (a webhook / `/me`) returns
 /// immediately and email latency never blocks the user.
 pub fn send_in_background(state: &AppState, to: String, subject: String, html: String) {
-    let api_key = match &state.config.resend_api_key {
+    let token = match &state.config.postmark_server_token {
         Some(k) => k.clone(),
-        None => return, // emails disabled (no key) — already warned at boot
+        None => return, // emails disabled (no token) — already warned at boot
     };
-    let from = state
-        .config
-        .resend_from_email
-        .clone()
-        // Until pomodoso.com is verified in Resend, send from the verified
-        // otpilot.app domain (display name still "Pomodoso").
-        .unwrap_or_else(|| "Pomodoso <noreply@otpilot.app>".to_owned());
+    // Must be a verified Sender Signature or a domain with DKIM set up in
+    // Postmark, otherwise every send comes back 422. No fallback sender here on
+    // purpose: the old one silently sent Pomodoso mail from another product's
+    // domain for months, which is worse than not sending at all.
+    let from = match &state.config.postmark_from_email {
+        Some(f) => f.clone(),
+        None => {
+            tracing::warn!("POSTMARK_FROM_EMAIL not set — skipping email to {to}");
+            return;
+        }
+    };
     let http = state.http.clone();
 
     tokio::spawn(async move {
         let res = http
-            .post("https://api.resend.com/emails")
-            .bearer_auth(api_key)
-            .json(&json!({ "from": from, "to": [to], "subject": subject, "html": html }))
+            .post("https://api.postmarkapp.com/email")
+            .header("X-Postmark-Server-Token", token)
+            .header("Accept", "application/json")
+            .json(&json!({
+                "From": from,
+                "To": to,
+                "Subject": subject,
+                "HtmlBody": html,
+                // Postmark rejects sends that don't name a stream once a server
+                // has more than one. "outbound" is the default transactional
+                // stream; broadcast streams are for marketing mail and would be
+                // the wrong place for these.
+                "MessageStream": "outbound",
+            }))
             .send()
             .await;
         match res {
@@ -45,9 +60,9 @@ pub fn send_in_background(state: &AppState, to: String, subject: String, html: S
             Ok(r) => {
                 let status = r.status();
                 let body = r.text().await.unwrap_or_default();
-                tracing::warn!("resend: send failed ({status}): {body}");
+                tracing::warn!("postmark: send failed ({status}): {body}");
             }
-            Err(e) => tracing::warn!("resend: request error: {e}"),
+            Err(e) => tracing::warn!("postmark: request error: {e}"),
         }
     });
 }
