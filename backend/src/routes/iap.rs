@@ -1080,30 +1080,63 @@ mod tests {
         assert_eq!(provider_for(Environment::Sandbox), "apple_sandbox");
     }
 
-    #[test]
-    fn every_provider_we_write_is_allowed_by_the_database() {
-        // These strings go straight into subscription.payment_provider, which
-        // carries a CHECK constraint. Adding one here without adding it there
-        // makes every write fail — and it fails in the worst way: apply_update
-        // returns the sqlx error up through `?`, so the purchase 500s, the plan
-        // is never written, and the customer has paid for nothing while
-        // StoreKit reports success.
-        //
-        // That is exactly what shipped in #124, and nothing caught it until a
-        // real purchase hit production. Reading the migration from a unit test
-        // is unusual, but the coupling is real and this is the only place it
-        // can be checked without a database.
-        let migration = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/migrations/015_sandbox_payment_provider.sql"
-        ))
-        .expect("migration 015 defines the payment_provider constraint");
+    /// Every literal this module writes into a CHECK-constrained column.
+    ///
+    /// `subscription` constrains plan, status and payment_provider. A value
+    /// missing from the schema fails at runtime in the worst way there is:
+    /// apply_update returns the sqlx error up through `?`, so the request
+    /// 500s, the plan is never written, and the customer has paid for nothing
+    /// while StoreKit reports success.
+    ///
+    /// That happened twice in one night — `apple_sandbox` against
+    /// payment_provider (#126), and it would have happened again for any new
+    /// plan or status. Nothing caught either until a real purchase did: the
+    /// coupling is invisible at compile time and sqlx offline mode does not
+    /// validate CHECK constraints.
+    fn constrained_values_written() -> Vec<&'static str> {
+        let mut values = vec![
+            provider_for(Environment::Production),
+            provider_for(Environment::Sandbox),
+            "free",
+            "pro",
+            "founder_lifetime",
+        ];
+        for kind in [
+            EventKind::Grant,
+            EventKind::Confirm,
+            EventKind::AutoRenewOff,
+            EventKind::AutoRenewOn,
+            EventKind::BillingIssue,
+            EventKind::Expired,
+            EventKind::Revoked,
+        ] {
+            let update = resolve(&handled(kind, &tx()));
+            values.push(update.status);
+            if let Some(plan) = update.plan {
+                values.push(plan);
+            }
+        }
+        values.sort_unstable();
+        values.dedup();
+        values
+    }
 
-        for environment in [Environment::Production, Environment::Sandbox] {
-            let provider = provider_for(environment);
+    #[test]
+    fn every_value_we_write_is_allowed_by_the_schema() {
+        // Reads the migrations rather than one file, so it keeps working when
+        // the next one lands. Crude — a value could appear in unrelated SQL —
+        // but it catches the failure that actually happens: a literal the code
+        // emits that the schema has never heard of.
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
+        let schema: String = std::fs::read_dir(dir)
+            .expect("migrations directory")
+            .filter_map(|e| std::fs::read_to_string(e.ok()?.path()).ok())
+            .collect();
+
+        for value in constrained_values_written() {
             assert!(
-                migration.contains(&format!("'{provider}'")),
-                "{provider:?} is written to payment_provider but the CHECK constraint rejects it"
+                schema.contains(&format!("'{value}'")),
+                "{value:?} is written to a CHECK-constrained column but appears nowhere in the schema"
             );
         }
     }
