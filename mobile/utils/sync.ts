@@ -14,6 +14,7 @@ import {
   WIRE_KEYS, acceptRemoteSetting, isSettingDirty, markSettingSynced, readWireSetting, settingUpdatedAt,
 } from '@/utils/syncedSettings';
 import {
+  canSync,
   discardLocalData,
   needsSyncChoice,
   recordSyncChoice,
@@ -923,6 +924,16 @@ export async function syncNow(): Promise<void> {
   // Scoped so the cursor can't outlive the account or the backend it was
   // issued by — switching either invalidates it into a full pull.
   const scope = pullScope(session.user.id, API_URL);
+
+  // Free accounts cannot sync, and asking them anything about it is worse
+  // than doing nothing. Without this the next line raised "This device
+  // already has data", both answers pushed, the backend returned 403
+  // (require_sync_entitlement), and the user got "Sync failed" — a question
+  // they were asked, answered, and could never have acted on.
+  //
+  // Ahead of the choice prompt on purpose: the entitlement decides whether
+  // the question is worth asking at all.
+  if (!canSync()) return;
 
   // A device with local data signing into an account for the first time has
   // to say whether to combine the two or take the account's copy. Gating
