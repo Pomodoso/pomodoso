@@ -1032,6 +1032,34 @@ mod tests {
     }
 
     #[test]
+    fn every_provider_we_write_is_allowed_by_the_database() {
+        // These strings go straight into subscription.payment_provider, which
+        // carries a CHECK constraint. Adding one here without adding it there
+        // makes every write fail — and it fails in the worst way: apply_update
+        // returns the sqlx error up through `?`, so the purchase 500s, the plan
+        // is never written, and the customer has paid for nothing while
+        // StoreKit reports success.
+        //
+        // That is exactly what shipped in #124, and nothing caught it until a
+        // real purchase hit production. Reading the migration from a unit test
+        // is unusual, but the coupling is real and this is the only place it
+        // can be checked without a database.
+        let migration = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/015_sandbox_payment_provider.sql"
+        ))
+        .expect("migration 015 defines the payment_provider constraint");
+
+        for environment in [Environment::Production, Environment::Sandbox] {
+            let provider = provider_for(environment);
+            assert!(
+                migration.contains(&format!("'{provider}'")),
+                "{provider:?} is written to payment_provider but the CHECK constraint rejects it"
+            );
+        }
+    }
+
+    #[test]
     fn a_sandbox_purchase_cannot_overwrite_a_row_someone_paid_for() {
         // The whole reason sandbox gets its own provider. A TestFlight tester
         // who also subscribes for real must not have their paid row replaced by
