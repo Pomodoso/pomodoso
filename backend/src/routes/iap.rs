@@ -499,6 +499,49 @@ async fn apply_update(
     let set_cancelled = update.cancelled_at == CancelledAt::Set;
     let clear_cancelled = update.cancelled_at == CancelledAt::Clear;
 
+    // One Apple ID, a different account of ours. The subscription belongs to
+    // the Apple ID, so it follows the person: whoever is signed in now gets it
+    // and the previous holder loses it. Apple models the same thing, and
+    // RevenueCat surfaced it as a TRANSFER event.
+    //
+    // Without this the unique index on store_transaction_id — which is what
+    // stops one purchase funding two accounts — turned the situation into a
+    // 500. Same shape as the constraint bug before it: the write fails, no
+    // plan is recorded, and the customer has paid for nothing.
+    //
+    // Both statements run in one transaction. Releasing the old row and
+    // failing to write the new one would leave the purchase belonging to
+    // nobody.
+    let mut tx = state.pool.begin().await?;
+
+    if let Some(transaction_id) = event.transaction_id.as_deref() {
+        let released = sqlx::query!(
+            r#"
+            UPDATE subscription
+            SET plan = 'free',
+                status = 'cancelled',
+                cancelled_at = NOW(),
+                payment_provider = NULL,
+                store_transaction_id = NULL,
+                store_product_id = NULL,
+                updated_at = NOW()
+            WHERE store_transaction_id = $1 AND user_id <> $2
+            "#,
+            transaction_id,
+            event.user_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        if released.rows_affected() > 0 {
+            tracing::warn!(
+                "{origin}: transaction {transaction_id} moved to user {} — {} previous holder(s) released",
+                event.user_id,
+                released.rows_affected()
+            );
+        }
+    }
+
     let result = sqlx::query!(
         r#"
         UPDATE subscription
@@ -526,7 +569,7 @@ async fn apply_update(
         event.product_id,
         event.user_id,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     // No row means the account was never provisioned (the subscription row is
@@ -538,8 +581,14 @@ async fn apply_update(
             event.user_id,
             event.kind
         );
+        // Rolled back rather than committed: if the grant found no row to land
+        // on, releasing the transaction from its previous holder would strand
+        // the purchase with nobody.
+        tx.rollback().await?;
         return Ok(());
     }
+
+    tx.commit().await?;
 
     // Success is logged too, not just failure. Without this the only record a
     // purchase ever happened is the row it wrote, so "did this customer's
