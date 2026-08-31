@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
@@ -183,6 +183,20 @@ export function Paywall({ visible, onClose }: { visible: boolean; onClose: () =>
             Payment is charged to your Apple ID. Subscriptions renew automatically unless cancelled at least 24
             hours before the period ends. Manage or cancel in your Apple ID settings.
           </Text>
+
+          {/* Guideline 3.1.2 requires functional links to the Terms of Use and
+              Privacy Policy on the purchase screen itself — not only on the
+              website. Title, length and price are already above; these were the
+              missing half, and their absence is a documented rejection reason. */}
+          <View style={styles.legalLinks}>
+            <Pressable onPress={() => void Linking.openURL('https://pomodoso.com/terms')} hitSlop={8}>
+              <Text style={styles.legalLink}>Terms of Use</Text>
+            </Pressable>
+            <Text style={styles.legalSeparator}>·</Text>
+            <Pressable onPress={() => void Linking.openURL('https://pomodoso.com/privacy')} hitSlop={8}>
+              <Text style={styles.legalLink}>Privacy Policy</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -221,4 +235,7 @@ const styles = StyleSheet.create({
   restore: { alignItems: 'center', paddingVertical: 14 },
   restoreText: { fontSize: 13.5, fontWeight: '600', color: colors.textSecondary },
   legal: { fontSize: 10.5, lineHeight: 15, color: colors.textTertiary, textAlign: 'center' },
+  legalLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 8 },
+  legalLink: { fontSize: 11, color: colors.textSecondary, textDecorationLine: 'underline' },
+  legalSeparator: { fontSize: 11, color: colors.textTertiary },
 });

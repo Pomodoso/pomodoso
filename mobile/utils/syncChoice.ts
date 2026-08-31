@@ -1,5 +1,5 @@
 import { pullScope, readSyncChoice, writeSyncChoice, type SyncChoice } from '@pomodoso/types';
-import { eq, not } from 'drizzle-orm';
+import { eq, inArray, not } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { hasUserData } from '@/utils/seed';
@@ -25,6 +25,7 @@ import { habits, habitHistory, meeting, pomodoroSession, project, settings, task
 const SYNC_CHOICE_KEY = 'sync_choice';
 // Mirrors utils/sync.ts's own key — the one setting discardLocalData keeps.
 const DEVICE_ID_KEY = 'device_id';
+const CAN_SYNC_KEY = 'can_sync';
 
 export type { SyncChoice };
 
@@ -69,6 +70,25 @@ export function recordSyncChoice(scope: string, choice: SyncChoice): void {
  *  the app wrote to itself and which the user made. */
 export function hasLocalData(): boolean {
   return hasUserData();
+}
+
+/** Remembers whether this account is entitled to sync at all.
+ *
+ *  syncNow() runs from five triggers that have no access to React state, so
+ *  the answer from /me is cached here for them to read. */
+export function recordSyncEntitlement(allowed: boolean): void {
+  putSetting(CAN_SYNC_KEY, allowed ? '1' : '0');
+}
+
+/** Whether the account may sync. Unknown counts as no.
+ *
+ *  Defaulting to no costs a Pro user nothing — /me answers within a moment of
+ *  signing in and the sync runs then. Defaulting to yes cost a Free user the
+ *  "This device already has data" dialog, followed by a 403 from the backend
+ *  and a "Sync failed" alert: a question they were asked, answered, and could
+ *  never have acted on. */
+export function canSync(): boolean {
+  return getSetting(CAN_SYNC_KEY) === '1';
 }
 
 /** True when sync must not run yet because the user hasn't answered.
@@ -119,7 +139,13 @@ export function discardLocalData(): void {
   db.delete(meeting).run();
   db.delete(taskOrder).run();
   db.delete(timerPrefs).run();
-  db.delete(settings).where(not(eq(settings.key, DEVICE_ID_KEY))).run();
+  // `can_sync` survives alongside device_id. It describes the account that is
+  // signing in, not the data being abandoned, and wiping it here would leave
+  // syncNow() bailing out immediately after the user chose "use my account
+  // only" — the one path where a sync absolutely has to follow.
+  db.delete(settings)
+    .where(not(inArray(settings.key, [DEVICE_ID_KEY, CAN_SYNC_KEY])))
+    .run();
 }
 
 // ─── Prompting ────────────────────────────────────────────────────────────────

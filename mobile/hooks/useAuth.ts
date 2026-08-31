@@ -7,6 +7,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 
 import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
+import { syncNow } from '@/utils/sync';
+import { recordSyncEntitlement } from '@/utils/syncChoice';
 
 // Matches @pomodoso/types' FREE_ENTITLEMENTS exactly (kept as a literal here
 // rather than importing the value — same Metro-can't-resolve-a-value-import-
@@ -108,6 +110,17 @@ export function useAuth(): AuthState {
       const client = new TokenApiClient(API_URL, accessToken);
       const me = await getMe(client);
       setEntitlements(me.entitlements);
+
+      // syncNow() runs from triggers with no access to React state, so the
+      // answer is cached where they can read it. Syncing right here when the
+      // account turns out to be entitled matters: useSyncLifecycle fires on
+      // the session appearing, which usually beats this request, and that
+      // attempt is now skipped. Without this a Pro user would wait for the
+      // 60s poll after every sign-in.
+      recordSyncEntitlement(me.entitlements.features.sync);
+      if (me.entitlements.features.sync) {
+        void syncNow().catch(err => console.warn('[sync] post-entitlement sync failed', err));
+      }
     } catch (err) {
       // Network/backend hiccup — stay on whatever entitlements were last
       // known (or FREE_ENTITLEMENTS on first load) rather than throwing;
@@ -214,6 +227,10 @@ export function useAuth(): AuthState {
     await supabaseSignOut(getMobileSupabase());
     setSession(null);
     setEntitlements(FREE_ENTITLEMENTS);
+    // Cleared here too, not just in React state: the cache outlives this
+    // component, and leaving it set would let the next account on this device
+    // sync on the strength of the previous one's plan.
+    recordSyncEntitlement(false);
   }, []);
 
 
