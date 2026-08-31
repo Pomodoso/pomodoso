@@ -499,6 +499,49 @@ async fn apply_update(
     let set_cancelled = update.cancelled_at == CancelledAt::Set;
     let clear_cancelled = update.cancelled_at == CancelledAt::Clear;
 
+    // One Apple ID, a different account of ours. The subscription belongs to
+    // the Apple ID, so it follows the person: whoever is signed in now gets it
+    // and the previous holder loses it. Apple models the same thing, and
+    // RevenueCat surfaced it as a TRANSFER event.
+    //
+    // Without this the unique index on store_transaction_id — which is what
+    // stops one purchase funding two accounts — turned the situation into a
+    // 500. Same shape as the constraint bug before it: the write fails, no
+    // plan is recorded, and the customer has paid for nothing.
+    //
+    // Both statements run in one transaction. Releasing the old row and
+    // failing to write the new one would leave the purchase belonging to
+    // nobody.
+    let mut tx = state.pool.begin().await?;
+
+    if let Some(transaction_id) = event.transaction_id.as_deref() {
+        let released = sqlx::query!(
+            r#"
+            UPDATE subscription
+            SET plan = 'free',
+                status = 'cancelled',
+                cancelled_at = NOW(),
+                payment_provider = NULL,
+                store_transaction_id = NULL,
+                store_product_id = NULL,
+                updated_at = NOW()
+            WHERE store_transaction_id = $1 AND user_id <> $2
+            "#,
+            transaction_id,
+            event.user_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        if released.rows_affected() > 0 {
+            tracing::warn!(
+                "{origin}: transaction {transaction_id} moved to user {} — {} previous holder(s) released",
+                event.user_id,
+                released.rows_affected()
+            );
+        }
+    }
+
     let result = sqlx::query!(
         r#"
         UPDATE subscription
@@ -526,7 +569,7 @@ async fn apply_update(
         event.product_id,
         event.user_id,
     )
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     // No row means the account was never provisioned (the subscription row is
@@ -538,8 +581,14 @@ async fn apply_update(
             event.user_id,
             event.kind
         );
+        // Rolled back rather than committed: if the grant found no row to land
+        // on, releasing the transaction from its previous holder would strand
+        // the purchase with nobody.
+        tx.rollback().await?;
         return Ok(());
     }
+
+    tx.commit().await?;
 
     // Success is logged too, not just failure. Without this the only record a
     // purchase ever happened is the row it wrote, so "did this customer's
@@ -1031,30 +1080,63 @@ mod tests {
         assert_eq!(provider_for(Environment::Sandbox), "apple_sandbox");
     }
 
-    #[test]
-    fn every_provider_we_write_is_allowed_by_the_database() {
-        // These strings go straight into subscription.payment_provider, which
-        // carries a CHECK constraint. Adding one here without adding it there
-        // makes every write fail — and it fails in the worst way: apply_update
-        // returns the sqlx error up through `?`, so the purchase 500s, the plan
-        // is never written, and the customer has paid for nothing while
-        // StoreKit reports success.
-        //
-        // That is exactly what shipped in #124, and nothing caught it until a
-        // real purchase hit production. Reading the migration from a unit test
-        // is unusual, but the coupling is real and this is the only place it
-        // can be checked without a database.
-        let migration = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/migrations/015_sandbox_payment_provider.sql"
-        ))
-        .expect("migration 015 defines the payment_provider constraint");
+    /// Every literal this module writes into a CHECK-constrained column.
+    ///
+    /// `subscription` constrains plan, status and payment_provider. A value
+    /// missing from the schema fails at runtime in the worst way there is:
+    /// apply_update returns the sqlx error up through `?`, so the request
+    /// 500s, the plan is never written, and the customer has paid for nothing
+    /// while StoreKit reports success.
+    ///
+    /// That happened twice in one night — `apple_sandbox` against
+    /// payment_provider (#126), and it would have happened again for any new
+    /// plan or status. Nothing caught either until a real purchase did: the
+    /// coupling is invisible at compile time and sqlx offline mode does not
+    /// validate CHECK constraints.
+    fn constrained_values_written() -> Vec<&'static str> {
+        let mut values = vec![
+            provider_for(Environment::Production),
+            provider_for(Environment::Sandbox),
+            "free",
+            "pro",
+            "founder_lifetime",
+        ];
+        for kind in [
+            EventKind::Grant,
+            EventKind::Confirm,
+            EventKind::AutoRenewOff,
+            EventKind::AutoRenewOn,
+            EventKind::BillingIssue,
+            EventKind::Expired,
+            EventKind::Revoked,
+        ] {
+            let update = resolve(&handled(kind, &tx()));
+            values.push(update.status);
+            if let Some(plan) = update.plan {
+                values.push(plan);
+            }
+        }
+        values.sort_unstable();
+        values.dedup();
+        values
+    }
 
-        for environment in [Environment::Production, Environment::Sandbox] {
-            let provider = provider_for(environment);
+    #[test]
+    fn every_value_we_write_is_allowed_by_the_schema() {
+        // Reads the migrations rather than one file, so it keeps working when
+        // the next one lands. Crude — a value could appear in unrelated SQL —
+        // but it catches the failure that actually happens: a literal the code
+        // emits that the schema has never heard of.
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
+        let schema: String = std::fs::read_dir(dir)
+            .expect("migrations directory")
+            .filter_map(|e| std::fs::read_to_string(e.ok()?.path()).ok())
+            .collect();
+
+        for value in constrained_values_written() {
             assert!(
-                migration.contains(&format!("'{provider}'")),
-                "{provider:?} is written to payment_provider but the CHECK constraint rejects it"
+                schema.contains(&format!("'{value}'")),
+                "{value:?} is written to a CHECK-constrained column but appears nowhere in the schema"
             );
         }
     }
