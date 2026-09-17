@@ -10,19 +10,13 @@ import type {
   TaskRow, ProjectRow, WorkspaceRow,
   HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
 } from './db';
-import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, readExtra, writePullCursor } from '@pomodoso/types';
+import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, readExtra, writePullCursor, SYNCED_SETTING_KEYS } from '@pomodoso/types';
 import type { TimerMode } from '@pomodoso/types';
 
 // ─── Settings keys synced to server ───────────────────────────────────────────
-const SYNCED_SETTINGS = [
-  'timer_settings',
-  'sound_settings',
-  'timezone',
-  'max_priorities',
-  'auto_sort_by_status',
-  'week_start',
-  'work_days',
-] as const;
+// The list itself lives in @pomodoso/types so mobile derives from the same one;
+// see SYNCED_SETTING_KEYS for why keeping a private copy here went wrong.
+const SYNCED_SETTINGS = SYNCED_SETTING_KEYS;
 
 const SYNC_LAST_PULL_KEY = 'sync_last_pull';
 

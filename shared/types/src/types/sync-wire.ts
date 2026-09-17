@@ -221,3 +221,31 @@ export function readSyncChoice(value: unknown, scope: string): SyncChoice | unde
 export function writeSyncChoice(scope: string, choice: SyncChoice): StoredSyncChoice {
   return { scope, choice };
 }
+
+// ─── Synced preferences ───────────────────────────────────────────────────────
+
+/**
+ * Every preference that travels on the wire.
+ *
+ * This list is the contract, and both clients derive from it rather than
+ * keeping their own copy. They had their own copies, and they drifted: a
+ * setting added to the extension's list but not mobile's meant mobile neither
+ * sent its value nor accepted the extension's, so two devices on one account
+ * silently disagreed about how the app behaved.
+ *
+ * A client that genuinely has nothing to say about a key still has to say so —
+ * see mobile's WIRE_MEMBERS, which maps every key here to its local storage or
+ * to an explicit null. That turns "forgot to add it" into a compile error
+ * instead of a preference that quietly stops syncing.
+ */
+export const SYNCED_SETTING_KEYS = [
+  'timer_settings',
+  'sound_settings',
+  'timezone',
+  'max_priorities',
+  'auto_sort_by_status',
+  'week_start',
+  'work_days',
+] as const;
+
+export type SyncedSettingKey = (typeof SYNCED_SETTING_KEYS)[number];

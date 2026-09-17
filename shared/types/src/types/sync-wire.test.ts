@@ -9,6 +9,7 @@ import {
   readPullCursor,
   readSyncChoice,
   settingId,
+  SYNCED_SETTING_KEYS,
   writeExtra,
   writePullCursor,
   writeSyncChoice,
@@ -226,4 +227,24 @@ test('asking again is always preferred to acting on a doubtful answer', () => {
   for (const bad of [undefined, null, 0, '', 'cloud', [], { scope }, { choice: 'merge' }]) {
     assert.equal(readSyncChoice(bad, scope), undefined, `for ${JSON.stringify(bad)}`);
   }
+});
+
+// ─── SYNCED_SETTING_KEYS ──────────────────────────────────────────────────────
+
+test('the synced settings list has no duplicates', () => {
+  assert.equal(new Set(SYNCED_SETTING_KEYS).size, SYNCED_SETTING_KEYS.length);
+});
+
+test('every synced setting key is a usable settings id', () => {
+  // Keys become `<key>_updated_at` / `<key>_synced_at` rows on both clients and
+  // a uuid via settingId on the wire, so anything exotic would break silently.
+  for (const key of SYNCED_SETTING_KEYS) {
+    assert.match(key, /^[a-z][a-z0-9_]*$/, `bad key: ${key}`);
+    assert.match(settingId(key), /^[0-9a-f-]{36}$/);
+  }
+});
+
+test('settingId is distinct for every synced setting', () => {
+  const ids = SYNCED_SETTING_KEYS.map(settingId);
+  assert.equal(new Set(ids).size, ids.length);
 });
