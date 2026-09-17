@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
 
+import type { SyncedSettingKey } from '@pomodoso/types';
+
 import { db } from '@/db/client';
 import { settings } from '@/db/schema';
 
@@ -13,12 +15,6 @@ import { settings } from '@/db/schema';
 // thing to answer "how long is a short break". Neither storage is wrong, so
 // the difference is reconciled here rather than by changing either side.
 //
-// Only keys both clients actually have are listed. `timezone` is deliberately
-// absent: the extension syncs it and the backend uses it for day boundaries,
-// but mobile derives its own from Intl at the point of use and has no stored
-// preference to push — sending one would mean inventing a value only to
-// overwrite the extension's real one.
-//
 // mobile-only keys (showHabitsInToday, showChallengesInToday,
 // showMeetingsInToday) stay device-local by omission, which is correct: they
 // describe what this screen shows, not how the account behaves. Anything that
@@ -26,23 +22,36 @@ import { settings } from '@/db/schema';
 // here at the same time as the extension's SYNCED_SETTINGS, or one client
 // pushes it and the other silently ignores it in both directions.
 
-type WireKey =
-  | 'timer_settings'
-  | 'sound_settings'
-  | 'max_priorities'
-  | 'auto_sort_by_status'
-  | 'week_start'
-  | 'work_days';
+type WireKey = SyncedSettingKey;
 
-/** Local setting keys that make up each wire key. */
-const WIRE_MEMBERS: Record<WireKey, string[]> = {
+/**
+ * Local setting keys that make up each wire key, or `null` for a key this
+ * client deliberately doesn't carry.
+ *
+ * Typed as a total Record over SYNCED_SETTING_KEYS on purpose: adding a
+ * preference to the shared list without deciding what mobile does with it is
+ * now a compile error, not a setting that quietly stops syncing. That is
+ * exactly how `auto_sort_by_status` slipped through — it reached mobile's local
+ * KEYS map but never this one, so wireKeyFor found nothing and the preference
+ * travelled in neither direction.
+ */
+const WIRE_MEMBERS: Record<WireKey, string[] | null> = {
   timer_settings: ['focus_seconds', 'short_break_seconds', 'long_break_seconds', 'long_break_every', 'daily_goal'],
   sound_settings: ['sound_settings'],
+  // Not carried: mobile derives the timezone from Intl at the point of use and
+  // has no stored preference to push. Sending one would mean inventing a value
+  // only to overwrite the extension's real one.
+  timezone: null,
   max_priorities: ['max_priorities'],
   auto_sort_by_status: ['auto_sort_by_status'],
   week_start: ['week_start'],
   work_days: ['work_days'],
 };
+
+/** The local keys for a wire key this client carries. */
+function membersOf(key: WireKey): string[] {
+  return WIRE_MEMBERS[key] ?? [];
+}
 
 /** Field name inside `timer_settings` for each of its local keys. */
 const TIMER_FIELDS: Record<string, string> = {
@@ -53,7 +62,9 @@ const TIMER_FIELDS: Record<string, string> = {
   daily_goal: 'dailyGoal',
 };
 
-export const WIRE_KEYS = Object.keys(WIRE_MEMBERS) as WireKey[];
+// Only the keys this client actually carries — the nulls are skipped, so push
+// and pull loops never see a key mobile has nothing to say about.
+export const WIRE_KEYS = (Object.keys(WIRE_MEMBERS) as WireKey[]).filter(k => WIRE_MEMBERS[k] !== null);
 
 function get(key: string): string | undefined {
   return db.select().from(settings).where(eq(settings.key, key)).all()[0]?.value;
@@ -74,7 +85,7 @@ function parse(raw: string | undefined): unknown {
 
 /** Which wire key a local setting belongs to, or undefined if it's local-only. */
 export function wireKeyFor(localKey: string): WireKey | undefined {
-  return WIRE_KEYS.find(w => WIRE_MEMBERS[w].includes(localKey));
+  return WIRE_KEYS.find(w => membersOf(w).includes(localKey));
 }
 
 /**
@@ -94,7 +105,8 @@ export function markSettingDirty(localKey: string): void {
  *  about it — an untouched setting shouldn't overwrite another device's. */
 export function readWireSetting(key: WireKey): unknown | undefined {
   if (key !== 'timer_settings') {
-    return parse(get(WIRE_MEMBERS[key][0]!));
+    const local = membersOf(key)[0];
+    return local === undefined ? undefined : parse(get(local));
   }
   // Built from whichever members exist. Partial on purpose: sending a
   // default for a number the user never set would silently replace a real
@@ -110,7 +122,8 @@ export function readWireSetting(key: WireKey): unknown | undefined {
 /** Applies an incoming wire value onto the local keys it covers. */
 export function applyWireSetting(key: WireKey, value: unknown): void {
   if (key !== 'timer_settings') {
-    put(WIRE_MEMBERS[key][0]!, JSON.stringify(value));
+    const local = membersOf(key)[0];
+    if (local !== undefined) put(local, JSON.stringify(value));
     return;
   }
   if (typeof value !== 'object' || value === null) return;
