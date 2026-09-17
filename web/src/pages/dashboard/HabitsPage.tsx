@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { HabitsActivityHeatmap } from '../../components/HabitsActivityHeatmap.tsx';
-import { ChallengesCard } from './TodayPage.tsx';
+import { ChallengesCard } from '../../components/ChallengesCard.tsx';
+import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Habits are user-global (CLAUDE.md rule 6) — unlike every other dashboard
@@ -40,22 +41,6 @@ interface HabitFormValue {
 // icon KEYS stored on the habit, mapped to Tabler classes for display.
 const ICONS = ['water', 'fitness', 'book', 'sleep', 'run', 'meditate', 'journal'];
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function habitIconClass(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'ti-glass-full', fitness: 'ti-barbell', book: 'ti-book-2', sleep: 'ti-moon',
-    run: 'ti-run', meditate: 'ti-yin-yang', journal: 'ti-notebook',
-  };
-  return map[icon] ?? 'ti-check';
-}
-
-function habitIconColor(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'var(--info)', fitness: 'var(--text-sec)', book: 'var(--warning)', sleep: '#7B5DB4',
-    run: 'var(--success)', meditate: 'var(--accent)', journal: 'var(--text-sec)',
-  };
-  return map[icon] ?? 'var(--text-sec)';
-}
 
 function scheduleLabel(habit: Pick<Habit, 'frequency' | 'frequency_days'>): string {
   if (habit.frequency === 'daily') return 'Every day';

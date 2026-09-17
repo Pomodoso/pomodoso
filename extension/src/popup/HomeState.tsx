@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   DndContext,
@@ -288,12 +288,19 @@ export function HomeState({
   // Full habit history. Hoisted here from HabitsContent now that Today renders
   // challenge cards too — the note there said it stayed local because "Today's
   // habit rows just show done/count, no streak", which stopped being true.
+  //
+  // Memoized, unlike most derived values in this component: HomeState re-renders
+  // every second while a timer runs, and this walks every habit log row there
+  // is. The rest of the derived data here is O(today).
   const allHabitHistory: HabitHistoryRow[] = useLiveQuery(() => db.habitHistory.toArray(), []) ?? [];
-  const habitHistoryByHabit = new Map<string, Map<string, HabitHistoryRow>>();
-  for (const r of allHabitHistory) {
-    if (!habitHistoryByHabit.has(r.habitId)) habitHistoryByHabit.set(r.habitId, new Map());
-    habitHistoryByHabit.get(r.habitId)!.set(r.date, r);
-  }
+  const habitHistoryByHabit = useMemo(() => {
+    const byHabit = new Map<string, Map<string, HabitHistoryRow>>();
+    for (const r of allHabitHistory) {
+      if (!byHabit.has(r.habitId)) byHabit.set(r.habitId, new Map());
+      byHabit.get(r.habitId)!.set(r.date, r);
+    }
+    return byHabit;
+  }, [allHabitHistory]);
 
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
@@ -330,8 +337,14 @@ export function HomeState({
   // Habits are user-global — shown in every workspace (and the All view).
   const visibleHabits = habits;
 
-  const habitStreaks = new Map(
-    habits.map(h => [h.id, computeHabitStreak(h, habitHistoryByHabit.get(h.id) ?? new Map(), timezone)]),
+  // Each streak walks back day by day until it hits a miss, so this is cheap for
+  // a short streak and not for a long one — and it runs per habit. Memoized for
+  // the same reason as the history map above.
+  const habitStreaks = useMemo(
+    () => new Map(
+      habits.map(h => [h.id, computeHabitStreak(h, habitHistoryByHabit.get(h.id) ?? new Map(), timezone)]),
+    ),
+    [habits, habitHistoryByHabit, timezone],
   );
   // Challenges run to a fixed length, so a habit past its end date still has a
   // result worth showing; only the schedule-based Today list hides those.

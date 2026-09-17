@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { challengeProgressLabel, challengeStreakLabel } from '@pomodoso/types';
 import { api } from '../../lib/api.ts';
+import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
+import { ChallengesCard, type TodayChallenge } from '../../components/ChallengesCard.tsx';
 import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
@@ -77,14 +78,6 @@ interface TodayHabit {
   log: HabitLog | null;
 }
 
-interface TodayChallenge {
-  id: string;
-  name: string;
-  icon: string;
-  length_days: number;
-  days_done: number;
-}
-
 interface ActiveSession {
   id: string;
   task_id: string | null;
@@ -153,32 +146,6 @@ function shiftDate(date: string, deltaDays: number): string {
   const d = new Date(`${date}T00:00:00`);
   d.setDate(d.getDate() + deltaDays);
   return d.toLocaleDateString('en-CA');
-}
-
-function habitIconClass(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'ti-glass-full',
-    fitness: 'ti-barbell',
-    book: 'ti-book-2',
-    sleep: 'ti-moon',
-    run: 'ti-run',
-    meditate: 'ti-yin-yang',
-    journal: 'ti-notebook',
-  };
-  return map[icon] ?? 'ti-check';
-}
-
-function habitIconColor(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'var(--info)',
-    fitness: 'var(--text-sec)',
-    book: 'var(--warning)',
-    sleep: '#7B5DB4',
-    run: 'var(--success)',
-    meditate: 'var(--accent)',
-    journal: 'var(--text-sec)',
-  };
-  return map[icon] ?? 'var(--text-sec)';
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -618,64 +585,6 @@ function TimeCard({ workLog, meetings }: { workLog: WorkLogProject[]; meetings: 
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// A challenge is a fixed-length run with an end, so it gets its own card rather
-// than a row in the habit list. Unlike that list it isn't filtered to today's
-// schedule, and a finished run keeps showing — that's the payoff.
-export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] }) {
-  if (challenges.length === 0) return null;
-  const completed = challenges.filter(c => c.days_done >= c.length_days).length;
-
-  return (
-    <div className="pomo-card">
-      <div className="pomo-card-header">
-        <div className="pomo-card-title"><i className="ti ti-flame" /> Challenges</div>
-        {completed > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--success)' }}>{completed} done</span>
-        )}
-      </div>
-      {challenges.map((c) => {
-        const clamped = Math.min(c.days_done, c.length_days);
-        const complete = clamped >= c.length_days;
-        return (
-          <div
-            key={c.id}
-            style={{
-              border: `1px solid ${complete ? 'var(--success)' : 'var(--accent)'}`,
-              borderRadius: 10,
-              padding: '12px 14px',
-              marginBottom: 8,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <i
-                className={`ti ${habitIconClass(c.icon)}`}
-                style={{ color: complete ? 'var(--success)' : habitIconColor(c.icon) }}
-              />
-              <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
-              {complete && <i className="ti ti-trophy" style={{ color: 'var(--success)' }} />}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 8 }}>
-              {challengeProgressLabel(clamped, c.length_days)}
-            </div>
-            <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
-              <div
-                style={{
-                  width: `${(clamped / c.length_days) * 100}%`,
-                  height: '100%',
-                  background: complete ? 'var(--success)' : 'var(--accent)',
-                }}
-              />
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-sec)', marginTop: 6 }}>
-              {challengeStreakLabel(clamped, c.length_days)}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
