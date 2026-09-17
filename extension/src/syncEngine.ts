@@ -446,7 +446,10 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   // every field the same property, which is what the note here originally
   // asked for.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays ?? null);
-  writeExtra(extra, 'sortOrder', h.sortOrder ?? null);
+  // Deliberately NOT `?? null`: per writeExtra's contract an explicit null means
+  // "the user cleared this", which would wipe a real order held by another
+  // device. A habit with no local order simply omits the field.
+  writeExtra(extra, 'sortOrder', h.sortOrder);
   return extra;
 }
 

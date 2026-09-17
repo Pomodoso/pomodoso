@@ -1314,8 +1314,11 @@ export function HomeState({
           isAddingHabit ? (
             <HabitForm
               onSave={(habit) => {
+                // A new habit goes to the end of the manual order, matching
+                // where the list already puts it before any dragging.
+                const nextOrder = habits.reduce((max, h) => Math.max(max, h.sortOrder ?? -1), -1) + 1;
                 // Habits are user-global — never pinned to the active workspace.
-                void db.habits.put({ ...habit, workspaceId: null, updatedAt: now() });
+                void db.habits.put({ ...habit, sortOrder: nextOrder, workspaceId: null, updatedAt: now() });
                 triggerSync();
                 setIsAddingHabit(false);
               }}
@@ -4786,6 +4789,10 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
       ...(endDate ? { endDate } : {}),
       ...(hasChallenge ? { challengeLengthDays: parsedChallengeLength } : {}),
+      // Carried through rather than rebuilt: onSave does a full-replace put, so
+      // omitting the manual order here would send every edited habit back to
+      // the bottom of the list (and push a cleared order to other devices).
+      ...(initialHabit?.sortOrder !== undefined ? { sortOrder: initialHabit.sortOrder } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global
