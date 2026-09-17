@@ -375,6 +375,7 @@ export function HomeState({
   // ── Drag and drop ──────────────────────────────────────────────────────────
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const dragGuard = useDragResizeGuard();
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setDragActiveId(null);
@@ -1199,9 +1200,9 @@ export function HomeState({
                 sensors={dndSensors}
                 collisionDetection={closestCenter}
                 measuring={DND_MEASURING}
-                onDragStart={(e) => setDragActiveId(e.active.id as string)}
-                onDragEnd={handleDragEnd}
-                onDragCancel={() => setDragActiveId(null)}
+                onDragStart={(e) => { dragGuard.onDragStart(); setDragActiveId(e.active.id as string); }}
+                onDragEnd={(e) => { dragGuard.onDragSettled(); handleDragEnd(e); }}
+                onDragCancel={() => { dragGuard.onDragSettled(); setDragActiveId(null); }}
               >
                 <div style={{ padding: '12px 14px 0' }}>
                   <SectionHeader label="Today's priorities" done={completedPriorities} total={todayPriorities.length} />
@@ -1494,7 +1495,10 @@ export function HomeState({
                           sensors={dndSensors}
                           collisionDetection={closestCenter}
                           measuring={DND_MEASURING}
+                          onDragStart={dragGuard.onDragStart}
+                          onDragCancel={dragGuard.onDragSettled}
                           onDragEnd={(event) => {
+                            dragGuard.onDragSettled();
                             const next = reorderedIdsFromDrag(filtered.map(t => t.id), event);
                             // Dropping inside a filtered view only re-slots the
                             // rows on screen; reorderSubset keeps the hidden
@@ -1839,6 +1843,7 @@ function TodayHabits({
   onReorder: (orderedIds: string[]) => void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const dragGuard = useDragResizeGuard();
   return (
     <div style={{ padding: '12px 14px 0' }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>
@@ -1854,7 +1859,10 @@ function TodayHabits({
           sensors={sensors}
           collisionDetection={closestCenter}
           measuring={DND_MEASURING}
+          onDragStart={dragGuard.onDragStart}
+          onDragCancel={dragGuard.onDragSettled}
           onDragEnd={(event) => {
+            dragGuard.onDragSettled();
             const next = reorderedIdsFromDrag(habits.map(h => h.id), event);
             if (next) onReorder(next);
           }}
@@ -2165,6 +2173,34 @@ function TaskTooltip({
 // touchAction:'none' is the same story for touch and pen input, where the
 // browser would otherwise claim the vertical drag as a scroll of .scroll-area
 // before dnd-kit sees it.
+// Chrome's browser-action popup emits spurious `resize` events — three of them
+// during a single drag, with innerWidth/innerHeight identical (360x600) before
+// and after, so nothing has actually resized. dnd-kit registers
+// `window.resize -> handleCancel` for the lifetime of a drag, so each of those
+// phantom events cancelled the drag a few pixels in. Its own live region said
+// it out loud: "Dragging was cancelled."
+//
+// This is why reordering worked everywhere it was tested except the one place
+// that matters: the popup HTML in a tab never fires them.
+//
+// The listener below is registered at mount, so it precedes dnd-kit's (added
+// when a drag starts) and wins the registration-order race at the event target,
+// letting stopImmediatePropagation keep the cancel handler from running. It
+// only swallows while a drag is in flight; a genuine resize outside one is left
+// alone.
+function useDragResizeGuard() {
+  const dragging = useRef(false);
+  useEffect(() => {
+    const swallow = (e: Event) => { if (dragging.current) e.stopImmediatePropagation(); };
+    window.addEventListener('resize', swallow, true);
+    return () => window.removeEventListener('resize', swallow, true);
+  }, []);
+  return {
+    onDragStart: () => { dragging.current = true; },
+    onDragSettled: () => { dragging.current = false; },
+  };
+}
+
 // Shared by every DndContext here.
 //
 // collisionDetection: dnd-kit defaults to rectIntersection, which only reports
@@ -4293,6 +4329,7 @@ interface HabitsContentProps {
 
 function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks }: HabitsContentProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const dragGuard = useDragResizeGuard();
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -4374,7 +4411,10 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
           sensors={sensors}
           collisionDetection={closestCenter}
           measuring={DND_MEASURING}
+          onDragStart={dragGuard.onDragStart}
+          onDragCancel={dragGuard.onDragSettled}
           onDragEnd={(event) => {
+            dragGuard.onDragSettled();
             const next = reorderedIdsFromDrag(activeHabits.map(h => h.id), event);
             // Closed habits are rendered in their own section below and are not
             // part of this context, so the drop only ever reorders active ones.
