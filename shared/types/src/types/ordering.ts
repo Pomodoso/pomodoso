@@ -60,3 +60,55 @@ export function reorderSubset(fullIds: string[], subsetNewOrder: string[]): stri
   });
   return out;
 }
+
+// ─── Automatic ordering by status ─────────────────────────────────────────────
+//
+// Today's two sections reorder themselves as a task's status changes, so the
+// list stays sorted by "what still needs doing" without dragging anything.
+// Off by default is not the right call here — the whole point is that it
+// happens without being asked — so the setting exists to turn it *off*.
+
+/** Where a status change should move a task inside its section. */
+export type StatusPlacement = 'start' | 'end' | 'keep';
+
+/**
+ * Resolved work sinks, active work rises, everything else stays put.
+ *
+ * `delayed` deliberately does nothing. It is not finished, so sending it down
+ * with done/cancelled would be wrong, and it is not being worked on, so
+ * bringing it up would be wrong too — it means "not right now", which is the
+ * one state where the position the user chose by hand is still the best
+ * answer. `todo` stays put for the same reason: it is the resting state, and
+ * moving a task merely for being un-started would fight every manual drag.
+ */
+export function statusPlacement(status: string): StatusPlacement {
+  switch (status) {
+    case 'in_progress':
+      return 'start';
+    case 'done':
+    case 'cancelled':
+      return 'end';
+    default:
+      return 'keep';
+  }
+}
+
+/**
+ * Move `id` within `ids` according to its new status.
+ *
+ * Returns the original array (same reference) when nothing should move, so
+ * callers can skip the write entirely. Ids not present are left alone — a task
+ * outside this section is not this section's business.
+ *
+ * Reopening is intentionally not an undo: a task moved to the end by being
+ * completed and then set back to todo stays where it is, because its previous
+ * position was never recorded and inventing one would be worse than leaving it.
+ */
+export function applyStatusPlacement(ids: string[], id: string, status: string): string[] {
+  const placement = statusPlacement(status);
+  if (placement === 'keep' || !ids.includes(id)) return ids;
+  const rest = ids.filter(i => i !== id);
+  const next = placement === 'start' ? [id, ...rest] : [...rest, id];
+  // Already in position — hand back the original so nothing downstream writes.
+  return next.every((v, i) => v === ids[i]) ? ids : next;
+}

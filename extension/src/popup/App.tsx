@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
-import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder } from '@pomodoso/types';
+import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder, applyStatusPlacement } from '@pomodoso/types';
 import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
@@ -124,6 +124,7 @@ export function App() {
   const soundSettingsRow    = useLiveQuery(() => db.settings.get('sound_settings'), [migrated]);
   const timezoneRow         = useLiveQuery(() => db.settings.get('timezone'), [migrated]);
   const maxPrioritiesRow    = useLiveQuery(() => db.settings.get('max_priorities'), [migrated]);
+  const autoSortRow         = useLiveQuery(() => db.settings.get('auto_sort_by_status'), [migrated]);
   const weekStartRow        = useLiveQuery(() => db.settings.get('week_start'), [migrated]);
   const workDaysRow         = useLiveQuery(() => db.settings.get('work_days'), [migrated]);
 
@@ -143,6 +144,9 @@ export function App() {
   const soundSettings: SoundSettings = (soundSettingsRow?.value as SoundSettings | undefined) ?? { ...DEFAULT_SOUND_SETTINGS };
   const timezone: string = (timezoneRow?.value as string | undefined) ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const maxPriorities: number = (maxPrioritiesRow?.value as number | undefined) ?? 3;
+  // On by default: reordering Today as work resolves is the behaviour people
+  // expect, so the setting exists to switch it off rather than on.
+  const autoSortByStatus: boolean = (autoSortRow?.value as boolean | undefined) ?? true;
   // 0=Mon…6=Sun convention (matches habit days). Defaults: week starts Monday, work days Mon–Fri.
   const weekStart: number   = (weekStartRow?.value as number | undefined) ?? 0;
   const workDays: number[]  = (workDaysRow?.value as number[] | undefined) ?? [0, 1, 2, 3, 4];
@@ -661,6 +665,25 @@ export function App() {
     triggerSync();
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev);
 
+    // Today reorders itself as work resolves: finished and cancelled sink,
+    // in-progress rises. Each section is sorted on its own, so a priority never
+    // leaves Priorities by being completed — only its place within them moves.
+    // Applied to whichever workspace's order actually holds the task, so it
+    // works the same from the Today list, the task detail, or "all".
+    if (updates.status !== undefined && autoSortByStatus) {
+      const status = updates.status;
+      await db.transaction('rw', [db.taskOrders], async () => {
+        for (const order of await db.taskOrders.toArray()) {
+          const priorityIds = applyStatusPlacement(order.priorityIds, id, status);
+          const todayIds    = applyStatusPlacement(order.todayIds, id, status);
+          // applyStatusPlacement returns the same reference when nothing moved.
+          if (priorityIds === order.priorityIds && todayIds === order.todayIds) continue;
+          await putWsOrder(order.wsId, { priorityIds, todayIds });
+        }
+      });
+      triggerSync();
+    }
+
     if (updates.workspaceId !== undefined) {
       const newWsId = updates.workspaceId ?? 'default';
       await db.transaction('rw', [db.taskOrders], async () => {
@@ -689,7 +712,7 @@ export function App() {
         });
       });
     }
-  }, [allTasks]);
+  }, [allTasks, autoSortByStatus]);
 
   const deleteTask = useCallback(async (id: string) => {
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
@@ -904,6 +927,12 @@ export function App() {
     triggerSync();
   }, []);
 
+  const updateAutoSortByStatus = useCallback(async (on: boolean) => {
+    await db.settings.put({ key: 'auto_sort_by_status', value: on });
+    await db.settings.put({ key: 'auto_sort_by_status_updated_at', value: now() });
+    triggerSync();
+  }, []);
+
   const updateWeekStart = useCallback(async (day: number) => {
     await db.settings.put({ key: 'week_start', value: day });
     await db.settings.put({ key: 'week_start_updated_at', value: now() });
@@ -1074,6 +1103,7 @@ export function App() {
           soundSettings={soundSettings}
           timezone={timezone}
           maxPriorities={maxPriorities}
+          autoSortByStatus={autoSortByStatus}
           activeWsId={activeWsId}
           initialPage={settingsInitialPage}
           onBack={() => { setShowSettings(false); setSettingsInitialPage('main'); }}
@@ -1088,6 +1118,7 @@ export function App() {
           onUpdateSoundSettings={(updates) => void updateSoundSettings(updates)}
           onUpdateTimezone={(tz) => void updateTimezone(tz)}
           onUpdateMaxPriorities={(n) => void updateMaxPriorities(n)}
+          onUpdateAutoSortByStatus={(on) => void updateAutoSortByStatus(on)}
           weekStart={weekStart}
           workDays={workDays}
           onUpdateWeekStart={(d) => void updateWeekStart(d)}

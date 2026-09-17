@@ -47,6 +47,27 @@ export default function GeneralSettingsScreen(): React.JSX.Element {
         </View>
 
         <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Sort Today by status</Text>
+          <View style={styles.pillRow}>
+            {([true, false] as const).map(on => (
+              <Pressable
+                key={String(on)}
+                style={[styles.pill, settings.autoSortByStatus === on && styles.pillActive]}
+                onPress={() => update('autoSortByStatus', on)}
+              >
+                <Text style={[styles.pillText, settings.autoSortByStatus === on && styles.pillTextActive]}>
+                  {on ? 'On' : 'Off'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.hint}>
+            Done and cancelled tasks move to the bottom of their section, in-progress moves to the top.
+            Delayed and to-do stay where you put them. Off keeps your manual order exactly as arranged.
+          </Text>
+        </View>
+
+        <View style={styles.field}>
           <Text style={styles.fieldLabel}>Week starts on</Text>
           <View style={styles.pillRow}>
             {([0, 6] as const).map(day => (

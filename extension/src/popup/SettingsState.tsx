@@ -43,6 +43,7 @@ interface SettingsStateProps {
   soundSettings: SoundSettings;
   timezone: string;
   maxPriorities: number;
+  autoSortByStatus: boolean;
   activeWsId: string;
   initialPage?: SettingsPage;
   entitlements: Entitlements;
@@ -60,13 +61,14 @@ interface SettingsStateProps {
   onUpdateSoundSettings: (updates: Partial<SoundSettings>) => void;
   onUpdateTimezone: (tz: string) => void;
   onUpdateMaxPriorities: (n: number) => void;
+  onUpdateAutoSortByStatus: (on: boolean) => void;
   weekStart: number;
   workDays: number[];
   onUpdateWeekStart: (day: number) => void;
   onUpdateWorkDays: (days: number[]) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, autoSortByStatus, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateAutoSortByStatus, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
 
   if (page === 'account') {
@@ -112,7 +114,7 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
   }
 
   if (page === 'general') {
-    return <GeneralPage timezone={timezone} maxPriorities={maxPriorities} weekStart={weekStart} workDays={workDays} onUpdateTimezone={onUpdateTimezone} onUpdateMaxPriorities={onUpdateMaxPriorities} onUpdateWeekStart={onUpdateWeekStart} onUpdateWorkDays={onUpdateWorkDays} onBack={() => setPage('main')} />;
+    return <GeneralPage timezone={timezone} maxPriorities={maxPriorities} autoSortByStatus={autoSortByStatus} weekStart={weekStart} workDays={workDays} onUpdateTimezone={onUpdateTimezone} onUpdateMaxPriorities={onUpdateMaxPriorities} onUpdateAutoSortByStatus={onUpdateAutoSortByStatus} onUpdateWeekStart={onUpdateWeekStart} onUpdateWorkDays={onUpdateWorkDays} onBack={() => setPage('main')} />;
   }
 
   if (page === 'data') {
@@ -189,9 +191,11 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-function GeneralPage({ timezone, maxPriorities, weekStart, workDays, onUpdateTimezone, onUpdateMaxPriorities, onUpdateWeekStart, onUpdateWorkDays, onBack }: {
+function GeneralPage({ timezone, maxPriorities, autoSortByStatus, weekStart, workDays, onUpdateTimezone, onUpdateMaxPriorities, onUpdateAutoSortByStatus, onUpdateWeekStart, onUpdateWorkDays, onBack }: {
   timezone: string;
   maxPriorities: number;
+  autoSortByStatus: boolean;
+  onUpdateAutoSortByStatus: (on: boolean) => void;
   weekStart: number;
   workDays: number[];
   onUpdateTimezone: (tz: string) => void;
@@ -272,6 +276,31 @@ function GeneralPage({ timezone, maxPriorities, weekStart, workDays, onUpdateTim
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
               Max tasks shown in Today's priorities. Default is 3.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 6 }}>Sort Today by status</div>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {([true, false] as const).map(on => (
+                <button
+                  key={String(on)}
+                  onClick={() => onUpdateAutoSortByStatus(on)}
+                  style={{
+                    padding: '5px 14px', fontSize: 12, fontWeight: autoSortByStatus === on ? 600 : 400,
+                    borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: `1px solid ${autoSortByStatus === on ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                    background: autoSortByStatus === on ? 'var(--color-accent)' : 'var(--color-surface)',
+                    color: autoSortByStatus === on ? '#fff' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {on ? 'On' : 'Off'}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
+              Done and cancelled tasks move to the bottom of their section, in-progress moves to the top.
+              Delayed and to-do stay where you put them. Off keeps your manual order exactly as dragged.
             </div>
           </div>
 
