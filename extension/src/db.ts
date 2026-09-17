@@ -65,6 +65,10 @@ export interface TaskOrderRow {
   wsId: string;
   priorityIds: string[];
   todayIds: string[];
+  // Manual Backlog order. Ids not listed here (created on another device, or
+  // predating the field) render after the listed ones, so a partial list is
+  // always safe.
+  backlogIds?: string[];
   updatedAt?: string;  // stamped automatically by the Dexie hooks below
   syncedAt?: string | undefined;
 }
@@ -101,6 +105,10 @@ export interface HabitRow extends SyncMeta {
   timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
   endDate?: string;         // YYYY-MM-DD — hidden from Today after this date
   challengeLengthDays?: number; // e.g. 21 — renders a "Day N of length" challenge card
+  // Manual display order, ascending. Habits are user-global, so this order is
+  // too: the same sequence shows in every workspace and in "all". Habits
+  // without one sort last (by creation) until they're first dragged.
+  sortOrder?: number;
   streakLabel: string;
   days: number[];
   workspaceId?: string | null;
@@ -286,6 +294,20 @@ export class PomoDB extends Dexie {
       }
       if (modified.length) await tx.table('habits').bulkPut(modified);
     });
+    // v15: seed habit sortOrder from the order habits currently come back in,
+    // so the list doesn't reshuffle the moment sorting starts being applied.
+    // Re-pushed (syncedAt cleared) so the seeded order reaches other devices.
+    this.version(15).stores({}).upgrade(async tx => {
+      const habits = await tx.table('habits').toArray() as HabitRow[];
+      const modified: HabitRow[] = [];
+      habits.forEach((h, i) => {
+        if (typeof h.sortOrder === 'number') return;
+        h.sortOrder = i;
+        delete (h as { syncedAt?: string }).syncedAt;
+        modified.push(h);
+      });
+      if (modified.length) await tx.table('habits').bulkPut(modified);
+    });
   }
 }
 
@@ -307,7 +329,7 @@ db.taskOrders.hook('creating', function (_pk, obj) {
 db.taskOrders.hook('updating', function (mods) {
   if (applyingRemote) return undefined;
   const m = mods as Partial<TaskOrderRow>;
-  if ('priorityIds' in m || 'todayIds' in m) return { updatedAt: now() };
+  if ('priorityIds' in m || 'todayIds' in m || 'backlogIds' in m) return { updatedAt: now() };
   return undefined;
 });
 

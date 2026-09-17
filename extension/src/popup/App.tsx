@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
-import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
+import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder } from '@pomodoso/types';
 import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
@@ -27,8 +27,26 @@ export type { TaskStatus, TaskLink, TimeLogEntry, NoteEntry, TaskRow as Selected
 export type TodayTask = TaskRow;
 export type { TimerSettings, SoundSettings };
 
-type WorkspaceOrder = { priorityIds: string[]; todayIds: string[] };
-const INITIAL_WS_ORDER: WorkspaceOrder = { priorityIds: [], todayIds: [] };
+type WorkspaceOrder = { priorityIds: string[]; todayIds: string[]; backlogIds: string[] };
+const INITIAL_WS_ORDER: WorkspaceOrder = { priorityIds: [], todayIds: [], backlogIds: [] };
+
+// Dexie `put` replaces the whole row, so writing {wsId, priorityIds, todayIds}
+// silently dropped every other column — which is how backlogIds would vanish on
+// the next unrelated Today edit. Every write goes through here instead: read,
+// merge, put.
+async function putWsOrder(
+  wsId: string,
+  patch: Partial<Omit<TaskOrderRow, 'wsId'>>,
+): Promise<void> {
+  const cur = await db.taskOrders.get(wsId);
+  await db.taskOrders.put({
+    wsId,
+    priorityIds: cur?.priorityIds ?? [],
+    todayIds:    cur?.todayIds ?? [],
+    backlogIds:  cur?.backlogIds ?? [],
+    ...patch,
+  });
+}
 const DEFAULT_WORKSPACE: WorkspaceRow = { id: 'default', name: 'Personal', color: '#4A6FA5', updatedAt: now() };
 const INITIAL_RULES: DetectionRuleRow[] = [
   { id: 'r-linear', name: 'Linear', urlPattern: 'linear\\.app\\/[^/]+\\/issue\\/', active: true, kind: 'preset', presetId: 'linear', updatedAt: now() },
@@ -88,10 +106,10 @@ export function App() {
         const order = await db.taskOrders.get('default');
         if (order) {
           const existing = await db.taskOrders.get(targetId);
-          await db.taskOrders.put({
-            wsId: targetId,
+          await putWsOrder(targetId, {
             priorityIds: [...new Set([...(existing?.priorityIds ?? []), ...order.priorityIds])],
-            todayIds: [...new Set([...(existing?.todayIds ?? []), ...order.todayIds])],
+            todayIds:    [...new Set([...(existing?.todayIds ?? []), ...order.todayIds])],
+            backlogIds:  [...new Set([...(existing?.backlogIds ?? []), ...(order.backlogIds ?? [])])],
           });
           await db.taskOrders.delete('default');
         }
@@ -114,7 +132,9 @@ export function App() {
   for (const t of allTasksArr ?? []) allTasks[t.id] = t;
 
   const wsOrdersMap: Record<string, WorkspaceOrder> = {};
-  for (const o of taskOrdersArr ?? []) wsOrdersMap[o.wsId] = { priorityIds: o.priorityIds, todayIds: o.todayIds };
+  for (const o of taskOrdersArr ?? []) {
+    wsOrdersMap[o.wsId] = { priorityIds: o.priorityIds, todayIds: o.todayIds, backlogIds: o.backlogIds ?? [] };
+  }
 
   const projects    = projectsArr   ?? [DEFAULT_WORKSPACE as unknown as ProjectRow];
   const workspaces  = workspacesArr ?? [DEFAULT_WORKSPACE];
@@ -196,7 +216,7 @@ export function App() {
           description: '- Go to **Tasks → Backlog**\n- Create tasks with the **+ Add task** button or the **+** in the header\n- Press **★** to pin a task as a priority for today (max 3)\n- Press **+ Today** to add it to your regular task list\n- Open any page on Linear, GitHub, Jira or arXiv — Pomodoso will detect the ticket automatically',
         },
       ]);
-      await db.taskOrders.put({ wsId, priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
+      await putWsOrder(wsId, { priorityIds: [t1, t2], todayIds: [t3, t4, t5] });
       // Habits are user-global → no workspace.
       await db.habits.bulkPut([
         { id: h1, name: 'Drink Water', kind: 'counter', icon: 'water',   goal: 8,  unit: 'glasses', unitAmount: 1, streakLabel: 'New habit', days: [], workspaceId: null, createdAt: ts, updatedAt: ts },
@@ -233,11 +253,7 @@ export function App() {
         const order = await db.taskOrders.get(wsId);
         const todayIds = order?.todayIds ?? [];
         if (!todayIds.includes(task.id)) {
-          await db.taskOrders.put({
-            wsId,
-            priorityIds: order?.priorityIds ?? [],
-            todayIds: [...todayIds, task.id],
-          });
+          await putWsOrder(wsId, { todayIds: [...todayIds, task.id] });
         }
       }
     })();
@@ -333,7 +349,7 @@ export function App() {
         const newPriorityIds = (await Promise.all(order.priorityIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
         const newTodayIds    = (await Promise.all(order.todayIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
         if (newPriorityIds.length !== order.priorityIds.length || newTodayIds.length !== order.todayIds.length) {
-          await db.taskOrders.put({ wsId: order.wsId, priorityIds: newPriorityIds, todayIds: newTodayIds });
+          await putWsOrder(order.wsId, { priorityIds: newPriorityIds, todayIds: newTodayIds });
         }
       }
     })();
@@ -365,14 +381,16 @@ export function App() {
       return {
         priorityIds: [...new Set(orders.flatMap(o => o.priorityIds))],
         todayIds:    [...new Set(orders.flatMap(o => o.todayIds))],
+        backlogIds:  [...new Set(orders.flatMap(o => o.backlogIds ?? []))],
       };
     }
-    return await db.taskOrders.get(wsKey) ?? INITIAL_WS_ORDER;
+    const row = await db.taskOrders.get(wsKey);
+    return row ? { priorityIds: row.priorityIds, todayIds: row.todayIds, backlogIds: row.backlogIds ?? [] } : INITIAL_WS_ORDER;
   }, [wsKey]);
 
-  const patchWsOrder = useCallback(async (updater: (o: WorkspaceOrder) => WorkspaceOrder) => {
+  const patchWsOrder = useCallback(async (updater: (o: WorkspaceOrder) => Partial<WorkspaceOrder>) => {
     const cur = await getActiveWsOrder();
-    await db.taskOrders.put({ wsId: wsKey, ...updater(cur) });
+    await putWsOrder(wsKey, updater(cur));
   }, [wsKey, getActiveWsOrder]);
 
   // ── Derived list data (for rendering) ────────────────────────────────────
@@ -380,25 +398,20 @@ export function App() {
 
   const mergedAllOrder = (): WorkspaceOrder => {
     // Always derive IDs from individual workspace orders — never stale.
-    const priorityIds = [...new Set(
-      Object.entries(wsOrders).filter(([k]) => k !== 'all').flatMap(([, o]) => o.priorityIds),
+    const fromWorkspaces = (pick: (o: WorkspaceOrder) => string[]) => [...new Set(
+      Object.entries(wsOrders).filter(([k]) => k !== 'all').flatMap(([, o]) => pick(o)),
     )];
-    const todayIds = [...new Set(
-      Object.entries(wsOrders).filter(([k]) => k !== 'all').flatMap(([, o]) => o.todayIds),
-    )];
+    const priorityIds = fromWorkspaces(o => o.priorityIds);
+    const todayIds    = fromWorkspaces(o => o.todayIds);
+    const backlogIds  = fromWorkspaces(o => o.backlogIds);
     // Apply any user-defined ordering from the 'all' key (drag-drop in 'all' mode).
     // Tasks added in workspace-specific views are appended at the end.
     const saved = wsOrders['all'];
-    if (!saved) return { priorityIds, todayIds };
-    const applyOrder = (ids: string[], savedOrder: string[]) => {
-      const idSet = new Set(ids);
-      const ordered = savedOrder.filter(id => idSet.has(id));
-      const extra = ids.filter(id => !new Set(savedOrder).has(id));
-      return [...ordered, ...extra];
-    };
+    if (!saved) return { priorityIds, todayIds, backlogIds };
     return {
-      priorityIds: applyOrder(priorityIds, saved.priorityIds),
-      todayIds:    applyOrder(todayIds, saved.todayIds),
+      priorityIds: applySavedOrder(priorityIds, saved.priorityIds),
+      todayIds:    applySavedOrder(todayIds, saved.todayIds),
+      backlogIds:  applySavedOrder(backlogIds, saved.backlogIds),
     };
   };
 
@@ -408,6 +421,7 @@ export function App() {
 
   const priorityIds = activeWsOrder.priorityIds;
   const todayIds    = activeWsOrder.todayIds;
+  const backlogIds  = activeWsOrder.backlogIds;
 
   // The priorities cap is GLOBAL (max across all workspaces, not per-workspace).
   // Count the union of priority ids over every real workspace order regardless
@@ -436,12 +450,19 @@ export function App() {
     !!t.recurrence && !t.deletedAt && inWs(t),
   );
 
-  const backlog = Object.values(allTasks).filter(t => {
+  const backlogUnordered = Object.values(allTasks).filter(t => {
     if (t.status === 'done' || t.status === 'cancelled') return false;
     if (priorityIds.includes(t.id) || todayIds.includes(t.id)) return false;
     if (t.recurrence) return false; // templates live in Recurring section, not backlog
     return inWs(t);
   });
+  // Manual order first; anything the saved order doesn't know about (created on
+  // another device, or before backlog ordering existed) keeps the natural order
+  // behind it rather than jumping to the front.
+  const backlogById = new Map(backlogUnordered.map(t => [t.id, t]));
+  const backlog = applySavedOrder(backlogUnordered.map(t => t.id), backlogIds)
+    .map(id => backlogById.get(id))
+    .filter((t): t is TaskRow => !!t);
 
   const [tabUrl, setTabUrl] = useState('');
   const [tabTitle, setTabTitle] = useState('');
@@ -511,11 +532,10 @@ export function App() {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
       const targetWsId = orderWsFor(task, existing);
-      const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
-      await db.taskOrders.put({
-        wsId: targetWsId,
-        priorityIds: [...cur.priorityIds, task.id],
-        todayIds: cur.todayIds.filter(id => id !== task.id),
+      const cur = await db.taskOrders.get(targetWsId);
+      await putWsOrder(targetWsId, {
+        priorityIds: [...(cur?.priorityIds ?? []), task.id],
+        todayIds: (cur?.todayIds ?? []).filter(id => id !== task.id),
       });
     });
     triggerSync();
@@ -527,8 +547,8 @@ export function App() {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
       const targetWsId = orderWsFor(task, existing);
-      const cur = await db.taskOrders.get(targetWsId) ?? { wsId: targetWsId, priorityIds: [], todayIds: [] };
-      await db.taskOrders.put({ wsId: targetWsId, priorityIds: cur.priorityIds, todayIds: [...cur.todayIds, task.id] });
+      const cur = await db.taskOrders.get(targetWsId);
+      await putWsOrder(targetWsId, { todayIds: [...(cur?.todayIds ?? []), task.id] });
     });
     triggerSync();
   }, [isInToday, orderWsFor]);
@@ -539,8 +559,7 @@ export function App() {
       const orders = await db.taskOrders.filter(o => o.wsId !== 'all').toArray();
       for (const order of orders) {
         if (order.priorityIds.includes(taskId) || order.todayIds.includes(taskId)) {
-          await db.taskOrders.put({
-            wsId: order.wsId,
+          await putWsOrder(order.wsId, {
             priorityIds: order.priorityIds.filter(id => id !== taskId),
             todayIds:    order.todayIds.filter(id => id !== taskId),
           });
@@ -557,7 +576,7 @@ export function App() {
 
   const reorderToday = useCallback(async (newPriorityIds: string[], newTodayIds: string[]) => {
     if (wsKey !== 'all') {
-      await db.taskOrders.put({ wsId: wsKey, priorityIds: newPriorityIds, todayIds: newTodayIds });
+      await putWsOrder(wsKey, { priorityIds: newPriorityIds, todayIds: newTodayIds });
       triggerSync();
       return;
     }
@@ -580,10 +599,19 @@ export function App() {
         for (const id of movedToTasks) {
           if (pIds.includes(id)) { pIds = pIds.filter(i => i !== id); if (!tIds.includes(id)) tIds = [...tIds, id]; changed = true; }
         }
-        if (changed) await db.taskOrders.put({ wsId: order.wsId, priorityIds: pIds, todayIds: tIds });
+        if (changed) await putWsOrder(order.wsId, { priorityIds: pIds, todayIds: tIds });
       }
     }
-    await db.taskOrders.put({ wsId: 'all', priorityIds: newPriorityIds, todayIds: newTodayIds });
+    await putWsOrder('all', { priorityIds: newPriorityIds, todayIds: newTodayIds });
+    triggerSync();
+  }, [wsKey]);
+
+  // Backlog membership isn't stored — the Backlog is "every open task not in
+  // Today" — so unlike reorderToday there's nothing to move between sections.
+  // Both the per-workspace and the 'all' case are a plain order write; in 'all'
+  // it lands on the 'all' key, which mergedAllOrder layers over the union.
+  const reorderBacklog = useCallback(async (newBacklogIds: string[]) => {
+    await putWsOrder(wsKey, { backlogIds: newBacklogIds });
     triggerSync();
   }, [wsKey]);
 
@@ -603,10 +631,9 @@ export function App() {
     const orders = await db.taskOrders.toArray();
     for (const order of orders) {
       if (order.priorityIds.includes(taskId) || order.todayIds.includes(taskId)) {
-        await db.taskOrders.put({
-          wsId: order.wsId,
+        await putWsOrder(order.wsId, {
           priorityIds: order.priorityIds.filter(i => i !== taskId),
-          todayIds: order.todayIds.filter(i => i !== taskId),
+          todayIds:    order.todayIds.filter(i => i !== taskId),
         });
       }
     }
@@ -637,18 +664,17 @@ export function App() {
           if (!inP && !inT) continue;
           wasInPriorities = wasInPriorities || inP;
           wasInToday = wasInToday || inT;
-          await db.taskOrders.put({
-            wsId: order.wsId,
+          await putWsOrder(order.wsId, {
             priorityIds: order.priorityIds.filter(i => i !== id),
-            todayIds: order.todayIds.filter(i => i !== id),
+            todayIds:    order.todayIds.filter(i => i !== id),
+            backlogIds:  (order.backlogIds ?? []).filter(i => i !== id),
           });
         }
         if (!wasInPriorities && !wasInToday) return;
-        const newOrder = await db.taskOrders.get(newWsId) ?? { wsId: newWsId, priorityIds: [], todayIds: [] };
-        await db.taskOrders.put({
-          wsId: newWsId,
-          priorityIds: wasInPriorities ? [...newOrder.priorityIds, id] : newOrder.priorityIds,
-          todayIds: wasInToday ? [...newOrder.todayIds, id] : newOrder.todayIds,
+        const newOrder = await db.taskOrders.get(newWsId);
+        await putWsOrder(newWsId, {
+          ...(wasInPriorities ? { priorityIds: [...(newOrder?.priorityIds ?? []), id] } : {}),
+          ...(wasInToday ? { todayIds: [...(newOrder?.todayIds ?? []), id] } : {}),
         });
       });
     }
@@ -659,11 +685,12 @@ export function App() {
       await db.tasks.update(id, { deletedAt: now(), updatedAt: now() });
       const orders = await db.taskOrders.toArray();
       for (const order of orders) {
-        if (order.priorityIds.includes(id) || order.todayIds.includes(id)) {
-          await db.taskOrders.put({
-            wsId: order.wsId,
+        const inBacklog = (order.backlogIds ?? []).includes(id);
+        if (order.priorityIds.includes(id) || order.todayIds.includes(id) || inBacklog) {
+          await putWsOrder(order.wsId, {
             priorityIds: order.priorityIds.filter(i => i !== id),
             todayIds:    order.todayIds.filter(i => i !== id),
+            backlogIds:  (order.backlogIds ?? []).filter(i => i !== id),
           });
         }
       }
@@ -1150,6 +1177,7 @@ export function App() {
         onCreateTask={(title) => void createTask(title)}
         onCreateFollowup={(parentId) => void createFollowup(parentId)}
         onReorderToday={(p, t) => void reorderToday(p, t)}
+        onReorderBacklog={(ids) => void reorderBacklog(ids)}
         activeTab={activeTab}
         onSetActiveTab={setActiveTab}
       />

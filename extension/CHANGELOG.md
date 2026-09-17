@@ -6,8 +6,13 @@
 
 - **New: daily, weekly and monthly report** — A Report view that totals your pomodoros, focus time, tasks completed and meetings for today, this week or this month, broken down by project and by ticket. Copy it out as Markdown (tables) or as Slack (bullets, because Slack's composer renders no table) to paste straight into a standup.
 
+### Tasks
+
+- **Reorder tasks by dragging, everywhere** — Today's priorities, Today's tasks and the Backlog all reorder by drag. Each row now has its own grip, so dragging no longer competes with the tap that opens the task, and dragging a task into Priorities respects the limit set in Settings instead of a hardcoded three. Works per workspace and under "All workspaces", and the Backlog order syncs across devices.
+
 ### Habits
 
+- **Reorder habits by dragging** — Habits can be reordered from both the Habits tab and Today. The order is user-global (like habits themselves) and syncs across devices; reordering from Today, which shows only what's scheduled, leaves the rest of the list untouched.
 - **21-day challenges and real streaks** — Habits can run as a fixed-length challenge, and the streak shown is now computed from your actual logged history rather than a stored counter that drifted.
 - **Fix: clearing a challenge length now syncs** — Removing the challenge length on one device left it set on every other one. The field was only sent when it had a value, so "no value" never travelled.
 

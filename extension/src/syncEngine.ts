@@ -345,6 +345,7 @@ async function push(client: TokenApiClient): Promise<void> {
       workspace_id: o.wsId,
       priority_ids: o.priorityIds,
       today_ids: o.todayIds,
+      backlog_ids: o.backlogIds ?? [],
     }));
   }
 
@@ -445,6 +446,7 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   // every field the same property, which is what the note here originally
   // asked for.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays ?? null);
+  writeExtra(extra, 'sortOrder', h.sortOrder ?? null);
   return extra;
 }
 
@@ -580,6 +582,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         wsId: id,
         priorityIds: ((data['priority_ids'] as string[]) ?? []),
         todayIds: ((data['today_ids'] as string[]) ?? []),
+        backlogIds: ((data['backlog_ids'] as string[]) ?? []),
         updatedAt: updated_at,
         syncedAt,
       };
@@ -617,6 +620,8 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(hExtra['timeUnit'] ? { timeUnit: true } : {}),
         ...(hExtra['endDate'] ? { endDate: hExtra['endDate'] as string } : {}),
         ...(hExtra['challengeLengthDays'] ? { challengeLengthDays: hExtra['challengeLengthDays'] as number } : {}),
+        // 0 is a legitimate order, so this tests the type rather than truthiness.
+        ...(typeof hExtra['sortOrder'] === 'number' ? { sortOrder: hExtra['sortOrder'] } : {}),
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
       await db.habits.put(row);

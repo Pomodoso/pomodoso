@@ -69,17 +69,18 @@ export function markTaskOrderDirty(workspaceId: string): void {
 /** Task ids in one workspace that are in Today (or Priorities), ordered the
  *  way the user sees them. `sortOrder` carries the position; the wire wants
  *  an array, so the two translate through here in both directions. */
-function orderedIds(workspaceId: string, list: 'today' | 'priority'): string[] {
+function orderedIds(workspaceId: string, list: 'today' | 'priority' | 'backlog'): string[] {
+  // Backlog is the complement of the other two — "open, not in Today" — the
+  // same definition the extension's Backlog list uses, so both clients agree
+  // on which ids belong in backlog_ids.
+  const membership =
+    list === 'backlog'
+      ? and(eq(task.isToday, false), eq(task.isPriority, false))
+      : eq(list === 'today' ? task.isToday : task.isPriority, true);
   return db
     .select({ id: task.id })
     .from(task)
-    .where(
-      and(
-        eq(task.workspaceId, workspaceId),
-        isNull(task.deletedAt),
-        eq(list === 'today' ? task.isToday : task.isPriority, true),
-      ),
-    )
+    .where(and(eq(task.workspaceId, workspaceId), isNull(task.deletedAt), membership))
     .orderBy(asc(task.sortOrder))
     .all()
     .map(r => r.id);
@@ -92,25 +93,33 @@ function orderedIds(workspaceId: string, list: 'today' | 'priority'): string[] {
  *  removed from Today on another device would stay there forever here.
  *  Membership is mutually exclusive, matching togglePriority/toggleToday.
  *
- *  `sortOrder` is only rewritten for tasks the arrays actually name —
- *  backlog rows keep their own ordering, which this record says nothing
- *  about. `task.updatedAt` is deliberately untouched (see db/schema.ts). */
-function applyTaskOrder(workspaceId: string, priorityIds: string[], todayIds: string[]): void {
+ *  `sortOrder` is only rewritten for tasks the arrays actually name — a row
+ *  none of them mentions keeps its own ordering. `task.updatedAt` is
+ *  deliberately untouched (see db/schema.ts). */
+function applyTaskOrder(
+  workspaceId: string,
+  priorityIds: string[],
+  todayIds: string[],
+  backlogIds: string[],
+): void {
   db.update(task)
     .set({ isPriority: false, isToday: false })
     .where(eq(task.workspaceId, workspaceId))
     .run();
 
-  const write = (ids: string[], field: 'isPriority' | 'isToday'): void => {
+  const write = (ids: string[], field: 'isPriority' | 'isToday' | null): void => {
     ids.forEach((id, index) => {
       db.update(task)
-        .set({ [field]: true, sortOrder: index })
+        .set(field ? { [field]: true, sortOrder: index } : { sortOrder: index })
         .where(and(eq(task.id, id), eq(task.workspaceId, workspaceId)))
         .run();
     });
   };
   write(priorityIds, 'isPriority');
   write(todayIds, 'isToday');
+  // Backlog rows carry order but no membership flag — being in neither of the
+  // other two lists is what makes a task backlog.
+  write(backlogIds, null);
 }
 
 function getSetting(key: string): string | undefined {
@@ -178,6 +187,7 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   // Explicitly null when disabled so the clear travels — writeExtra now gives
   // every field that property, which is what this used to special-case.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
+  writeExtra(extra, 'sortOrder', h.sortOrder);
   return extra;
 }
 
@@ -390,6 +400,7 @@ async function push(client: TokenApiClient): Promise<void> {
         workspace_id: o.workspaceId,
         priority_ids: orderedIds(o.workspaceId, 'priority'),
         today_ids: orderedIds(o.workspaceId, 'today'),
+        backlog_ids: orderedIds(o.workspaceId, 'backlog'),
       }),
     );
   }
@@ -714,6 +725,7 @@ function applyEntity(entity: SyncEntity): void {
         id,
         Array.isArray(data.priority_ids) ? (data.priority_ids as string[]) : [],
         Array.isArray(data.today_ids) ? (data.today_ids as string[]) : [],
+        Array.isArray(data.backlog_ids) ? (data.backlog_ids as string[]) : [],
       );
       db.insert(taskOrder)
         .values({ workspaceId: id, updatedAt: updated_at, syncedAt })
@@ -740,7 +752,7 @@ function applyEntity(entity: SyncEntity): void {
         unitAmount: 'unitAmount' in hExtra ? (hExtra.unitAmount as number | null) : (existing?.unitAmount ?? null),
         challengeLengthDays: 'challengeLengthDays' in hExtra ? (hExtra.challengeLengthDays as number | null) : (existing?.challengeLengthDays ?? null),
         days: JSON.stringify(days),
-        sortOrder: existing?.sortOrder ?? 0,
+        sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),
         // Immutable, so unlike the other extras it falls back to the
         // existing/local value (then updated_at) rather than dropping.
         createdAt: (hExtra.createdAt as string | undefined) ?? existing?.createdAt ?? updated_at,

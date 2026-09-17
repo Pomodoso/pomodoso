@@ -450,10 +450,34 @@ export function useTasks() {
     triggerSync();
   }
 
+  // New display order for one list — Priorities, Today, or Backlog. sortOrder
+  // is per-list (each renders from its own filtered query), so index-from-zero
+  // in each is what the lists already expect; applyTaskOrder writes the same
+  // shape when an order arrives from another device.
+  //
+  // Like togglePriority/toggleToday this deliberately leaves task.updatedAt
+  // alone — order travels as the workspace's `task_order` record. Under "All
+  // workspaces" one drag can span workspaces, so every one it touched is
+  // stamped dirty.
+  function reorderTasks(orderedIds: string[]): void {
+    const byId = new Map((tasks ?? []).map(t => [t.id, t]));
+    const touched = new Set<string>();
+    orderedIds.forEach((id, index) => {
+      const current = byId.get(id);
+      if (!current || current.sortOrder === index) return;
+      db.update(task).set({ sortOrder: index }).where(eq(task.id, id)).run();
+      touched.add(current.workspaceId);
+    });
+    if (touched.size === 0) return;
+    for (const ws of touched) markTaskOrderDirty(ws);
+    triggerSync();
+  }
+
   return {
     tasks: withMeta,
     sessions: sessions ?? [],
     addTask,
+    reorderTasks,
     setTaskStatus,
     updateTask,
     togglePriority,

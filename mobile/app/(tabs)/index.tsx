@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { reorderSubset } from '@pomodoso/types';
 
 import { BreakBanner } from '@/components/BreakBanner';
 import { AddTaskModal } from '@/components/AddTaskModal';
@@ -11,6 +13,7 @@ import { RemoteTimerBanner } from '@/components/RemoteTimerBanner';
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
+import { ReorderableSection } from '@/components/ReorderableSection';
 import { TaskRow } from '@/components/TaskRow';
 import { TimerRing } from '@/components/TimerRing';
 import { isResolvedStatus, isUpdatedToday } from '@/constants/taskStatus';
@@ -39,7 +42,7 @@ export default function HomeScreen() {
   const { workspace, isAll } = useWorkspace();
   // intoToday: a task added from this screen belongs on this screen.
   const addTaskSheet = useAddTask({ intoToday: true });
-  const { habits, toggleHabit, incrementHabit } = useHabits();
+  const { habits, toggleHabit, incrementHabit, reorderHabits } = useHabits();
   const { meetings } = useMeetings();
   const { settings } = useSettings();
   const {
@@ -64,7 +67,16 @@ export default function HomeScreen() {
   // task to swap, and paused/idle should still open the start picker.
   const canAttach = display.status === 'active' && display.kind === 'focus';
   const { requestStart, pickerProps } = useStartPicker(startSession, canAttach ? attachTask : null);
-  const { tasks, setTaskStatus } = useTasks();
+  const { tasks, setTaskStatus, reorderTasks, togglePriority } = useTasks();
+  // Mirrors the Tasks screen: the cap is the section's whole point, so a
+  // refused promotion says why instead of doing nothing.
+  function promoteToPriority(id: string): void {
+    if (togglePriority(id, settings.maxPriorities)) return;
+    Alert.alert(
+      'Priorities are full',
+      `You can have up to ${settings.maxPriorities} priorities. Move one out first, or raise the limit in Settings.`,
+    );
+  }
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const { projects } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
@@ -228,71 +240,100 @@ export default function HomeScreen() {
           )}
         </View>
 
-        <Text style={styles.sectionTitle}>Today&apos;s priorities</Text>
-        {priorities.map(t => (
-          <TaskRow
-            key={t.id}
-            title={t.title}
-            ticket={t.ticketRef ?? undefined}
-            meta={t.meta ?? ''}
-            status={t.status}
-            projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-            onPress={() => router.push(`/task/${t.id}`)}
-            onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-            onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-          />
-        ))}
+        <ReorderableSection
+          title="Today's priorities"
+          items={priorities}
+          keyOf={t => t.id}
+          onReorder={reorderTasks}
+          renderItem={t => (
+            <TaskRow
+              title={t.title}
+              ticket={t.ticketRef ?? undefined}
+              meta={t.meta ?? ''}
+              status={t.status}
+              projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+              onPress={() => router.push(`/task/${t.id}`)}
+              onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+              onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+            />
+          )}
+          promote={{
+            icon: 'arrow-down',
+            label: 'Move out of priorities',
+            onPress: t => togglePriority(t.id, settings.maxPriorities),
+          }}
+        />
 
         {todayTasks.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Today&apos;s tasks</Text>
-            {todayTasks.map(t => (
-              <TaskRow
-                key={t.id}
-                title={t.title}
-                ticket={t.ticketRef ?? undefined}
-                meta={t.meta ?? ''}
-                status={t.status}
-                projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-                onPress={() => router.push(`/task/${t.id}`)}
-                onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-              />
-            ))}
+            <ReorderableSection
+              title="Today's tasks"
+              items={todayTasks}
+              keyOf={t => t.id}
+              onReorder={reorderTasks}
+              renderItem={t => (
+                <TaskRow
+                  title={t.title}
+                  ticket={t.ticketRef ?? undefined}
+                  meta={t.meta ?? ''}
+                  status={t.status}
+                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                  onPress={() => router.push(`/task/${t.id}`)}
+                  onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                />
+              )}
+              promote={{
+                icon: 'star',
+                label: 'Move to priorities',
+                onPress: t => promoteToPriority(t.id),
+                enabled: t => !isResolvedStatus(t.status),
+              }}
+            />
           </>
         )}
 
         {settings.showHabitsInToday && (
           <>
-            <Text style={styles.sectionTitle}>Habits today</Text>
-            {habits.filter(h => h.scheduledToday).map(habit => (
-              <View key={habit.id} style={styles.habitRow}>
-                <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
-                  <Ionicons
-                    name={habit.icon as ComponentProps<typeof Ionicons>['name']}
-                    size={18}
-                    color={habit.done ? colors.success : colors.textTertiary}
+            <ReorderableSection
+              title="Habits today"
+              items={habits.filter(h => h.scheduledToday)}
+              keyOf={h => h.id}
+              // Today shows only the habits scheduled for today, so the drop
+              // has to be re-slotted into the full list before it is saved —
+              // otherwise the ones not scheduled today would fall out of the
+              // order entirely. Habits are user-global, so this order is the
+              // same in every workspace and under "All".
+              onReorder={ids => reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
+              renderItem={habit => (
+                <View style={styles.habitRow}>
+                  <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
+                    <Ionicons
+                      name={habit.icon as ComponentProps<typeof Ionicons>['name']}
+                      size={18}
+                      color={habit.done ? colors.success : colors.textTertiary}
+                    />
+                  </View>
+                  <View style={styles.habitNameBlock}>
+                    <Text style={styles.habitName}>{habit.name}</Text>
+                    {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
+                      <Text style={styles.habitSubtext}>
+                        {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
+                        {habit.unit}
+                      </Text>
+                    )}
+                  </View>
+                  <HabitControl
+                    kind={habit.kind}
+                    done={habit.done}
+                    count={habit.count}
+                    goal={habit.goal}
+                    onToggle={() => toggleHabit(habit.id)}
+                    onIncrement={delta => incrementHabit(habit.id, delta)}
                   />
                 </View>
-                <View style={styles.habitNameBlock}>
-                  <Text style={styles.habitName}>{habit.name}</Text>
-                  {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
-                    <Text style={styles.habitSubtext}>
-                      {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
-                      {habit.unit}
-                    </Text>
-                  )}
-                </View>
-                <HabitControl
-                  kind={habit.kind}
-                  done={habit.done}
-                  count={habit.count}
-                  goal={habit.goal}
-                  onToggle={() => toggleHabit(habit.id)}
-                  onIncrement={delta => incrementHabit(habit.id, delta)}
-                />
-              </View>
-            ))}
+              )}
+            />
           </>
         )}
 

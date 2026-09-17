@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddTaskModal } from '@/components/AddTaskModal';
 import { ProjectPicker } from '@/components/ProjectPicker';
+import { ReorderableSection } from '@/components/ReorderableSection';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
 import { TaskRow } from '@/components/TaskRow';
@@ -15,6 +16,7 @@ import type { HistoryRange } from '@/hooks/useTaskHistory';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
 import { useAddTask } from '@/hooks/useAddTask';
 import { useProjects } from '@/hooks/useProjects';
+import { useSettings } from '@/hooks/useSettings';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useStartPicker } from '@/hooks/useStartPicker';
 import { useStatusPicker } from '@/hooks/useStatusPicker';
@@ -37,7 +39,8 @@ export default function TasksScreen() {
   // points it at that task rather than trying to start a second one.
   const canAttach = display.status === 'active' && display.kind === 'focus';
   const { requestStart, pickerProps } = useStartPicker(startSession, canAttach ? attachTask : null);
-  const { tasks, addTask, setTaskStatus } = useTasks();
+  const { tasks, addTask, setTaskStatus, reorderTasks, togglePriority } = useTasks();
+  const { settings } = useSettings();
   const { requestStatus, pickerProps: statusPickerProps } = useStatusPicker(setTaskStatus);
   const { projects, addProject, updateProject, removeProject } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
@@ -47,6 +50,17 @@ export default function TasksScreen() {
   // Play means start when idle, and attach-to-the-running-pomodoro while a
   // focus session is going — so the button has to stay available in both.
   const canStart = display.status === 'idle' || canAttach;
+
+  // togglePriority refuses silently when the cap set in Settings is already
+  // full; the cap is the whole point of the section, so say so rather than
+  // leaving the tap looking broken.
+  function promoteToPriority(id: string): void {
+    if (togglePriority(id, settings.maxPriorities)) return;
+    Alert.alert(
+      'Priorities are full',
+      `You can have up to ${settings.maxPriorities} priorities. Move one out first, or raise the limit in Settings.`,
+    );
+  }
 
   const today = useTodayDate();
   // Same "stays visible today" rule as Home: a priority/today task resolved
@@ -99,58 +113,87 @@ export default function TasksScreen() {
         <ScrollView contentContainerStyle={styles.scroll}>
           {priorities.length > 0 && (
             <>
-              <Text style={styles.groupTitle}>Today&apos;s priorities</Text>
-              {priorities.map(t => (
-                <TaskRow
-                  key={t.id}
-                  title={t.title}
-                  ticket={t.ticketRef ?? undefined}
-                  meta={t.meta ?? ''}
-                  status={t.status}
-                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-                  onPress={() => router.push(`/task/${t.id}`)}
-                  onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-                />
-              ))}
+              <ReorderableSection
+                title="Today's priorities"
+                items={priorities}
+                keyOf={t => t.id}
+                onReorder={reorderTasks}
+                renderItem={t => (
+                  <TaskRow
+                    title={t.title}
+                    ticket={t.ticketRef ?? undefined}
+                    meta={t.meta ?? ''}
+                    status={t.status}
+                    projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                    onPress={() => router.push(`/task/${t.id}`)}
+                    onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                  />
+                )}
+                promote={{
+                  icon: 'arrow-down',
+                  label: 'Move out of priorities',
+                  onPress: t => togglePriority(t.id, settings.maxPriorities),
+                }}
+              />
             </>
           )}
 
           {todayTasks.length > 0 && (
             <>
-              <Text style={styles.groupTitle}>Today&apos;s tasks</Text>
-              {todayTasks.map(t => (
-                <TaskRow
-                  key={t.id}
-                  title={t.title}
-                  ticket={t.ticketRef ?? undefined}
-                  meta={t.meta ?? ''}
-                  status={t.status}
-                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-                  onPress={() => router.push(`/task/${t.id}`)}
-                  onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-                />
-              ))}
+              <ReorderableSection
+                title="Today's tasks"
+                items={todayTasks}
+                keyOf={t => t.id}
+                onReorder={reorderTasks}
+                renderItem={t => (
+                  <TaskRow
+                    title={t.title}
+                    ticket={t.ticketRef ?? undefined}
+                    meta={t.meta ?? ''}
+                    status={t.status}
+                    projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                    onPress={() => router.push(`/task/${t.id}`)}
+                    onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                  />
+                )}
+                promote={{
+                  icon: 'star',
+                  label: 'Move to priorities',
+                  onPress: t => promoteToPriority(t.id),
+                  enabled: t => !isResolvedStatus(t.status),
+                }}
+              />
             </>
           )}
 
           {backlog.length > 0 && (
             <>
-              <Text style={styles.groupTitle}>Backlog</Text>
-              {backlog.map(t => (
-                <TaskRow
-                  key={t.id}
-                  title={t.title}
-                  ticket={t.ticketRef ?? undefined}
-                  meta={t.meta ?? ''}
-                  status={t.status}
-                  projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
-                  onPress={() => router.push(`/task/${t.id}`)}
-                  onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
-                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
-                />
-              ))}
+              <ReorderableSection
+                title="Backlog"
+                items={backlog}
+                keyOf={t => t.id}
+                onReorder={reorderTasks}
+                renderItem={t => (
+                  <TaskRow
+                    title={t.title}
+                    ticket={t.ticketRef ?? undefined}
+                    meta={t.meta ?? ''}
+                    status={t.status}
+                    projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                    onPress={() => router.push(`/task/${t.id}`)}
+                    onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                  />
+                )}
+                promote={{
+                  icon: 'star',
+                  label: 'Move to priorities',
+                  onPress: t => promoteToPriority(t.id),
+                  enabled: t => !isResolvedStatus(t.status),
+                }}
+              />
             </>
           )}
 

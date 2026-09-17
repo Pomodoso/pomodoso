@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT workspace_id, priority_ids, today_ids, updated_at\n           FROM task_order\n           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
+  "query": "SELECT workspace_id, priority_ids, today_ids, backlog_ids, updated_at\n           FROM task_order\n           WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)",
   "describe": {
     "columns": [
       {
@@ -20,6 +20,11 @@
       },
       {
         "ordinal": 3,
+        "name": "backlog_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -34,8 +39,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "3c224c724a7a42fa5ce9609b6605564c6c45308c8ec73440db876c847a769275"
+  "hash": "a8c733279bb0d4fb141785a3e5ef81362279778b62d6cbb689dfec31f5674c5d"
 }

@@ -226,6 +226,25 @@ export function useHabits() {
     triggerSync();
   }
 
+  // Habits are user-global (CLAUDE.md rule 6), so their order is too: one
+  // sequence shared by every workspace and by "All". `orderedIds` is the full
+  // list — callers that render a subset (Today shows only what's scheduled)
+  // must re-slot it into the full order before calling, or the habits off
+  // screen would be dropped from the ordering entirely.
+  function reorderHabits(orderedIds: string[]): void {
+    const current = new Map((habitRows ?? []).map(h => [h.id, h.sortOrder]));
+    const now = new Date().toISOString();
+    const changed = orderedIds.filter((id, index) => current.has(id) && current.get(id) !== index);
+    if (changed.length === 0) return;
+    db.transaction(tx => {
+      orderedIds.forEach((id, index) => {
+        if (current.get(id) === index) return;
+        tx.update(habits).set({ sortOrder: index, updatedAt: now }).where(eq(habits.id, id)).run();
+      });
+    });
+    triggerSync();
+  }
+
   function removeHabit(id: string): void {
     // Soft delete (CLAUDE.md rule 4), wrapped in a transaction so both
     // tombstones commit together — an interruption between them would
@@ -239,5 +258,5 @@ export function useHabits() {
     triggerSync();
   }
 
-  return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit };
+  return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits };
 }
