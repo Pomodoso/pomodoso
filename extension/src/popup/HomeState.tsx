@@ -3,7 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
+  closestCenter,
   useSensor,
   useSensors,
   useDroppable,
@@ -1195,6 +1197,8 @@ export function HomeState({
             ) : (
               <DndContext
                 sensors={dndSensors}
+                collisionDetection={closestCenter}
+                measuring={DND_MEASURING}
                 onDragStart={(e) => setDragActiveId(e.active.id as string)}
                 onDragEnd={handleDragEnd}
                 onDragCancel={() => setDragActiveId(null)}
@@ -1488,6 +1492,8 @@ export function HomeState({
                         <SectionHeader label="Backlog" done={0} total={filtered.length} />
                         <DndContext
                           sensors={dndSensors}
+                          collisionDetection={closestCenter}
+                          measuring={DND_MEASURING}
                           onDragEnd={(event) => {
                             const next = reorderedIdsFromDrag(filtered.map(t => t.id), event);
                             // Dropping inside a filtered view only re-slots the
@@ -1846,6 +1852,8 @@ function TodayHabits({
       }}>
         <DndContext
           sensors={sensors}
+          collisionDetection={closestCenter}
+          measuring={DND_MEASURING}
           onDragEnd={(event) => {
             const next = reorderedIdsFromDrag(habits.map(h => h.id), event);
             if (next) onReorder(next);
@@ -2157,6 +2165,22 @@ function TaskTooltip({
 // touchAction:'none' is the same story for touch and pen input, where the
 // browser would otherwise claim the vertical drag as a scroll of .scroll-area
 // before dnd-kit sees it.
+// Shared by every DndContext here.
+//
+// collisionDetection: dnd-kit defaults to rectIntersection, which only reports
+// a drop target when the dragged rect genuinely overlaps it. That makes drops
+// fail outright whenever pointer coordinates and measured rects disagree —
+// which is what happens when the popup is rendered at a browser zoom above
+// 100%: the row lifts and follows the cursor, nothing else shifts, and the
+// drop is silently discarded because `over` was never set. closestCenter just
+// picks the nearest droppable centre, so a small coordinate skew costs
+// accuracy rather than the whole interaction.
+//
+// measuring Always: re-measure droppables during the drag instead of once at
+// the start, so a list that reflows mid-drag (or a scroll container that
+// moves) doesn't leave dnd-kit working from stale rects.
+const DND_MEASURING = { droppable: { strategy: MeasuringStrategy.Always } } as const;
+
 function dragStyle(transform: string | null | undefined, transition: string | undefined, isDragging: boolean): React.CSSProperties {
   return {
     transform: transform ?? undefined,
@@ -4348,6 +4372,8 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
         <DndContext
           sensors={sensors}
+          collisionDetection={closestCenter}
+          measuring={DND_MEASURING}
           onDragEnd={(event) => {
             const next = reorderedIdsFromDrag(activeHabits.map(h => h.id), event);
             // Closed habits are rendered in their own section below and are not
