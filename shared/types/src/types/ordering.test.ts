@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { applySavedOrder, reorderSubset } from './ordering.ts';
+import {
+  applySavedOrder,
+  applyStatusPlacement,
+  reorderSubset,
+  statusPlacement,
+} from './ordering.ts';
 
 // ─── applySavedOrder ──────────────────────────────────────────────────────────
 
@@ -54,4 +59,50 @@ test('reorderSubset always returns a permutation of the full list', () => {
 
 test('reorderSubset with an empty subset changes nothing', () => {
   assert.deepEqual(reorderSubset(['a', 'b'], []), ['a', 'b']);
+});
+
+// ─── statusPlacement / applyStatusPlacement ───────────────────────────────────
+
+test('resolved statuses sink, active rises, the rest hold', () => {
+  assert.equal(statusPlacement('done'), 'end');
+  assert.equal(statusPlacement('cancelled'), 'end');
+  assert.equal(statusPlacement('in_progress'), 'start');
+  assert.equal(statusPlacement('todo'), 'keep');
+  // "not right now" is the one state where the hand-chosen position still wins.
+  assert.equal(statusPlacement('delayed'), 'keep');
+});
+
+test('completing a task sends it to the end', () => {
+  assert.deepEqual(applyStatusPlacement(['a', 'b', 'c'], 'a', 'done'), ['b', 'c', 'a']);
+});
+
+test('cancelling a task sends it to the end', () => {
+  assert.deepEqual(applyStatusPlacement(['a', 'b', 'c'], 'b', 'cancelled'), ['a', 'c', 'b']);
+});
+
+test('starting a task brings it to the front', () => {
+  assert.deepEqual(applyStatusPlacement(['a', 'b', 'c'], 'c', 'in_progress'), ['c', 'a', 'b']);
+});
+
+test('todo and delayed leave the order untouched', () => {
+  const ids = ['a', 'b', 'c'];
+  assert.equal(applyStatusPlacement(ids, 'a', 'todo'), ids);
+  assert.equal(applyStatusPlacement(ids, 'a', 'delayed'), ids);
+});
+
+test('a task already in position returns the same array, so no write happens', () => {
+  const ids = ['a', 'b', 'c'];
+  assert.equal(applyStatusPlacement(ids, 'c', 'done'), ids);
+  assert.equal(applyStatusPlacement(ids, 'a', 'in_progress'), ids);
+});
+
+test('a task outside the section is left alone', () => {
+  const ids = ['a', 'b'];
+  assert.equal(applyStatusPlacement(ids, 'elsewhere', 'done'), ids);
+});
+
+test('reopening is not an undo — the task keeps its new place', () => {
+  const done = applyStatusPlacement(['a', 'b', 'c'], 'a', 'done');
+  assert.deepEqual(done, ['b', 'c', 'a']);
+  assert.deepEqual(applyStatusPlacement(done, 'a', 'todo'), ['b', 'c', 'a']);
 });

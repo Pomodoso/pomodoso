@@ -19,6 +19,7 @@ const SYNCED_SETTINGS = [
   'sound_settings',
   'timezone',
   'max_priorities',
+  'auto_sort_by_status',
   'week_start',
   'work_days',
 ] as const;

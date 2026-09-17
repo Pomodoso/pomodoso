@@ -1,4 +1,5 @@
 import type { RecurrenceRule } from '@pomodoso/types';
+import { applyStatusPlacement } from '@pomodoso/types';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect } from 'react';
@@ -228,7 +229,28 @@ export function useTasks() {
     // the recurring or one-off path handled it above, but only for 'done' —
     // 'cancelled' never gets a sound in the extension either.
     if (status === 'done') playSound('task-done', settingsValue.soundSettings);
+    autoSortAfterStatus(id, status);
     triggerSync();
+  }
+
+  // Today reorders itself as work resolves. Each section is sorted on its own,
+  // so a priority never leaves Priorities by being completed — only its place
+  // within them moves. Scoped to the task's own workspace, which is what keeps
+  // this correct under "All workspaces" where several are on screen at once.
+  function autoSortAfterStatus(id: string, status: TaskStatus): void {
+    if (!settingsValue.autoSortByStatus) return;
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current || (!current.isPriority && !current.isToday)) return;
+    const inSection = current.isPriority
+      ? (t: typeof current) => t.isPriority
+      : (t: typeof current) => t.isToday;
+    const section = (tasks ?? [])
+      .filter(t => t.workspaceId === current.workspaceId && inSection(t))
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(t => t.id);
+    const next = applyStatusPlacement(section, id, status);
+    if (next !== section) reorderTasks(next);
   }
 
   function resolveRecurringOccurrence(id: string): void {

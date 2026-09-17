@@ -26,6 +26,11 @@ export interface AppSettings {
   // whole section off Home rather than per-item. Persisted on both clients now
   // (the extension's habits pin used to be unpersisted React state that reset
   // on every popup open). Default true, same as the extension.
+  // Today's sections reorder themselves as work resolves: done/cancelled sink,
+  // in-progress rises, todo/delayed hold their hand-chosen place. On by default
+  // — the setting is there to switch it off. Mirrors extension's
+  // `auto_sort_by_status`.
+  autoSortByStatus: boolean;
   showHabitsInToday: boolean;
   showChallengesInToday: boolean;
   showMeetingsInToday: boolean;
@@ -62,6 +67,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   weekStart: 0,
   workDays: [0, 1, 2, 3, 4],
   soundSettings: DEFAULT_SOUND_SETTINGS,
+  autoSortByStatus: true,
   showHabitsInToday: true,
   showChallengesInToday: true,
   showMeetingsInToday: true,
@@ -77,6 +83,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   weekStart: 'week_start',
   workDays: 'work_days',
   soundSettings: 'sound_settings',
+  autoSortByStatus: 'auto_sort_by_status',
   showHabitsInToday: 'show_habits_in_today',
   showChallengesInToday: 'show_challenges_in_today',
   showMeetingsInToday: 'show_meetings_in_today',
@@ -118,6 +125,7 @@ export function useSettings() {
     weekStart: get('weekStart'),
     workDays: get('workDays'),
     soundSettings: get('soundSettings'),
+    autoSortByStatus: get('autoSortByStatus'),
     showHabitsInToday: get('showHabitsInToday'),
     showChallengesInToday: get('showChallengesInToday'),
     showMeetingsInToday: get('showMeetingsInToday'),
