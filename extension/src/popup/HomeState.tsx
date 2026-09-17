@@ -21,7 +21,7 @@ import type React from 'react';
 import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
-import { reorderSubset } from '@pomodoso/types';
+import { challengeProgressLabel, challengeStreakLabel, reorderSubset } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
 import {
   db, now, localDate,
@@ -285,6 +285,16 @@ export function HomeState({
     });
     triggerSync();
   }, []);
+  // Full habit history. Hoisted here from HabitsContent now that Today renders
+  // challenge cards too — the note there said it stayed local because "Today's
+  // habit rows just show done/count, no streak", which stopped being true.
+  const allHabitHistory: HabitHistoryRow[] = useLiveQuery(() => db.habitHistory.toArray(), []) ?? [];
+  const habitHistoryByHabit = new Map<string, Map<string, HabitHistoryRow>>();
+  for (const r of allHabitHistory) {
+    if (!habitHistoryByHabit.has(r.habitId)) habitHistoryByHabit.set(r.habitId, new Map());
+    habitHistoryByHabit.get(r.habitId)!.set(r.date, r);
+  }
+
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
@@ -307,7 +317,11 @@ export function HomeState({
   const [habitsSubTab, setHabitsSubTab] = useState<'today' | 'history'>('today');
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitDef | null>(null);
-  const [showHabitsInToday, setShowHabitsInToday] = useState(true);
+  // Both pins are device-local, matching showScheduleInToday below. showHabits
+  // used to be a plain useState, so it silently reset every time the popup was
+  // reopened.
+  const [showHabitsInToday, setShowHabitsInToday] = useLocalStorage<boolean>('pom_habits_in_today', true);
+  const [showChallengesInToday, setShowChallengesInToday] = useLocalStorage<boolean>('pom_challenges_in_today', true);
   const [showScheduleInToday, setShowScheduleInToday] = useLocalStorage<boolean>('pom_schedule_in_today', true);
   const [showWsPicker, setShowWsPicker] = useState(false);
   const wsPickerRef = useRef<HTMLDivElement>(null);
@@ -315,6 +329,16 @@ export function HomeState({
   // Workspace-filtered habits and meetings (meetings: only today's occurrences)
   // Habits are user-global — shown in every workspace (and the All view).
   const visibleHabits = habits;
+
+  const habitStreaks = new Map(
+    habits.map(h => [h.id, computeHabitStreak(h, habitHistoryByHabit.get(h.id) ?? new Map(), timezone)]),
+  );
+  // Challenges run to a fixed length, so a habit past its end date still has a
+  // result worth showing; only the schedule-based Today list hides those.
+  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  const challengeDaysDone = new Map(
+    challengeHabits.map(h => [h.id, habitStreaks.get(h.id)?.daysDone ?? 0]),
+  );
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
   const todayHabits = visibleHabits.filter(h =>
@@ -1293,6 +1317,11 @@ export function HomeState({
                 onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
               />
             )}
+            {showChallengesInToday && challengeHabits.length > 0 && (
+              <div style={{ padding: '12px 14px 0' }}>
+                <ChallengesSection habits={challengeHabits} daysDoneById={challengeDaysDone} />
+              </div>
+            )}
             <TodayFooter
               pomosToday={timerState.pomosCompletedToday}
               trackedMinutesToday={Math.floor(
@@ -1358,6 +1387,9 @@ export function HomeState({
                   onEditHabit={setEditingHabit}
                   onDeleteHabit={(id) => { void db.habits.update(id, { deletedAt: now(), updatedAt: now() }); triggerSync(); }}
                   onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
+                  streaks={habitStreaks}
+                  showChallengesInToday={showChallengesInToday}
+                  onToggleShowChallengesInToday={() => setShowChallengesInToday(v => !v)}
                 />
               ) : (
                 <HabitHistoryView habits={visibleHabits} timezone={timezone} weekStart={weekStart} />
@@ -4167,25 +4199,69 @@ function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number 
   const complete = clamped >= length;
   return (
     <div style={{
-      background: 'var(--color-accent-bg, rgba(200,85,61,0.08))',
-      border: '1px solid var(--color-accent)',
+      background: complete ? 'var(--color-success-bg)' : 'var(--color-accent-bg, rgba(200,85,61,0.08))',
+      border: `1px solid ${complete ? 'var(--color-success)' : 'var(--color-accent)'}`,
       borderRadius: 'var(--radius-md)',
       padding: '12px 14px',
-      marginBottom: 10,
+      marginBottom: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
         <HabitIcon kind={habit.icon} size={16} />
         <span style={{ fontSize: 13, fontWeight: 700 }}>{habit.name}</span>
+        {complete && <span style={{ fontSize: 12 }} title="Challenge complete">🏆</span>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
-        {complete ? `¡Completado! ${length}/${length} días` : `Día ${clamped} de ${length}. Un día a la vez.`}
+        {challengeProgressLabel(clamped, length)}
       </div>
       <div style={{ height: 6, borderRadius: 3, background: 'var(--color-border)', overflow: 'hidden' }}>
-        <div style={{ width: `${(clamped / length) * 100}%`, height: '100%', background: 'var(--color-accent)' }} />
+        <div style={{
+          width: `${(clamped / length) * 100}%`, height: '100%',
+          background: complete ? 'var(--color-success)' : 'var(--color-accent)',
+        }} />
       </div>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 6 }}>
-        {clamped}/{length} días · {clamped > 0 ? 'racha activa' : 'sin racha'}
+        {challengeStreakLabel(clamped, length)}
       </div>
+    </div>
+  );
+}
+
+// Challenges are a distinct thing from the habit list — a fixed-length run with
+// an end — so they get their own titled block rather than floating above the
+// Habits header unlabelled. Rendered in both the Habits tab and (when pinned)
+// Today, hence the shared component.
+function ChallengesSection({ habits, daysDoneById, showInToday, onToggleShowInToday }: {
+  habits: HabitDef[];
+  daysDoneById: Map<string, number>;
+  showInToday?: boolean;
+  onToggleShowInToday?: () => void;
+}) {
+  if (habits.length === 0) return null;
+  const done = habits.filter(h => (daysDoneById.get(h.id) ?? 0) >= (h.challengeLengthDays ?? 21)).length;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+          Challenges {done > 0 && <span style={{ color: 'var(--color-success)' }}>· {done} done</span>}
+        </span>
+        {onToggleShowInToday && (
+          <button
+            onClick={onToggleShowInToday}
+            style={{
+              fontSize: 10, fontWeight: showInToday ? 600 : 400, cursor: 'pointer',
+              background: 'none', border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-sm)', padding: '2px 7px',
+              color: showInToday ? 'var(--color-accent)' : 'var(--color-text-faint)',
+              display: 'flex', alignItems: 'center', gap: 3,
+            }}
+          >
+            <span>📌</span> {showInToday ? 'In Today' : 'Show in Today'}
+          </button>
+        )}
+      </div>
+      {habits.map(h => (
+        <ChallengeCard key={h.id} habit={h} daysDone={daysDoneById.get(h.id) ?? 0} />
+      ))}
     </div>
   );
 }
@@ -4204,9 +4280,13 @@ interface HabitsContentProps {
   onEditHabit: (habit: HabitDef) => void;
   onDeleteHabit: (id: string) => void;
   onReorder: (orderedIds: string[]) => void;
+  showChallengesInToday: boolean;
+  onToggleShowChallengesInToday: () => void;
+  /** Per-habit streak/challenge progress, computed once in HomeState. */
+  streaks: Map<string, { pastStreak: number; doneToday: boolean; daysDone: number }>;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks }: HabitsContentProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
@@ -4219,20 +4299,12 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
   const closedHabits = habits.filter(h => h.endDate && todayStr > h.endDate);
   const [showClosed, setShowClosed] = useState(false);
 
-  // Self-contained full-history query (same pattern HabitHistoryView already
-  // uses) — HabitsContent is the only place that needs per-habit streaks
-  // (Today's habit rows just show done/count, no streak), so no reason to
-  // hoist this up to HomeState and prop-drill it down.
-  const allHistory: HabitHistoryRow[] = useLiveQuery(() => db.habitHistory.toArray(), []) ?? [];
-  const historyByHabit = new Map<string, Map<string, HabitHistoryRow>>();
-  for (const r of allHistory) {
-    if (!historyByHabit.has(r.habitId)) historyByHabit.set(r.habitId, new Map());
-    historyByHabit.get(r.habitId)!.set(r.date, r);
-  }
-  const streaksById = new Map(
-    activeHabits.map(h => [h.id, computeHabitStreak(h, historyByHabit.get(h.id) ?? new Map(), timezone)]),
-  );
-  const challengeHabits = activeHabits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  // Streaks arrive from HomeState, which needs them for Today's challenge cards
+  // too — this used to run its own full-history query.
+  const streaksById = streaks;
+  // Unlike the habit list, challenges include closed ones: a finished 21-day run
+  // is a result, and hiding it the day after it ends is what you least want.
+  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
 
   const doneCount = activeHabits.filter(h =>
     h.kind === 'boolean' ? (habitDone[h.id] ?? false) : (habitCounters[h.id] ?? 0) >= (h.goal ?? 1)
@@ -4261,13 +4333,12 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
         </div>
       </div>
 
-      {challengeHabits.length > 0 && (
-        <div style={{ marginBottom: 4 }}>
-          {challengeHabits.map(h => (
-            <ChallengeCard key={h.id} habit={h} daysDone={streaksById.get(h.id)?.daysDone ?? 0} />
-          ))}
-        </div>
-      )}
+      <ChallengesSection
+        habits={challengeHabits}
+        daysDoneById={new Map(challengeHabits.map(h => [h.id, streaksById.get(h.id)?.daysDone ?? 0]))}
+        showInToday={showChallengesInToday}
+        onToggleShowInToday={onToggleShowChallengesInToday}
+      />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Habits</span>
@@ -4349,7 +4420,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
             checked={false}
             isDone={false}
             readOnly
-            streakLabel={habitStreakLabel(computeHabitStreak(habit, historyByHabit.get(habit.id) ?? new Map(), timezone).pastStreak)}
+            streakLabel={habitStreakLabel(streaksById.get(habit.id)?.pastStreak ?? 0)}
             onCounterChange={() => {}}
             onToggle={() => {}}
             onEdit={() => onEditHabit(habit)}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { HabitsActivityHeatmap } from '../../components/HabitsActivityHeatmap.tsx';
+import { ChallengesCard } from './TodayPage.tsx';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Habits are user-global (CLAUDE.md rule 6) — unlike every other dashboard
@@ -19,6 +20,9 @@ interface Habit {
   unit_amount: number | null;
   log_value: number;
   log_done: boolean;
+  challenge_length_days: number | null;
+  challenge_days_done: number;
+  streak: number;
 }
 
 interface HabitFormValue {
@@ -298,6 +302,17 @@ export default function HabitsPage() {
   const { user } = useAuth();
   const minYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const [habits, setHabits] = useState<Habit[] | null>(null);
+  // Challenges are a view over the same habits, not a separate fetch — the list
+  // endpoint already carries each one's length and progress.
+  const challenges = (habits ?? [])
+    .filter((h): h is Habit & { challenge_length_days: number } => (h.challenge_length_days ?? 0) > 0)
+    .map(h => ({
+      id: h.id,
+      name: h.name,
+      icon: h.icon,
+      length_days: h.challenge_length_days,
+      days_done: h.challenge_days_done,
+    }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -386,6 +401,12 @@ export default function HabitsPage() {
           onSave={value => handleUpdate(editingHabit.id, value)}
           onCancel={() => setEditingId(null)}
         />
+      )}
+
+      {!loading && challenges.length > 0 && (
+        <div style={{ maxWidth: 560, marginBottom: 16 }}>
+          <ChallengesCard challenges={challenges} />
+        </div>
       )}
 
       <div className="pomo-card" style={{ maxWidth: 560 }}>

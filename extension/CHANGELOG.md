@@ -12,6 +12,8 @@
 
 ### Habits
 
+- **Challenges grouped, in English, and optional on Today** — The 21-day challenge cards were the last Spanish copy left in the app. They now sit under their own "Challenges" heading instead of floating above the habit list unlabelled, mark themselves complete when the run finishes, and can be pinned to Today the same way habits and the schedule already could. They show up on the web dashboard too, on both Today and Habits.
+- **Fix: the habits "Show in Today" pin now sticks** — It was unpersisted state, so it silently reset to on every time the popup was reopened.
 - **Reorder habits by dragging** — Habits can be reordered from both the Habits tab and Today. The order is user-global (like habits themselves) and syncs across devices; reordering from Today, which shows only what's scheduled, leaves the rest of the list untouched.
 - **21-day challenges and real streaks** — Habits can run as a fixed-length challenge, and the streak shown is now computed from your actual logged history rather than a stored counter that drifted.
 - **Fix: clearing a challenge length now syncs** — Removing the challenge length on one device left it set on every other one. The field was only sent when it had a value, so "no value" never travelled.

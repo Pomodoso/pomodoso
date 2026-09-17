@@ -13,6 +13,7 @@ import { RemoteTimerBanner } from '@/components/RemoteTimerBanner';
 import { HabitControl } from '@/components/HabitControl';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
+import { ChallengesSection } from '@/components/ChallengesSection';
 import { ReorderableSection } from '@/components/ReorderableSection';
 import { TaskRow } from '@/components/TaskRow';
 import { TimerRing } from '@/components/TimerRing';
@@ -335,6 +336,10 @@ export default function HomeScreen() {
               )}
             />
           </>
+        )}
+
+        {settings.showChallengesInToday && (
+          <ChallengesSection habits={habits.filter(h => (h.challengeLengthDays ?? 0) > 0)} />
         )}
 
         {settings.showMeetingsInToday && meetings.length > 0 && (

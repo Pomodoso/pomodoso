@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { challengeProgressLabel, challengeStreakLabel } from '@pomodoso/types';
 import { api } from '../../lib/api.ts';
 import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
@@ -76,6 +77,14 @@ interface TodayHabit {
   log: HabitLog | null;
 }
 
+interface TodayChallenge {
+  id: string;
+  name: string;
+  icon: string;
+  length_days: number;
+  days_done: number;
+}
+
 interface ActiveSession {
   id: string;
   task_id: string | null;
@@ -105,6 +114,7 @@ interface TodayData {
   tasks: TodayTask[];
   work_log: WorkLogProject[];
   habits: TodayHabit[];
+  challenges: TodayChallenge[];
   meetings: TodayMeeting[];
   stats: TodayStats;
 }
@@ -612,6 +622,64 @@ function TimeCard({ workLog, meetings }: { workLog: WorkLogProject[]; meetings: 
   );
 }
 
+// A challenge is a fixed-length run with an end, so it gets its own card rather
+// than a row in the habit list. Unlike that list it isn't filtered to today's
+// schedule, and a finished run keeps showing — that's the payoff.
+export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] }) {
+  if (challenges.length === 0) return null;
+  const completed = challenges.filter(c => c.days_done >= c.length_days).length;
+
+  return (
+    <div className="pomo-card">
+      <div className="pomo-card-header">
+        <div className="pomo-card-title"><i className="ti ti-flame" /> Challenges</div>
+        {completed > 0 && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--success)' }}>{completed} done</span>
+        )}
+      </div>
+      {challenges.map((c) => {
+        const clamped = Math.min(c.days_done, c.length_days);
+        const complete = clamped >= c.length_days;
+        return (
+          <div
+            key={c.id}
+            style={{
+              border: `1px solid ${complete ? 'var(--success)' : 'var(--accent)'}`,
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <i
+                className={`ti ${habitIconClass(c.icon)}`}
+                style={{ color: complete ? 'var(--success)' : habitIconColor(c.icon) }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
+              {complete && <i className="ti ti-trophy" style={{ color: 'var(--success)' }} />}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 8 }}>
+              {challengeProgressLabel(clamped, c.length_days)}
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${(clamped / c.length_days) * 100}%`,
+                  height: '100%',
+                  background: complete ? 'var(--success)' : 'var(--accent)',
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-sec)', marginTop: 6 }}>
+              {challengeStreakLabel(clamped, c.length_days)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HabitsCard({ habits, date }: { habits: TodayHabit[]; date: string }) {
   if (habits.length === 0) return null;
 
@@ -888,6 +956,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <MeetingsCard meetings={data.meetings} />
           <TimeCard workLog={data.work_log} meetings={data.meetings} />
           <HabitsCard habits={data.habits} date={date} />
+          <ChallengesCard challenges={data.challenges ?? []} />
           <StatsCard stats={data.stats} />
         </div>
       </div>

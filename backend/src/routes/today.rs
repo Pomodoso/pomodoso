@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
+    habit_streak::{challenge_length, compute_streak, scheduled_days},
     middleware::auth::AuthUser,
+    routes::habits::habit_logs_by_habit,
     AppState,
 };
 
@@ -133,6 +135,15 @@ pub struct TodayStats {
 }
 
 #[derive(Serialize)]
+pub struct TodayChallenge {
+    pub id: Uuid,
+    pub name: String,
+    pub icon: String,
+    pub length_days: i32,
+    pub days_done: i32,
+}
+
+#[derive(Serialize)]
 pub struct TodayResponse {
     pub workspace: WorkspaceInfo,
     pub date: NaiveDate,
@@ -141,6 +152,10 @@ pub struct TodayResponse {
     pub tasks: Vec<TodayTask>,
     pub work_log: Vec<WorkLogProject>,
     pub habits: Vec<TodayHabit>,
+    /// Fixed-length habit challenges, with their progress. Separate from
+    /// `habits` because that list is filtered to what's scheduled today and a
+    /// challenge card shows regardless — including after it has finished.
+    pub challenges: Vec<TodayChallenge>,
     pub meetings: Vec<TodayMeeting>,
     pub stats: TodayStats,
 }
@@ -541,6 +556,42 @@ pub async fn get_today(
     .await?;
 
     let date_str = q.date.to_string();
+
+    // Challenges come off the same rows, but before the schedule filter below —
+    // a challenge card shows every day of its run, not only on the days the
+    // habit is due, and keeps showing once the run is complete. Scoped so the
+    // borrow ends before `habit_rows` is consumed just below, and the log query
+    // is skipped entirely when no habit is running a challenge.
+    let challenges: Vec<TodayChallenge> = {
+        let with_challenge: Vec<_> = habit_rows
+            .iter()
+            .filter_map(|r| challenge_length(&r.extra).map(|len| (r, len)))
+            .collect();
+        if with_challenge.is_empty() {
+            Vec::new()
+        } else {
+            let logs = habit_logs_by_habit(&state, auth.id, q.date).await?;
+            let empty = HashMap::new();
+            with_challenge
+                .into_iter()
+                .map(|(r, length_days)| TodayChallenge {
+                    id: r.id,
+                    name: r.name.clone(),
+                    icon: r.icon.clone(),
+                    length_days,
+                    days_done: compute_streak(
+                        &r.kind,
+                        r.target_count,
+                        &scheduled_days(&r.frequency, r.frequency_days.as_deref()),
+                        logs.get(&r.id).unwrap_or(&empty),
+                        q.date,
+                    )
+                    .days_done,
+                })
+                .collect()
+        }
+    };
+
     let habits: Vec<TodayHabit> = habit_rows
         .into_iter()
         // Hide habits whose end date has passed (still kept in history).
@@ -720,6 +771,7 @@ pub async fn get_today(
         tasks,
         work_log,
         habits,
+        challenges,
         meetings,
         stats,
     }))
