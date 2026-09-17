@@ -1862,7 +1862,7 @@ function TodayHabits({
               id={habit.id}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px 8px 4px',
+                padding: '8px 12px',
                 borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
                 background: isDone ? 'var(--color-success-bg)' : 'transparent',
               }}
@@ -1940,14 +1940,10 @@ function SortableHabitRow({ id, style, children }: {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        ...style,
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.3 : 1,
-      }}
+      style={{ ...style, ...dragStyle(CSS.Transform.toString(transform), transition, isDragging) }}
+      {...attributes}
+      {...listeners}
     >
-      <DragHandle handleProps={{ ...attributes, ...listeners }} label="Drag to reorder habit" />
       {children}
     </div>
   );
@@ -2147,42 +2143,30 @@ function TaskTooltip({
   );
 }
 
-// Props dnd-kit hands back for the grab target. Typed loosely on purpose:
-// @dnd-kit's own attribute/listener types aren't exported from a stable path,
-// and the only thing done with them is spreading onto a <button>.
-type DragHandleProps = Record<string, unknown>;
-
-// Rows are clickable (open the detail) *and* draggable, so the drag listeners
-// live on this handle rather than the whole row — dragging the body used to
-// swallow the click, and a 6px threshold is not a discoverable affordance.
-function DragHandle({ handleProps, label = 'Drag to reorder' }: {
-  handleProps: DragHandleProps;
-  label?: string;
-}) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      type="button"
-      {...(handleProps as React.ButtonHTMLAttributes<HTMLButtonElement>)}
-      aria-label={label}
-      title={label}
-      onClick={(e) => e.stopPropagation()}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        flexShrink: 0, width: 14, alignSelf: 'stretch',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 0, border: 'none', background: 'none',
-        // touchAction:none is what lets PointerSensor claim the gesture instead
-        // of the browser starting a scroll.
-        cursor: 'grab', touchAction: 'none',
-        fontSize: 12, lineHeight: 1,
-        color: hover ? 'var(--color-accent)' : 'var(--color-text-faint)',
-      }}
-    >
-      ⠿
-    </button>
-  );
+// Applied to the whole row. There is no visible grip: a row is picked up by
+// dragging it anywhere, and PointerSensor's distance constraint is what keeps
+// that from swallowing the click that opens the task.
+//
+// userSelect:'none' is the part that makes dragging actually feel like
+// dragging. A row is mostly text, and PointerSensor does not preventDefault on
+// mousedown, so without this a press-and-drag starts a native text selection:
+// the row stays put, the title highlights blue, and the gesture reads as
+// "reordering is broken". Synthetic pointer events never reproduce it, which is
+// why it survived a pass of automated checking.
+//
+// touchAction:'none' is the same story for touch and pen input, where the
+// browser would otherwise claim the vertical drag as a scroll of .scroll-area
+// before dnd-kit sees it.
+function dragStyle(transform: string | null | undefined, transition: string | undefined, isDragging: boolean): React.CSSProperties {
+  return {
+    transform: transform ?? undefined,
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
+    cursor: isDragging ? 'grabbing' : undefined,
+  };
 }
 
 // Shared by every sortable list here: translate a dnd-kit drop into the new
@@ -2233,19 +2217,11 @@ function SortableTaskRow(props: TaskRowProps) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        display: 'flex', alignItems: 'stretch',
-        transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.3 : 1,
-      }}
+      style={dragStyle(CSS.Transform.toString(transform), transition, isDragging)}
+      {...attributes}
+      {...listeners}
     >
-      {/* marginBottom matches TaskRow's, so the grip centres on the card */}
-      <div style={{ display: 'flex', marginBottom: 4 }}>
-        <DragHandle handleProps={{ ...attributes, ...listeners }} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <TaskRow {...props} />
-      </div>
+      <TaskRow {...props} />
     </div>
   );
 }
@@ -2426,18 +2402,11 @@ function SortableBacklogRow(props: BacklogRowProps) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        display: 'flex', alignItems: 'stretch',
-        transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.3 : 1,
-      }}
+      style={dragStyle(CSS.Transform.toString(transform), transition, isDragging)}
+      {...attributes}
+      {...listeners}
     >
-      <div style={{ display: 'flex', marginBottom: 4 }}>
-        <DragHandle handleProps={{ ...attributes, ...listeners }} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <BacklogRow {...props} />
-      </div>
+      <BacklogRow {...props} />
     </div>
   );
 }
@@ -4453,14 +4422,11 @@ function SortableHabitCard({ id, children }: { id: string; children: React.React
   return (
     <div
       ref={setNodeRef}
-      style={{
-        display: 'flex', alignItems: 'stretch',
-        transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.3 : 1,
-      }}
+      style={dragStyle(CSS.Transform.toString(transform), transition, isDragging)}
+      {...attributes}
+      {...listeners}
     >
-      <DragHandle handleProps={{ ...attributes, ...listeners }} label="Drag to reorder habit" />
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+      {children}
     </div>
   );
 }

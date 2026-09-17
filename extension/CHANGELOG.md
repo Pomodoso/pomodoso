@@ -4,6 +4,7 @@
 
 ### Tasks
 
+- **Fix: dragging a task no longer just selects its text** — Rows are mostly text and the drag sensor doesn't suppress the browser's default, so pressing and dragging started a text selection instead of picking the row up. Reordering also no longer shows a grip handle — drag a row from anywhere on it.
 - **Reorder tasks by dragging, everywhere** — Today's priorities, Today's tasks and the Backlog all reorder by drag. Each row now has its own grip, so dragging no longer competes with the tap that opens the task, and dragging a task into Priorities respects the limit set in Settings instead of a hardcoded three. Works per workspace and under "All workspaces", and the Backlog order syncs across devices.
 
 ### Habits
