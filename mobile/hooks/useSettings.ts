@@ -21,15 +21,13 @@ export interface AppSettings {
   // key exactly (db.ts), and the shape is already cohesive from
   // @pomodoso/types, so there's nothing to gain from splitting it up.
   soundSettings: SoundSettings;
-  // Mirrors the extension's Habits/Schedule tab "📌 Show in Today" pin
-  // (HomeState.tsx's showHabitsInToday/showScheduleInToday) — pins the whole
-  // section off Home rather than per-item. Unlike the extension's
-  // showHabitsInToday (unpersisted React state, resets true every popup
-  // open), both are persisted here: mobile stays foregrounded/backgrounded
-  // far more than a popup gets reopened, so resetting on every launch would
-  // make the toggle nearly useless. Default true, same as both extension
-  // toggles.
+  // Mirrors the extension's "📌 Show in Today" pins (HomeState.tsx's
+  // showHabitsInToday/showChallengesInToday/showScheduleInToday) — each pins a
+  // whole section off Home rather than per-item. Persisted on both clients now
+  // (the extension's habits pin used to be unpersisted React state that reset
+  // on every popup open). Default true, same as the extension.
   showHabitsInToday: boolean;
+  showChallengesInToday: boolean;
   showMeetingsInToday: boolean;
 }
 
@@ -65,6 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workDays: [0, 1, 2, 3, 4],
   soundSettings: DEFAULT_SOUND_SETTINGS,
   showHabitsInToday: true,
+  showChallengesInToday: true,
   showMeetingsInToday: true,
 };
 
@@ -79,6 +78,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   workDays: 'work_days',
   soundSettings: 'sound_settings',
   showHabitsInToday: 'show_habits_in_today',
+  showChallengesInToday: 'show_challenges_in_today',
   showMeetingsInToday: 'show_meetings_in_today',
 };
 
@@ -119,6 +119,7 @@ export function useSettings() {
     workDays: get('workDays'),
     soundSettings: get('soundSettings'),
     showHabitsInToday: get('showHabitsInToday'),
+    showChallengesInToday: get('showChallengesInToday'),
     showMeetingsInToday: get('showMeetingsInToday'),
   };
 

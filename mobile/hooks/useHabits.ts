@@ -1,4 +1,5 @@
 import { eq, isNull, sql } from 'drizzle-orm';
+import { habitStreakLabel } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -82,10 +83,6 @@ function computeStreak(
   return { pastStreak, daysDone: pastStreak + (doneToday ? 1 : 0) };
 }
 
-function formatStreakLabel(pastStreak: number): string {
-  return pastStreak > 0 ? `🔥 ${pastStreak} day streak` : 'No streak yet';
-}
-
 function weekFilled(
   kind: 'boolean' | 'counter',
   goal: number | null,
@@ -142,7 +139,7 @@ export function useHabits() {
       count: todayRow?.count ?? 0,
       done: isDone(h.kind, h.goal, todayRow),
       scheduledToday: isScheduledToday(days),
-      streakLabel: formatStreakLabel(pastStreak),
+      streakLabel: habitStreakLabel(pastStreak),
       daysDone,
       weekFilled: weekFilled(h.kind, h.goal, byDate),
     };

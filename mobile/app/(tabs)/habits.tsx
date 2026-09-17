@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ChallengesSection } from '@/components/ChallengesSection';
 import { HabitFormModal } from '@/components/HabitFormModal';
 import { ReorderableSection } from '@/components/ReorderableSection';
 import { HabitRow } from '@/components/HabitRow';
@@ -40,33 +41,11 @@ export default function HabitsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {challengeHabits.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>21-Day challenge</Text>
-            {challengeHabits.map(habit => {
-              const length = habit.challengeLengthDays ?? 21;
-              const clamped = Math.min(habit.daysDone, length);
-              const complete = clamped >= length;
-              return (
-                <View key={habit.id} style={styles.challengeCard}>
-                  <View style={styles.challengeTitleRow}>
-                    <Ionicons name={habit.icon as ComponentProps<typeof Ionicons>['name']} size={16} color={colors.accent} />
-                    <Text style={styles.challengeTitle}>{habit.name}</Text>
-                  </View>
-                  <Text style={styles.challengeDesc}>
-                    {complete ? `¡Completado! ${length}/${length} días` : `Día ${clamped} de ${length}. Un día a la vez.`}
-                  </Text>
-                  <View style={styles.challengeProgress}>
-                    <View style={[styles.challengeProgressFill, { width: `${(clamped / length) * 100}%` }]} />
-                  </View>
-                  <Text style={styles.challengeMeta}>
-                    {clamped}/{length} días · {clamped > 0 ? 'racha activa' : 'sin racha'}
-                  </Text>
-                </View>
-              );
-            })}
-          </>
-        )}
+        <ChallengesSection
+          habits={challengeHabits}
+          showInToday={settings.showChallengesInToday}
+          onToggleShowInToday={() => update('showChallengesInToday', !settings.showChallengesInToday)}
+        />
 
         <ReorderableSection
           title="Today"
@@ -136,16 +115,6 @@ const styles = StyleSheet.create({
   },
   pageTitle: { fontSize: 24, fontWeight: '700', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 24 },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginTop: 16,
-    marginBottom: 10,
-  },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pinButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -159,18 +128,4 @@ const styles = StyleSheet.create({
   pinButtonActive: { borderColor: colors.accent },
   pinButtonText: { fontSize: 10, fontWeight: '400', color: colors.textTertiary },
   pinButtonTextActive: { fontWeight: '600', color: colors.accent },
-  challengeCard: {
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accentSoft,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
-  },
-  challengeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  challengeTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
-  challengeDesc: { fontSize: 12, color: colors.textSecondary, marginBottom: 10 },
-  challengeProgress: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
-  challengeProgressFill: { width: '33%', height: '100%', backgroundColor: colors.accent },
-  challengeMeta: { fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 6 },
 });

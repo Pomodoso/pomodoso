@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { HabitsActivityHeatmap } from '../../components/HabitsActivityHeatmap.tsx';
+import { ChallengesCard } from '../../components/ChallengesCard.tsx';
+import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
+import { habitStreakLabel } from '@pomodoso/types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Habits are user-global (CLAUDE.md rule 6) — unlike every other dashboard
@@ -19,6 +22,9 @@ interface Habit {
   unit_amount: number | null;
   log_value: number;
   log_done: boolean;
+  challenge_length_days: number | null;
+  challenge_days_done: number;
+  streak: number;
 }
 
 interface HabitFormValue {
@@ -36,22 +42,6 @@ interface HabitFormValue {
 // icon KEYS stored on the habit, mapped to Tabler classes for display.
 const ICONS = ['water', 'fitness', 'book', 'sleep', 'run', 'meditate', 'journal'];
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function habitIconClass(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'ti-glass-full', fitness: 'ti-barbell', book: 'ti-book-2', sleep: 'ti-moon',
-    run: 'ti-run', meditate: 'ti-yin-yang', journal: 'ti-notebook',
-  };
-  return map[icon] ?? 'ti-check';
-}
-
-function habitIconColor(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'var(--info)', fitness: 'var(--text-sec)', book: 'var(--warning)', sleep: '#7B5DB4',
-    run: 'var(--success)', meditate: 'var(--accent)', journal: 'var(--text-sec)',
-  };
-  return map[icon] ?? 'var(--text-sec)';
-}
 
 function scheduleLabel(habit: Pick<Habit, 'frequency' | 'frequency_days'>): string {
   if (habit.frequency === 'daily') return 'Every day';
@@ -225,7 +215,9 @@ function HabitRow({ habit, onToggle, onIncrement, onEdit, onDelete }: {
       <i className={`ti ${habitIconClass(habit.icon)}`} style={{ fontSize: 18, color: habitIconColor(habit.icon), width: 20 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, color: 'var(--text)' }}>{habit.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>{scheduleLabel(habit)}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>
+          {scheduleLabel(habit)} · {habitStreakLabel(habit.streak)}
+        </div>
       </div>
 
       {habit.kind === 'counter' ? (
@@ -298,6 +290,17 @@ export default function HabitsPage() {
   const { user } = useAuth();
   const minYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const [habits, setHabits] = useState<Habit[] | null>(null);
+  // Challenges are a view over the same habits, not a separate fetch — the list
+  // endpoint already carries each one's length and progress.
+  const challenges = (habits ?? [])
+    .filter((h): h is Habit & { challenge_length_days: number } => (h.challenge_length_days ?? 0) > 0)
+    .map(h => ({
+      id: h.id,
+      name: h.name,
+      icon: h.icon,
+      length_days: h.challenge_length_days,
+      days_done: h.challenge_days_done,
+    }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -386,6 +389,12 @@ export default function HabitsPage() {
           onSave={value => handleUpdate(editingHabit.id, value)}
           onCancel={() => setEditingId(null)}
         />
+      )}
+
+      {!loading && challenges.length > 0 && (
+        <div style={{ maxWidth: 560, marginBottom: 16 }}>
+          <ChallengesCard challenges={challenges} />
+        </div>
       )}
 
       <div className="pomo-card" style={{ maxWidth: 560 }}>

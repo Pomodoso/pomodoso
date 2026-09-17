@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
+import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
+import { ChallengesCard, type TodayChallenge } from '../../components/ChallengesCard.tsx';
 import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
@@ -105,6 +107,7 @@ interface TodayData {
   tasks: TodayTask[];
   work_log: WorkLogProject[];
   habits: TodayHabit[];
+  challenges: TodayChallenge[];
   meetings: TodayMeeting[];
   stats: TodayStats;
 }
@@ -143,32 +146,6 @@ function shiftDate(date: string, deltaDays: number): string {
   const d = new Date(`${date}T00:00:00`);
   d.setDate(d.getDate() + deltaDays);
   return d.toLocaleDateString('en-CA');
-}
-
-function habitIconClass(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'ti-glass-full',
-    fitness: 'ti-barbell',
-    book: 'ti-book-2',
-    sleep: 'ti-moon',
-    run: 'ti-run',
-    meditate: 'ti-yin-yang',
-    journal: 'ti-notebook',
-  };
-  return map[icon] ?? 'ti-check';
-}
-
-function habitIconColor(icon: string): string {
-  const map: Record<string, string> = {
-    water: 'var(--info)',
-    fitness: 'var(--text-sec)',
-    book: 'var(--warning)',
-    sleep: '#7B5DB4',
-    run: 'var(--success)',
-    meditate: 'var(--accent)',
-    journal: 'var(--text-sec)',
-  };
-  return map[icon] ?? 'var(--text-sec)';
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -888,6 +865,7 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <MeetingsCard meetings={data.meetings} />
           <TimeCard workLog={data.work_log} meetings={data.meetings} />
           <HabitsCard habits={data.habits} date={date} />
+          <ChallengesCard challenges={data.challenges ?? []} />
           <StatsCard stats={data.stats} />
         </div>
       </div>

@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use std::collections::HashMap;
+
 use crate::{
     error::{AppError, Result},
+    habit_streak::{challenge_length, compute_streak, scheduled_days, sort_order, HabitStreak},
     middleware::auth::AuthUser,
     AppState,
 };
@@ -41,6 +44,12 @@ pub struct HabitInfo {
     pub log_value: i32,
     pub log_done: bool,
     pub log_completed_at: Option<DateTime<Utc>>,
+    /// Set when the habit runs as a fixed-length challenge; `None` otherwise.
+    pub challenge_length_days: Option<i32>,
+    /// Days into the challenge — `streak`, plus today once it is done.
+    pub challenge_days_done: i32,
+    /// Consecutive scheduled days completed before today.
+    pub streak: i32,
 }
 
 #[derive(Deserialize)]
@@ -107,7 +116,7 @@ struct HabitRow {
     log_completed_at: Option<DateTime<Utc>>,
 }
 
-fn row_to_info(row: HabitRow) -> HabitInfo {
+fn row_to_info(row: HabitRow, streak: HabitStreak) -> HabitInfo {
     let unit = row
         .extra
         .get("unit")
@@ -123,6 +132,7 @@ fn row_to_info(row: HabitRow) -> HabitInfo {
         "counter" => row.target_count.is_some_and(|t| value >= t),
         _ => row.log_completed_at.is_some(),
     };
+    let challenge_length_days = challenge_length(&row.extra);
     HabitInfo {
         id: row.id,
         name: row.name,
@@ -136,7 +146,44 @@ fn row_to_info(row: HabitRow) -> HabitInfo {
         log_value: value,
         log_done: done,
         log_completed_at: row.log_completed_at,
+        challenge_length_days,
+        challenge_days_done: streak.days_done,
+        streak: streak.past_streak,
     }
+}
+
+/// Every habit log for a user, keyed by habit, within the window the streak
+/// walk can reach. Bounded to the clients' own 3650-day lookback so a very
+/// old account doesn't pull its entire history to render one card.
+pub(crate) async fn habit_logs_by_habit(
+    state: &AppState,
+    user_id: Uuid,
+    through: NaiveDate,
+) -> Result<HashMap<Uuid, HashMap<NaiveDate, i32>>> {
+    let since = through - chrono::Duration::days(3650);
+    let rows = sqlx::query!(
+        r#"
+        SELECT hl.habit_id, hl.date, hl.value
+        FROM habit_log hl
+        JOIN habit h ON h.id = hl.habit_id
+        WHERE h.user_id = $1 AND h.deleted_at IS NULL
+          AND hl.date > $2 AND hl.date <= $3
+        "#,
+        user_id,
+        since,
+        through,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut by_habit: HashMap<Uuid, HashMap<NaiveDate, i32>> = HashMap::new();
+    for r in rows {
+        by_habit
+            .entry(r.habit_id)
+            .or_default()
+            .insert(r.date, r.value);
+    }
+    Ok(by_habit)
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -164,25 +211,49 @@ pub async fn list_habits(
     .fetch_all(&state.pool)
     .await?;
 
-    let habits = rows
+    let logs = habit_logs_by_habit(&state, auth.id, date).await?;
+    let empty = HashMap::new();
+
+    let mut habits: Vec<(Option<i64>, HabitInfo)> = rows
         .into_iter()
         .map(|r| {
-            row_to_info(HabitRow {
-                id: r.id,
-                name: r.name,
-                icon: r.icon,
-                kind: r.kind,
-                target_count: r.target_count,
-                frequency: r.frequency,
-                frequency_days: r.frequency_days,
-                extra: r.extra,
-                log_value: r.log_value,
-                log_completed_at: r.log_completed_at,
-            })
+            let streak = compute_streak(
+                &r.kind,
+                r.target_count,
+                &scheduled_days(&r.frequency, r.frequency_days.as_deref()),
+                logs.get(&r.id).unwrap_or(&empty),
+                date,
+            );
+            let order = sort_order(&r.extra);
+            let info = row_to_info(
+                HabitRow {
+                    id: r.id,
+                    name: r.name,
+                    icon: r.icon,
+                    kind: r.kind,
+                    target_count: r.target_count,
+                    frequency: r.frequency,
+                    frequency_days: r.frequency_days,
+                    extra: r.extra,
+                    log_value: r.log_value,
+                    log_completed_at: r.log_completed_at,
+                },
+                streak,
+            );
+            (order, info)
         })
         .collect();
 
-    Ok(Json(habits))
+    // The manual order the clients write lives in `extra.sortOrder`, not in the
+    // `position` column the SQL above orders by — nothing has ever written that
+    // column, so on its own it showed the web a different order than every
+    // other client. Sorting here rather than in SQL keeps the ORDER BY as the
+    // stable tie-break for habits that have never been dragged.
+    habits.sort_by_key(|(order, _)| order.unwrap_or(i64::MAX));
+
+    Ok(Json(
+        habits.into_iter().map(|(_, info)| info).collect::<Vec<_>>(),
+    ))
 }
 
 pub async fn create_habit(
@@ -225,6 +296,12 @@ pub async fn create_habit(
         log_value: 0,
         log_done: false,
         log_completed_at: None,
+        // The web's habit form doesn't offer challenges — they're set from the
+        // extension or mobile — so a habit created here never starts as one,
+        // and has no history to have a streak from either.
+        challenge_length_days: None,
+        challenge_days_done: 0,
+        streak: 0,
     }))
 }
 
@@ -265,18 +342,23 @@ pub async fn update_habit(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row_to_info(HabitRow {
-        id: row.id,
-        name: row.name,
-        icon: row.icon,
-        kind: row.kind,
-        target_count: row.target_count,
-        frequency: row.frequency,
-        frequency_days: row.frequency_days,
-        extra: row.extra,
-        log_value: None,
-        log_completed_at: None,
-    })))
+    // The streak is left at zero rather than recomputed: this response only
+    // feeds the edited row back into the form, and the list refetches after.
+    Ok(Json(row_to_info(
+        HabitRow {
+            id: row.id,
+            name: row.name,
+            icon: row.icon,
+            kind: row.kind,
+            target_count: row.target_count,
+            frequency: row.frequency,
+            frequency_days: row.frequency_days,
+            extra: row.extra,
+            log_value: None,
+            log_completed_at: None,
+        },
+        HabitStreak::default(),
+    )))
 }
 
 pub async fn delete_habit(

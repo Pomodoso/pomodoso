@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod email;
 mod error;
+mod habit_streak;
 mod middleware;
 mod models;
 mod routes;

@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT hl.habit_id, hl.date, hl.value\n        FROM habit_log hl\n        JOIN habit h ON h.id = hl.habit_id\n        WHERE h.user_id = $1 AND h.deleted_at IS NULL\n          AND hl.date > $2 AND hl.date <= $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "habit_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "value",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5e6b6aefa87f57f221e8b5c974d48ee29c2f25d701b6b72788e78ab3491bcd22"
+}
