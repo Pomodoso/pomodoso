@@ -1,4 +1,4 @@
-// Copy for the habit challenge cards, shared by all three clients.
+// Copy for habit streaks and challenge cards, shared by all three clients.
 //
 // The extension, mobile and the web dashboard each render their own card — the
 // styling is per-platform and there's nothing to share there — but the wording
@@ -31,4 +31,15 @@ export function challengeProgressLabel(daysDone: number, lengthDays: number): st
 export function challengeStreakLabel(daysDone: number, lengthDays: number): string {
   const shown = challengeDaysShown(daysDone, lengthDays);
   return `${shown}/${lengthDays} days · ${shown > 0 ? 'streak alive' : 'no streak yet'}`;
+}
+
+/**
+ * The streak line under a habit's name.
+ *
+ * Counts days *before* today, so a habit not yet done today doesn't read as a
+ * broken streak — see computeHabitStreak (clients) and habit_streak.rs
+ * (backend), which both draw the same distinction.
+ */
+export function habitStreakLabel(pastStreak: number): string {
+  return pastStreak > 0 ? `🔥 ${pastStreak} day streak` : 'No streak yet';
 }

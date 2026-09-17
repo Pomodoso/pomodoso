@@ -4,6 +4,7 @@ import { useAuth } from '../../lib/AuthContext.tsx';
 import { HabitsActivityHeatmap } from '../../components/HabitsActivityHeatmap.tsx';
 import { ChallengesCard } from '../../components/ChallengesCard.tsx';
 import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
+import { habitStreakLabel } from '@pomodoso/types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Habits are user-global (CLAUDE.md rule 6) — unlike every other dashboard
@@ -214,7 +215,9 @@ function HabitRow({ habit, onToggle, onIncrement, onEdit, onDelete }: {
       <i className={`ti ${habitIconClass(habit.icon)}`} style={{ fontSize: 18, color: habitIconColor(habit.icon), width: 20 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, color: 'var(--text)' }}>{habit.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>{scheduleLabel(habit)}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tert)', marginTop: 2 }}>
+          {scheduleLabel(habit)} · {habitStreakLabel(habit.streak)}
+        </div>
       </div>
 
       {habit.kind === 'counter' ? (

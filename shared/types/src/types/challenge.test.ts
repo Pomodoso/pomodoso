@@ -6,6 +6,7 @@ import {
   challengeDaysShown,
   challengeProgressLabel,
   challengeStreakLabel,
+  habitStreakLabel,
 } from './challenge.ts';
 
 test('a challenge completes on the day it reaches its length', () => {
@@ -39,4 +40,10 @@ test('a custom challenge length is respected throughout', () => {
   assert.equal(challengeProgressLabel(3, 7), 'Day 3 of 7. One day at a time.');
   assert.equal(challengeProgressLabel(7, 7), 'Completed! 7 of 7 days');
   assert.equal(challengeStreakLabel(9, 7), '7/7 days · streak alive');
+});
+
+test('the streak label reads as a count once there is one', () => {
+  assert.equal(habitStreakLabel(0), 'No streak yet');
+  assert.equal(habitStreakLabel(1), '🔥 1 day streak');
+  assert.equal(habitStreakLabel(12), '🔥 12 day streak');
 });

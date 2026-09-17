@@ -2,7 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { challengeProgressLabel, challengeStreakLabel } from '@pomodoso/types';
+import {
+  challengeComplete,
+  challengeDaysShown,
+  challengeProgressLabel,
+  challengeStreakLabel,
+} from '@pomodoso/types';
 
 import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
@@ -25,7 +30,7 @@ interface ChallengesSectionProps {
  */
 export function ChallengesSection({ habits, showInToday, onToggleShowInToday }: ChallengesSectionProps) {
   if (habits.length === 0) return null;
-  const completed = habits.filter(h => h.daysDone >= (h.challengeLengthDays ?? 21)).length;
+  const completed = habits.filter(h => challengeComplete(h.daysDone, h.challengeLengthDays ?? 21)).length;
 
   return (
     <>
@@ -49,8 +54,8 @@ export function ChallengesSection({ habits, showInToday, onToggleShowInToday }: 
 
       {habits.map(habit => {
         const length = habit.challengeLengthDays ?? 21;
-        const clamped = Math.min(habit.daysDone, length);
-        const complete = clamped >= length;
+        const clamped = challengeDaysShown(habit.daysDone, length);
+        const complete = challengeComplete(habit.daysDone, length);
         return (
           <View key={habit.id} style={[styles.card, complete && styles.cardComplete]}>
             <View style={styles.titleRow}>

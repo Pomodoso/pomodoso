@@ -21,7 +21,10 @@ import type React from 'react';
 import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
-import { challengeProgressLabel, challengeStreakLabel, reorderSubset } from '@pomodoso/types';
+import {
+  challengeComplete, challengeDaysShown, challengeProgressLabel, challengeStreakLabel,
+  habitStreakLabel, reorderSubset,
+} from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
 import {
   db, now, localDate,
@@ -4202,14 +4205,10 @@ function computeHabitStreak(
   return { pastStreak, doneToday, daysDone: pastStreak + (doneToday ? 1 : 0) };
 }
 
-function habitStreakLabel(pastStreak: number): string {
-  return pastStreak > 0 ? `🔥 ${pastStreak} day streak` : 'No streak yet';
-}
-
 function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number }) {
   const length = habit.challengeLengthDays ?? 21;
-  const clamped = Math.min(daysDone, length);
-  const complete = clamped >= length;
+  const clamped = challengeDaysShown(daysDone, length);
+  const complete = challengeComplete(daysDone, length);
   return (
     <div style={{
       background: complete ? 'var(--color-success-bg)' : 'var(--color-accent-bg, rgba(200,85,61,0.08))',
