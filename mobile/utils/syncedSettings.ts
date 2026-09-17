@@ -19,16 +19,27 @@ import { settings } from '@/db/schema';
 // preference to push — sending one would mean inventing a value only to
 // overwrite the extension's real one.
 //
-// mobile-only keys (showHabitsInToday, showMeetingsInToday) stay device-local
-// by omission, which is correct: they describe this screen, not the account.
+// mobile-only keys (showHabitsInToday, showChallengesInToday,
+// showMeetingsInToday) stay device-local by omission, which is correct: they
+// describe what this screen shows, not how the account behaves. Anything that
+// changes behaviour rather than layout belongs on the wire — and must be added
+// here at the same time as the extension's SYNCED_SETTINGS, or one client
+// pushes it and the other silently ignores it in both directions.
 
-type WireKey = 'timer_settings' | 'sound_settings' | 'max_priorities' | 'week_start' | 'work_days';
+type WireKey =
+  | 'timer_settings'
+  | 'sound_settings'
+  | 'max_priorities'
+  | 'auto_sort_by_status'
+  | 'week_start'
+  | 'work_days';
 
 /** Local setting keys that make up each wire key. */
 const WIRE_MEMBERS: Record<WireKey, string[]> = {
   timer_settings: ['focus_seconds', 'short_break_seconds', 'long_break_seconds', 'long_break_every', 'daily_goal'],
   sound_settings: ['sound_settings'],
   max_priorities: ['max_priorities'],
+  auto_sort_by_status: ['auto_sort_by_status'],
   week_start: ['week_start'],
   work_days: ['work_days'],
 };
