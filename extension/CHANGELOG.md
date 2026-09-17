@@ -4,6 +4,7 @@
 
 ### Tasks
 
+- **Fix: tasks and habits can actually be reordered in the popup** — Every drag cancelled itself a few pixels in. Chrome's extension popup emits phantom window `resize` events (the window never actually changes size), and the drag library treats a resize as "cancel the drag". The popup now ignores those for the duration of a drag. This only ever affected the real popup, which is why it survived testing everywhere else.
 - **Fix: reordering now works when the browser is zoomed in** — Above 100% zoom a row would lift and follow the cursor but nothing would shift and the drop was silently discarded, so tasks and habits simply could not be reordered. Drop targets are now matched by proximity rather than requiring exact rectangle overlap, and re-measured during the drag.
 - **Fix: dragging a task no longer just selects its text** — Rows are mostly text and the drag sensor doesn't suppress the browser's default, so pressing and dragging started a text selection instead of picking the row up. Reordering also no longer shows a grip handle — drag a row from anywhere on it.
 - **Reorder tasks by dragging, everywhere** — Today's priorities, Today's tasks and the Backlog all reorder by drag. Each row now has its own grip, so dragging no longer competes with the tap that opens the task, and dragging a task into Priorities respects the limit set in Settings instead of a hardcoded three. Works per workspace and under "All workspaces", and the Backlog order syncs across devices.
