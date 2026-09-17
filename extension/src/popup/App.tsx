@@ -160,8 +160,19 @@ export function App() {
   // ── Active workspace vanished (merged into a duplicate / deleted remotely) ──
   useEffect(() => {
     if (dbLoading || workspacesArr === undefined) return;
-    if (activeWsId === 'all' || activeWsId === 'default') return;
+    if (activeWsId === 'all') return; // a real selection, not a stale id
     if (workspacesArr.some(w => w.id === activeWsId)) return;
+    // 'default' is the pre-migration sentinel. Once the default->UUID migration
+    // has run it names a workspace that no longer exists, and since every list
+    // filters on it, Today and the Backlog both render empty — which is exactly
+    // what a new user saw right after picking "Use template": their habits
+    // appeared (those are user-global) and all five sample tasks did not.
+    //
+    // This branch used to be exempted here, so nothing ever corrected it. Fall
+    // back to "All workspaces" rather than guessing at a workspace: it shows the
+    // data wherever the migration moved it, and with one workspace it reads the
+    // same as picking that workspace.
+    if (activeWsId === 'default') { setActiveWsId('all'); return; }
     const first = workspacesArr[0];
     if (first) setActiveWsId(first.id);
   }, [dbLoading, activeWsId, workspacesArr, setActiveWsId]);
