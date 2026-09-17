@@ -631,14 +631,20 @@ async fn push_task_order(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnt
     } else {
         serde_json::json!([])
     };
+    let backlog_ids = if e.data["backlog_ids"].is_array() {
+        e.data["backlog_ids"].clone()
+    } else {
+        serde_json::json!([])
+    };
 
     sqlx::query!(
         r#"
-        INSERT INTO task_order (workspace_id, priority_ids, today_ids, updated_at, synced_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO task_order (workspace_id, priority_ids, today_ids, backlog_ids, updated_at, synced_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
         ON CONFLICT (workspace_id) DO UPDATE SET
           priority_ids = EXCLUDED.priority_ids,
           today_ids    = EXCLUDED.today_ids,
+          backlog_ids  = EXCLUDED.backlog_ids,
           updated_at   = EXCLUDED.updated_at,
           synced_at    = NOW()
         WHERE EXCLUDED.updated_at >= task_order.updated_at
@@ -646,6 +652,7 @@ async fn push_task_order(state: &AppState, workspace_id: uuid::Uuid, e: &SyncEnt
         workspace_id,
         priority_ids,
         today_ids,
+        backlog_ids,
         e.updated_at,
     )
     .execute(&state.pool)
@@ -1121,7 +1128,7 @@ pub async fn pull(
 
     // Task orders (Today/Priorities membership per workspace)
     for row in sqlx::query!(
-        r#"SELECT workspace_id, priority_ids, today_ids, updated_at
+        r#"SELECT workspace_id, priority_ids, today_ids, backlog_ids, updated_at
            FROM task_order
            WHERE workspace_id = ANY($1) AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
         &ws_ids,
@@ -1137,6 +1144,7 @@ pub async fn pull(
                 "workspace_id": row.workspace_id,
                 "priority_ids": row.priority_ids,
                 "today_ids": row.today_ids,
+                "backlog_ids": row.backlog_ids,
             }),
             updated_at: row.updated_at,
             deleted_at: None,

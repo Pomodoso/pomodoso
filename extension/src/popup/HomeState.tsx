@@ -21,6 +21,7 @@ import type React from 'react';
 import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
+import { reorderSubset } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
 import {
   db, now, localDate,
@@ -89,6 +90,7 @@ interface HomeStateProps {
   onCreateTask: (title: string) => void;
   onCreateFollowup: (parentId: string) => void;
   onReorderToday: (priorityIds: string[], todayIds: string[]) => void;
+  onReorderBacklog: (backlogIds: string[]) => void;
   workspaces: Workspace[];
   activeWsId: string;
   onSetActiveWs: (id: string) => void;
@@ -244,7 +246,7 @@ export function HomeState({
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
   currentUrl, urlMatchesRule, onAddDetectionRule,
-  selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday,
+  selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday, onReorderBacklog,
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
   const projectById = (id: string | null) => id ? projects.find(p => p.id === id) : undefined;
@@ -262,7 +264,27 @@ export function HomeState({
   const [showDetectionModal, setShowDetectionModal] = useState(false);
   const [linkedDismissed, setLinkedDismissed] = useState(false);
   const detectionPatterns = detectionPatternsForUrl(currentUrl);
-  const habits   = useLiveQuery(() => db.habits.filter(h => !h.deletedAt).toArray()) ?? [];
+  // Manual order first (see HabitRow.sortOrder), then creation date for habits
+  // that predate it or arrived from a device that hasn't ordered them yet.
+  const habits = useLiveQuery(async () => {
+    const rows = await db.habits.filter(h => !h.deletedAt).toArray();
+    return rows.sort((a, b) => {
+      const ao = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const bo = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+    });
+  }) ?? [];
+
+  // Habits are user-global, so their order is too — one sequence, shown the
+  // same in every workspace and in "all".
+  const reorderHabits = useCallback(async (orderedIds: string[]) => {
+    const ts = now();
+    await db.transaction('rw', db.habits, async () => {
+      await Promise.all(orderedIds.map((id, i) => db.habits.update(id, { sortOrder: i, updatedAt: ts })));
+    });
+    triggerSync();
+  }, []);
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
@@ -343,9 +365,13 @@ export function HomeState({
       const newPriorityIds = [...priorityIdList];
       newPriorityIds.splice(destIdx, 0, activeId);
       const newTaskIds = taskIdList.filter(id => id !== activeId);
-      // If over the limit, bump the last priority down to tasks
-      if (newPriorityIds.length > 3) {
-        const bumped = newPriorityIds.pop()!;
+      // Over the cap set in Settings → General, bump the trailing priorities
+      // down into Today's tasks. A loop, not a single pop: the cap can be
+      // lowered after priorities are already full, so more than one may need
+      // to give way.
+      while (newPriorityIds.length > maxPriorities) {
+        const bumped = newPriorityIds.pop();
+        if (bumped === undefined) break;
         newTaskIds.unshift(bumped);
       }
       onReorderToday(newPriorityIds, newTaskIds);
@@ -357,7 +383,7 @@ export function HomeState({
       newTaskIds.splice(destIdx, 0, activeId);
       onReorderToday(newPriorityIds, newTaskIds);
     }
-  }, [todayPriorities, todayTasks, onReorderToday]);
+  }, [todayPriorities, todayTasks, maxPriorities, onReorderToday]);
 
   // Derive today's counters/done from Dexie habitHistory
   const habitCounters: Record<string, number> = {};
@@ -1159,7 +1185,11 @@ export function HomeState({
                       );
                     })}
                   </SortableContext>
-                  <DroppableArea id="droppable-priority" />
+                  <DroppableArea
+                    id="droppable-priority"
+                    empty={todayPriorities.length === 0}
+                    label={`Drag a task here to make it a priority (max ${maxPriorities})`}
+                  />
                 </div>
                 <div style={{ padding: '12px 14px 0' }}>
                   <SectionHeader label="Today's tasks" done={completedTasks} total={todayTasks.length} />
@@ -1186,7 +1216,7 @@ export function HomeState({
                       );
                     })}
                   </SortableContext>
-                  <DroppableArea id="droppable-tasks" />
+                  <DroppableArea id="droppable-tasks" empty={todayTasks.length === 0} />
                 </div>
                 <DragOverlay>
                   {dragActiveId && (() => {
@@ -1260,6 +1290,7 @@ export function HomeState({
                 timezone={timezone}
                 onCounterChange={handleHabitCounterChange}
                 onToggle={handleHabitToggle}
+                onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
               />
             )}
             <TodayFooter
@@ -1283,8 +1314,11 @@ export function HomeState({
           isAddingHabit ? (
             <HabitForm
               onSave={(habit) => {
+                // A new habit goes to the end of the manual order, matching
+                // where the list already puts it before any dragging.
+                const nextOrder = habits.reduce((max, h) => Math.max(max, h.sortOrder ?? -1), -1) + 1;
                 // Habits are user-global — never pinned to the active workspace.
-                void db.habits.put({ ...habit, workspaceId: null, updatedAt: now() });
+                void db.habits.put({ ...habit, sortOrder: nextOrder, workspaceId: null, updatedAt: now() });
                 triggerSync();
                 setIsAddingHabit(false);
               }}
@@ -1323,6 +1357,7 @@ export function HomeState({
                   onAddHabit={() => setIsAddingHabit(true)}
                   onEditHabit={setEditingHabit}
                   onDeleteHabit={(id) => { void db.habits.update(id, { deletedAt: now(), updatedAt: now() }); triggerSync(); }}
+                  onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
                 />
               ) : (
                 <HabitHistoryView habits={visibleHabits} timezone={timezone} weekStart={weekStart} />
@@ -1403,23 +1438,36 @@ export function HomeState({
                       )}
                       <div style={{ padding: '8px 14px 0' }}>
                         <SectionHeader label="Backlog" done={0} total={filtered.length} />
-                        {filtered.map((task) => {
-                          const proj = projectById(task.projectId);
-                          return (
-                            <BacklogRow
-                              key={task.id}
-                              task={task}
-                              {...(proj ? { project: proj } : {})}
-                              isInPriorities={priorityIds.has(task.id)}
-                              isInTasks={taskIds.has(task.id)}
-                              prioritiesFull={prioritiesFull}
-                              onAddToPriorities={() => onAddToPriorities(task)}
-                              onAddToTasks={() => onAddToTasks(task)}
-                              onRemove={() => onRemoveFromToday(task.id)}
-                              onSelect={() => onSelectTask(task)}
-                            />
-                          );
-                        })}
+                        <DndContext
+                          sensors={dndSensors}
+                          onDragEnd={(event) => {
+                            const next = reorderedIdsFromDrag(filtered.map(t => t.id), event);
+                            // Dropping inside a filtered view only re-slots the
+                            // rows on screen; reorderSubset keeps the hidden
+                            // ones anchored where they already were.
+                            if (next) onReorderBacklog(reorderSubset(backlog.map(t => t.id), next));
+                          }}
+                        >
+                          <SortableContext items={filtered.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                            {filtered.map((task) => {
+                              const proj = projectById(task.projectId);
+                              return (
+                                <SortableBacklogRow
+                                  key={task.id}
+                                  task={task}
+                                  {...(proj ? { project: proj } : {})}
+                                  isInPriorities={priorityIds.has(task.id)}
+                                  isInTasks={taskIds.has(task.id)}
+                                  prioritiesFull={prioritiesFull}
+                                  onAddToPriorities={() => onAddToPriorities(task)}
+                                  onAddToTasks={() => onAddToTasks(task)}
+                                  onRemove={() => onRemoveFromToday(task.id)}
+                                  onSelect={() => onSelectTask(task)}
+                                />
+                              );
+                            })}
+                          </SortableContext>
+                        </DndContext>
                         {backlog.length > 0 && filtered.length === 0 && (
                           <div style={{ fontSize: 12, color: 'var(--color-text-faint)', textAlign: 'center', padding: '12px 0' }}>
                             No tasks match your filters.
@@ -1725,7 +1773,7 @@ function TodayMeetingRow({ meeting, timezone, onStart, onSelect }: {
 }
 
 function TodayHabits({
-  habits, habitCounters, habitDone, weekStart, timezone, onCounterChange, onToggle,
+  habits, habitCounters, habitDone, weekStart, timezone, onCounterChange, onToggle, onReorder,
 }: {
   habits: HabitDef[];
   habitCounters: Record<string, number>;
@@ -1734,7 +1782,9 @@ function TodayHabits({
   timezone: string;
   onCounterChange: (id: string, delta: number) => void;
   onToggle: (id: string) => void;
+  onReorder: (orderedIds: string[]) => void;
 }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   return (
     <div style={{ padding: '12px 14px 0' }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>
@@ -1746,16 +1796,25 @@ function TodayHabits({
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
       }}>
+        <DndContext
+          sensors={sensors}
+          onDragEnd={(event) => {
+            const next = reorderedIdsFromDrag(habits.map(h => h.id), event);
+            if (next) onReorder(next);
+          }}
+        >
+        <SortableContext items={habits.map(h => h.id)} strategy={verticalListSortingStrategy}>
         {habits.map((habit, idx) => {
           const count = habitCounters[habit.id] ?? 0;
           const checked = habitDone[habit.id] ?? false;
           const isDone = habit.kind === 'boolean' ? checked : count >= (habit.goal ?? 1);
           return (
-            <div
+            <SortableHabitRow
               key={habit.id}
+              id={habit.id}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px',
+                padding: '8px 12px 8px 4px',
                 borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
                 background: isDone ? 'var(--color-success-bg)' : 'transparent',
               }}
@@ -1811,10 +1870,37 @@ function TodayHabits({
                   >✓</button>
                 </div>
               )}
-            </div>
+            </SortableHabitRow>
           );
         })}
+        </SortableContext>
+        </DndContext>
       </div>
+    </div>
+  );
+}
+
+// Habit rows carry their own row chrome (separator border, done-state tint), so
+// unlike the task rows the sortable node *is* the row and the grip sits inside
+// it rather than in a gutter alongside.
+function SortableHabitRow({ id, style, children }: {
+  id: string;
+  style: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.3 : 1,
+      }}
+    >
+      <DragHandle handleProps={{ ...attributes, ...listeners }} label="Drag to reorder habit" />
+      {children}
     </div>
   );
 }
@@ -2013,13 +2099,84 @@ function TaskTooltip({
   );
 }
 
-function DroppableArea({ id }: { id: string }) {
+// Props dnd-kit hands back for the grab target. Typed loosely on purpose:
+// @dnd-kit's own attribute/listener types aren't exported from a stable path,
+// and the only thing done with them is spreading onto a <button>.
+type DragHandleProps = Record<string, unknown>;
+
+// Rows are clickable (open the detail) *and* draggable, so the drag listeners
+// live on this handle rather than the whole row — dragging the body used to
+// swallow the click, and a 6px threshold is not a discoverable affordance.
+function DragHandle({ handleProps, label = 'Drag to reorder' }: {
+  handleProps: DragHandleProps;
+  label?: string;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      {...(handleProps as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      aria-label={label}
+      title={label}
+      onClick={(e) => e.stopPropagation()}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flexShrink: 0, width: 14, alignSelf: 'stretch',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 0, border: 'none', background: 'none',
+        // touchAction:none is what lets PointerSensor claim the gesture instead
+        // of the browser starting a scroll.
+        cursor: 'grab', touchAction: 'none',
+        fontSize: 12, lineHeight: 1,
+        color: hover ? 'var(--color-accent)' : 'var(--color-text-faint)',
+      }}
+    >
+      ⠿
+    </button>
+  );
+}
+
+// Shared by every sortable list here: translate a dnd-kit drop into the new
+// order of `ids`, or null when the drop was a no-op.
+function reorderedIdsFromDrag(ids: string[], event: DragEndEvent): string[] | null {
+  const { active, over } = event;
+  if (!over || active.id === over.id) return null;
+  const oldIdx = ids.indexOf(active.id as string);
+  const newIdx = ids.indexOf(over.id as string);
+  if (oldIdx < 0 || newIdx < 0) return null;
+  return arrayMove(ids, oldIdx, newIdx);
+}
+
+// The landing strip at the end of each Today section, and the only drop target
+// a section has while it is empty — hence `empty`, which grows it from a 4px
+// seam into something a task can actually be dropped onto. Without it, moving
+// the first task into an empty Priorities was a 4px-tall aim.
+function DroppableArea({ id, empty = false, label }: { id: string; empty?: boolean; label?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  if (!empty) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ height: 4, borderRadius: 4, transition: 'background 0.15s', background: isOver ? 'var(--color-accent)' : 'transparent', margin: '0 2px' }}
+      />
+    );
+  }
   return (
     <div
       ref={setNodeRef}
-      style={{ height: 4, borderRadius: 4, transition: 'background 0.15s', background: isOver ? 'var(--color-accent)' : 'transparent', margin: '0 2px' }}
-    />
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        minHeight: 38, margin: '0 2px 4px', padding: '0 8px',
+        borderRadius: 'var(--radius-md)',
+        border: `1px dashed ${isOver ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+        background: isOver ? 'var(--color-accent-soft)' : 'transparent',
+        transition: 'background 0.15s, border-color 0.15s',
+        fontSize: 11, color: isOver ? 'var(--color-accent)' : 'var(--color-text-faint)',
+      }}
+    >
+      {label ?? 'Drop a task here'}
+    </div>
   );
 }
 
@@ -2028,11 +2185,19 @@ function SortableTaskRow(props: TaskRowProps) {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
-      {...attributes}
-      {...listeners}
+      style={{
+        display: 'flex', alignItems: 'stretch',
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.3 : 1,
+      }}
     >
-      <TaskRow {...props} />
+      {/* marginBottom matches TaskRow's, so the grip centres on the card */}
+      <div style={{ display: 'flex', marginBottom: 4 }}>
+        <DragHandle handleProps={{ ...attributes, ...listeners }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <TaskRow {...props} />
+      </div>
     </div>
   );
 }
@@ -2196,7 +2361,7 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
   );
 }
 
-function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: {
+interface BacklogRowProps {
   task: SelectedTask;
   project?: Project | undefined;
   isInPriorities: boolean;
@@ -2206,7 +2371,30 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
   onAddToTasks: () => void;
   onRemove: () => void;
   onSelect: () => void;
-}) {
+}
+
+function SortableBacklogRow(props: BacklogRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        display: 'flex', alignItems: 'stretch',
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.3 : 1,
+      }}
+    >
+      <div style={{ display: 'flex', marginBottom: 4 }}>
+        <DragHandle handleProps={{ ...attributes, ...listeners }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BacklogRow {...props} />
+      </div>
+    </div>
+  );
+}
+
+function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: BacklogRowProps) {
   const isAdded = isInPriorities || isInTasks;
   const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -4015,9 +4203,11 @@ interface HabitsContentProps {
   onAddHabit: () => void;
   onEditHabit: (habit: HabitDef) => void;
   onDeleteHabit: (id: string) => void;
+  onReorder: (orderedIds: string[]) => void;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder }: HabitsContentProps) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const today = new Date();
   const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -4104,25 +4294,40 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-        {activeHabits.map(habit => {
-          const isDone = habit.kind === 'boolean'
-            ? (habitDone[habit.id] ?? false)
-            : (habitCounters[habit.id] ?? 0) >= (habit.goal ?? 1);
-          return (
-            <HabitRow
-              key={habit.id}
-              habit={habit}
-              count={habitCounters[habit.id] ?? 0}
-              checked={habitDone[habit.id] ?? false}
-              isDone={isDone}
-              streakLabel={habitStreakLabel(streaksById.get(habit.id)?.pastStreak ?? 0)}
-              onCounterChange={(delta) => onCounterChange(habit.id, delta)}
-              onToggle={() => onToggle(habit.id)}
-              onEdit={() => onEditHabit(habit)}
-              onDelete={() => onDeleteHabit(habit.id)}
-            />
-          );
-        })}
+        <DndContext
+          sensors={sensors}
+          onDragEnd={(event) => {
+            const next = reorderedIdsFromDrag(activeHabits.map(h => h.id), event);
+            // Closed habits are rendered in their own section below and are not
+            // part of this context, so the drop only ever reorders active ones.
+            if (next) onReorder(next);
+          }}
+        >
+          <SortableContext items={activeHabits.map(h => h.id)} strategy={verticalListSortingStrategy}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {activeHabits.map(habit => {
+                const isDone = habit.kind === 'boolean'
+                  ? (habitDone[habit.id] ?? false)
+                  : (habitCounters[habit.id] ?? 0) >= (habit.goal ?? 1);
+                return (
+                  <SortableHabitCard key={habit.id} id={habit.id}>
+                    <HabitRow
+                      habit={habit}
+                      count={habitCounters[habit.id] ?? 0}
+                      checked={habitDone[habit.id] ?? false}
+                      isDone={isDone}
+                      streakLabel={habitStreakLabel(streaksById.get(habit.id)?.pastStreak ?? 0)}
+                      onCounterChange={(delta) => onCounterChange(habit.id, delta)}
+                      onToggle={() => onToggle(habit.id)}
+                      onEdit={() => onEditHabit(habit)}
+                      onDelete={() => onDeleteHabit(habit.id)}
+                    />
+                  </SortableHabitCard>
+                );
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
 
         {closedHabits.length > 0 && (
           <button
@@ -4154,6 +4359,25 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
       </div>
 
       <WeekStrip habits={activeHabits} weekStart={weekStart} timezone={timezone} />
+    </div>
+  );
+}
+
+// The Habits tab renders habits as standalone cards, so the grip lives in a
+// gutter beside the card (as with tasks) rather than inside its grid.
+function SortableHabitCard({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        display: 'flex', alignItems: 'stretch',
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.3 : 1,
+      }}
+    >
+      <DragHandle handleProps={{ ...attributes, ...listeners }} label="Drag to reorder habit" />
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
   );
 }
@@ -4565,6 +4789,10 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
       ...(endDate ? { endDate } : {}),
       ...(hasChallenge ? { challengeLengthDays: parsedChallengeLength } : {}),
+      // Carried through rather than rebuilt: onSave does a full-replace put, so
+      // omitting the manual order here would send every edited habit back to
+      // the bottom of the list (and push a cleared order to other devices).
+      ...(initialHabit?.sortOrder !== undefined ? { sortOrder: initialHabit.sortOrder } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global

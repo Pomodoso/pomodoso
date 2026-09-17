@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitFormModal } from '@/components/HabitFormModal';
+import { ReorderableSection } from '@/components/ReorderableSection';
 import { HabitRow } from '@/components/HabitRow';
 import { toMondayFirstDow } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
@@ -13,7 +14,7 @@ import { useHabits } from '@/hooks/useHabits';
 import { useSettings } from '@/hooks/useSettings';
 
 export default function HabitsScreen() {
-  const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit } = useHabits();
+  const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits } = useHabits();
   const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
@@ -67,38 +68,43 @@ export default function HabitsScreen() {
           </>
         )}
 
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Today</Text>
-          <Pressable
-            style={[styles.pinButton, settings.showHabitsInToday && styles.pinButtonActive]}
-            onPress={() => update('showHabitsInToday', !settings.showHabitsInToday)}
-            hitSlop={6}
-          >
-            <Ionicons name="pin" size={11} color={settings.showHabitsInToday ? colors.accent : colors.textTertiary} />
-            <Text style={[styles.pinButtonText, settings.showHabitsInToday && styles.pinButtonTextActive]}>
-              {settings.showHabitsInToday ? 'In Today' : 'Show in Today'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {habits.map(habit => (
-          <HabitRow
-            key={habit.id}
-            icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
-            name={habit.name}
-            streakLabel={habit.streakLabel}
-            days={habit.days}
-            kind={habit.kind}
-            done={habit.done}
-            count={habit.count}
-            goal={habit.goal}
-            weekFilled={habit.weekFilled}
-            todayIndex={toMondayFirstDow(new Date())}
-            onPress={() => openEdit(habit)}
-            onToggle={() => toggleHabit(habit.id)}
-            onIncrement={delta => incrementHabit(habit.id, delta)}
-          />
-        ))}
+        <ReorderableSection
+          title="Today"
+          items={habits}
+          keyOf={h => h.id}
+          // The full list is on screen here, so unlike the Today tab no
+          // re-slotting is needed — this IS the habit order.
+          onReorder={reorderHabits}
+          headerRight={
+            <Pressable
+              style={[styles.pinButton, settings.showHabitsInToday && styles.pinButtonActive]}
+              onPress={() => update('showHabitsInToday', !settings.showHabitsInToday)}
+              hitSlop={6}
+            >
+              <Ionicons name="pin" size={11} color={settings.showHabitsInToday ? colors.accent : colors.textTertiary} />
+              <Text style={[styles.pinButtonText, settings.showHabitsInToday && styles.pinButtonTextActive]}>
+                {settings.showHabitsInToday ? 'In Today' : 'Show in Today'}
+              </Text>
+            </Pressable>
+          }
+          renderItem={habit => (
+            <HabitRow
+              icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
+              name={habit.name}
+              streakLabel={habit.streakLabel}
+              days={habit.days}
+              kind={habit.kind}
+              done={habit.done}
+              count={habit.count}
+              goal={habit.goal}
+              weekFilled={habit.weekFilled}
+              todayIndex={toMondayFirstDow(new Date())}
+              onPress={() => openEdit(habit)}
+              onToggle={() => toggleHabit(habit.id)}
+              onIncrement={delta => incrementHabit(habit.id, delta)}
+            />
+          )}
+        />
       </ScrollView>
 
       <HabitFormModal
