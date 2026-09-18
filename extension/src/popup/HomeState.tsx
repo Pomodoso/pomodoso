@@ -24,16 +24,17 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  BADGE_CHALLENGE_LENGTH,
+  achievementTier, BADGE_CHALLENGE_LENGTH, nextAchievementTier,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
   habitStreakLabel, reorderSubset,
 } from '@pomodoso/types';
-import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
+import type { AchievementTier, ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
 import {
   db, now, localDate,
+  type AchievementRow,
   type HabitRow as HabitDef,
   type HabitHistoryRow,
   type MeetingRow as CalendarMeeting,
@@ -311,6 +312,8 @@ export function HomeState({
     return byHabit;
   }, [allHabitHistory]);
 
+  const achievements = useLiveQuery(() => db.achievements.filter(a => !a.deletedAt).toArray()) ?? [];
+
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
@@ -459,6 +462,19 @@ export function HomeState({
     // is the whole thing the rule was tightened to prevent.
     if (!challengeProgress(state, days, today).complete) return;
     await writeChallenge(id, challengeRecordCompletion(state, today));
+
+    // The award is a separate, append-only row rather than a count derived from
+    // completed runs: "Go again" clears this run's completion so the habit can
+    // start another, which would quietly decrement a badge already earned.
+    if (!challengeEarnsBadge(state)) return;
+    await db.achievements.put({
+      id: crypto.randomUUID(),
+      kind: 'challenge_21',
+      earnedOn: today,
+      habitId: id,
+      createdAt: now(),
+      updatedAt: now(),
+    });
   }, [today, writeChallenge]);
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
@@ -1515,6 +1531,7 @@ export function HomeState({
                   onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
                   streaks={habitStreaks}
                   challengeViews={challengeViews}
+                  achievements={achievements}
                   challengeActions={{
                     onKeepGoing: handleChallengeKeepGoing,
                     onStartOver: handleChallengeStartOver,
@@ -4527,6 +4544,76 @@ function ChallengesSection({ habits, views, actions, showInToday, onToggleShowIn
   );
 }
 
+const TIER_STYLE: Record<AchievementTier, { ring: string; glow: string; label: string }> = {
+  bronze:   { ring: '#B08D57', glow: 'rgba(176,141,87,0.25)',  label: 'Bronze' },
+  silver:   { ring: '#A8B0B8', glow: 'rgba(168,176,184,0.28)', label: 'Silver' },
+  gold:     { ring: '#D4AF37', glow: 'rgba(212,175,55,0.30)',  label: 'Gold' },
+  platinum: { ring: '#7FD3E0', glow: 'rgba(127,211,224,0.32)', label: 'Platinum' },
+};
+
+/**
+ * Earned badges, GitHub-profile style: one medal per kind with an xN chip.
+ *
+ * Only earned badges are shown. A grid of locked placeholders turns the tab
+ * into a checklist of things you haven't done, which is the opposite of what
+ * finishing a 21-day run should feel like.
+ */
+function AchievementsSection({ achievements }: { achievements: AchievementRow[] }) {
+  const count = achievements.filter(a => a.kind === 'challenge_21').length;
+  if (count === 0) return null;
+  const tier = achievementTier(count);
+  if (!tier) return null;
+  const style = TIER_STYLE[tier];
+  const next = nextAchievementTier(count);
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8 }}>
+        Achievements
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div
+            title={`${style.label} · ${count} challenge${count === 1 ? '' : 's'} completed`}
+            style={{
+              width: 52, height: 52, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 24,
+              border: `2px solid ${style.ring}`,
+              background: `radial-gradient(circle at 50% 35%, ${style.glow}, transparent 70%)`,
+              boxShadow: `0 0 10px ${style.glow}`,
+            }}
+          >
+            🏆
+          </div>
+          {count > 1 && (
+            <span style={{
+              position: 'absolute', bottom: -2, right: -4,
+              padding: '1px 5px', borderRadius: 8,
+              fontSize: 10, fontWeight: 700, lineHeight: 1.4,
+              background: style.ring, color: '#fff',
+              border: '1px solid var(--color-bg)',
+            }}>
+              x{count}
+            </span>
+          )}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{style.label} challenger</div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+            {count} × 21-day challenge{count === 1 ? '' : 's'} completed
+          </div>
+          {next && (
+            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 2 }}>
+              {next.remaining} more for {TIER_STYLE[next.tier].label}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface HabitsContentProps {
   habits: HabitDef[];
   habitCounters: Record<string, number>;
@@ -4545,11 +4632,12 @@ interface HabitsContentProps {
   onToggleShowChallengesInToday: () => void;
   challengeViews: Map<string, ChallengeView>;
   challengeActions: ChallengeActions;
+  achievements: AchievementRow[];
   /** Per-habit streak/challenge progress, computed once in HomeState. */
   streaks: Map<string, { pastStreak: number; doneToday: boolean; daysDone: number }>;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks, challengeViews, challengeActions }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks, challengeViews, challengeActions, achievements }: HabitsContentProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const dragGuard = useDragResizeGuard();
   const today = new Date();
@@ -4596,6 +4684,8 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
           {doneCount}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--color-text-muted)' }}>/{activeHabits.length}</span>
         </div>
       </div>
+
+      <AchievementsSection achievements={achievements} />
 
       <ChallengesSection
         habits={challengeHabits}

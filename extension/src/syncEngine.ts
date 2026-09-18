@@ -355,6 +355,19 @@ async function push(client: TokenApiClient): Promise<void> {
     }));
   }
 
+  // Achievements (user-global history) — append-only, so a dirty row is either
+  // a new award or one whose habit was deleted elsewhere.
+  const achievements = await db.achievements
+    .filter(a => !a.syncedAt || a.syncedAt < a.updatedAt)
+    .toArray();
+  for (const a of achievements) {
+    entities.push(toEntity('achievement', a.id, a.updatedAt, a.deletedAt ?? null, {
+      kind: a.kind,
+      earned_on: a.earnedOn,
+      habit_id: a.habitId ?? null,
+    }));
+  }
+
   // Settings
   for (const key of SYNCED_SETTINGS) {
     const row = await db.settings.get(key);
@@ -590,6 +603,22 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         syncedAt,
       };
       await db.taskOrders.put(row);
+      break;
+    }
+
+    case 'achievement': {
+      const existing = await db.achievements.get(id);
+      if (existing && existing.updatedAt >= updated_at) return;
+      await db.achievements.put({
+        id,
+        kind: String(data['kind'] ?? ''),
+        earnedOn: String(data['earned_on'] ?? '').slice(0, 10),
+        ...(data['habit_id'] ? { habitId: data['habit_id'] as string } : {}),
+        createdAt: existing?.createdAt ?? updated_at,
+        updatedAt: updated_at,
+        syncedAt,
+        ...(deleted_at ? { deletedAt: deleted_at } : {}),
+      });
       break;
     }
 

@@ -23,7 +23,7 @@ const isExcludedSetting = (key: string) =>
 // Tables a backup must contain to be considered valid. Tables added in newer
 // versions are imported when present but don't invalidate older backups.
 const REQUIRED_TABLES = ['tasks', 'projects', 'workspaces', 'habits'] as const;
-const ALL_TABLES = ['tasks', 'taskOrders', 'projects', 'workspaces', 'habits', 'habitHistory', 'meetings', 'detectionRules', 'settings'] as const;
+const ALL_TABLES = ['tasks', 'taskOrders', 'projects', 'workspaces', 'habits', 'habitHistory', 'meetings', 'detectionRules', 'achievements', 'settings'] as const;
 
 export interface BackupEnvelope {
   version: '1';
@@ -50,7 +50,7 @@ function refreshSyncMeta<T extends { syncedAt?: string; updatedAt?: string }>(ro
 }
 
 export async function exportDb(): Promise<string> {
-  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, allSettings] = await Promise.all([
+  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, allSettings] = await Promise.all([
     db.tasks.toArray(),
     db.taskOrders.toArray(),
     db.projects.toArray(),
@@ -59,6 +59,7 @@ export async function exportDb(): Promise<string> {
     db.habitHistory.toArray(),
     db.meetings.toArray(),
     db.detectionRules.toArray(),
+    db.achievements.toArray(),
     db.settings.toArray(),
   ]);
 
@@ -67,7 +68,7 @@ export async function exportDb(): Promise<string> {
   const envelope: BackupEnvelope = {
     version: '1',
     exportedAt: new Date().toISOString(),
-    data: { tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, settings },
+    data: { tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, settings },
   };
 
   return JSON.stringify(envelope, null, 2);
@@ -90,7 +91,7 @@ export async function importDb(json: string): Promise<void> {
   const rows = (table: (typeof ALL_TABLES)[number]): unknown[] =>
     Array.isArray(data[table]) ? data[table] : [];
 
-  await db.transaction('rw', [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.settings], async () => {
+  await db.transaction('rw', [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.achievements, db.settings], async () => {
     await Promise.all([
       db.tasks.clear(),
       db.taskOrders.clear(),
@@ -100,6 +101,7 @@ export async function importDb(json: string): Promise<void> {
       db.habitHistory.clear(),
       db.meetings.clear(),
       db.detectionRules.clear(),
+      db.achievements.clear(),
     ]);
 
     // Settings: clear non-excluded keys, plus local sync state — after an import
@@ -134,6 +136,7 @@ export async function importDb(json: string): Promise<void> {
       db.habitHistory.bulkPut(sane.history as never[]),
       db.meetings.bulkPut(refreshSyncMeta(rows('meetings') as never[])),
       db.detectionRules.bulkPut(refreshSyncMeta(rows('detectionRules') as never[])),
+      db.achievements.bulkPut(refreshSyncMeta(rows('achievements') as never[])),
       db.settings.bulkPut((rows('settings') as { key: string }[]).filter(s => !isExcludedSetting(s.key)) as never[]),
     ]);
   });
