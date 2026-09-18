@@ -236,3 +236,23 @@ test('challengeDaysOf feeds challengeProgress end to end', () => {
   assert.equal(p.daysDone, 3);
   assert.deepEqual(p.missedDays, ['2026-09-03']);
 });
+
+test('an unresolved miss blocks completion even at full count', () => {
+  // A run that broke on day 8 and kept being logged must not sail past 21,
+  // skip the decision, and earn a badge with skippedDays still empty.
+  const spec = 'x'.repeat(10) + '.' + 'x'.repeat(15); // 25 done, one unforgiven miss
+  const p = challengeProgress(RUN({ startedAt: '2026-09-01' }), days(spec), '2026-10-01');
+  assert.equal(p.daysDone, 25);
+  assert.equal(p.missedDays.length, 1);
+  assert.equal(p.complete, false);
+  assert.equal(challengeNeedsDecision(p), true);
+});
+
+test('resolving the miss then lets it complete', () => {
+  const spec = 'x'.repeat(10) + '.' + 'x'.repeat(15);
+  const state = challengeKeepGoing(RUN({ startedAt: '2026-09-01' }), ['2026-09-11']);
+  const p = challengeProgress(state, days(spec), '2026-10-01');
+  assert.equal(p.complete, true);
+  // ...but the skip it cost means no badge.
+  assert.equal(challengeEarnsBadge(state), false);
+});

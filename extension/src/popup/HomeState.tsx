@@ -5123,9 +5123,14 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       ...(endDate ? { endDate } : {}),
       ...(hasChallenge ? { challengeLengthDays: parsedChallengeLength } : {}),
       // Carried through rather than rebuilt: onSave does a full-replace put, so
-      // omitting the manual order here would send every edited habit back to
-      // the bottom of the list (and push a cleared order to other devices).
+      // anything the form doesn't name is erased. sortOrder learned this the
+      // hard way (every edit sent the habit to the bottom of the list); the
+      // challenge run is the same trap, and losing it would turn a finished
+      // 21-day challenge back into a fresh one starting today.
       ...(initialHabit?.sortOrder !== undefined ? { sortOrder: initialHabit.sortOrder } : {}),
+      ...(initialHabit?.challengeStartedAt !== undefined ? { challengeStartedAt: initialHabit.challengeStartedAt } : {}),
+      ...(initialHabit?.challengeCompletedAt !== undefined ? { challengeCompletedAt: initialHabit.challengeCompletedAt } : {}),
+      ...(initialHabit?.challengeSkippedDays !== undefined ? { challengeSkippedDays: initialHabit.challengeSkippedDays } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global

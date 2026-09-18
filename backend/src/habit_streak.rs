@@ -200,9 +200,15 @@ pub fn challenge_progress(
         };
     };
 
+    // A start date arrives from the client and is never validated there, so an
+    // account can carry one arbitrarily far in the past — walking from it
+    // literally would let a single synced habit cost the server hundreds of
+    // thousands of iterations per request, on every /today and /habits call.
+    // Clamped to the same 3650-day window the clients bound their own walk to.
     let mut days_done = 0;
     let mut missed_days = Vec::new();
-    let mut date = started_at;
+    let earliest = today - Duration::days(MAX_LOOKBACK_DAYS);
+    let mut date = std::cmp::max(started_at, earliest);
     while date <= today {
         if is_scheduled(days, date) {
             if is_done(kind, target_count, logs.get(&date).copied()) {
@@ -215,8 +221,12 @@ pub fn challenge_progress(
     }
 
     ChallengeProgress {
-        // Once recorded, completion stands. A later rest day cannot take it back.
-        complete: run.completed_at.is_some() || days_done >= run.length_days,
+        // Once recorded, completion stands — a later rest day cannot take it
+        // back. An unresolved miss blocks completion even at full count, so a
+        // run that broke and kept being logged can't sail past its length and
+        // skip the decision. Mirrors challengeProgress in @pomodoso/types.
+        complete: run.completed_at.is_some()
+            || (days_done >= run.length_days && missed_days.is_empty()),
         days_done,
         completed_at: run.completed_at,
         missed_days,
@@ -444,6 +454,45 @@ mod tests {
             date(TODAY),
         );
         assert_eq!(p.days_done, 2);
+    }
+
+    #[test]
+    fn an_unresolved_miss_blocks_completion_even_at_full_count() {
+        // Matches challengeProgress in @pomodoso/types: the decision has to be
+        // answered before a run can finish, or a broken run earns a clean badge.
+        let mut l = HashMap::new();
+        for i in 0..30 {
+            if i == 10 {
+                continue; // one unforgiven miss
+            }
+            l.insert(date("2026-09-01") + Duration::days(i), 1);
+        }
+        let p = challenge_progress(
+            &run(21, Some("2026-09-01"), None, &[]),
+            "boolean",
+            None,
+            &[],
+            &l,
+            date("2026-09-30"),
+        );
+        assert_eq!(p.days_done, 29);
+        assert_eq!(p.missed_days.len(), 1);
+        assert!(!p.complete);
+    }
+
+    #[test]
+    fn a_wildly_old_start_date_does_not_walk_forever() {
+        // The start date comes from a client and is never validated there, so
+        // this bounds what a synced habit can cost the server.
+        let p = challenge_progress(
+            &run(21, Some("0001-01-01"), None, &[]),
+            "boolean",
+            None,
+            &[],
+            &HashMap::new(),
+            date(TODAY),
+        );
+        assert!(p.missed_days.len() as i64 <= MAX_LOOKBACK_DAYS + 1);
     }
 
     #[test]

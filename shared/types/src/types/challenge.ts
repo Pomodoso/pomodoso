@@ -147,8 +147,15 @@ export function challengeProgress(
   }
   return {
     daysDone,
-    // Once recorded, completion stands. A later rest day cannot take it back.
-    complete: state.completedAt !== null || daysDone >= state.lengthDays,
+    // Once recorded, completion stands — a later rest day cannot take it back.
+    //
+    // An unresolved miss blocks completion even at full count: otherwise a run
+    // that broke on day 8 and kept being logged would sail past 21, skip the
+    // decision entirely, and earn a badge with skippedDays still empty. The
+    // miss has to be answered first — keep going (which spends a skip and
+    // forfeits the badge) or start over.
+    complete:
+      state.completedAt !== null || (daysDone >= state.lengthDays && missedDays.length === 0),
     completedAt: state.completedAt,
     missedDays,
   };

@@ -355,11 +355,19 @@ export class PomoDB extends Dexie {
         // Walk back over scheduled days while they were done; the last one
         // still done is where the current run began. A habit with no streak
         // starts its run today.
+        //
+        // Today is skipped when it isn't done yet rather than ending the walk:
+        // the day isn't over, so a user on day 20 who simply hasn't ticked
+        // today must not have their run reset to "starts today" — which is
+        // precisely the progress loss this backfill exists to prevent.
         let started = localDate(tz);
         for (let i = 0; i < 3650; i++) {
           const date = localDate(tz, -i);
           if (!scheduled(date)) continue;
-          if (!isDone(date)) break;
+          if (!isDone(date)) {
+            if (i === 0) continue;
+            break;
+          }
           started = date;
         }
         h.challengeStartedAt = started;

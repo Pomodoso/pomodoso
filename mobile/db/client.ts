@@ -128,11 +128,17 @@ function backfillChallengeStarts(database: typeof expoDb): void {
     const scheduled = (date: string): boolean =>
       days.length === 0 || days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
 
+    // Today is skipped when it isn't done yet rather than ending the walk: the
+    // day isn't over, so a user on day 20 who simply hasn't ticked today must
+    // not have their run reset to "starts today".
     let started = dateOffset(0);
     for (let i = 0; i < 3650; i++) {
       const date = dateOffset(i);
       if (!scheduled(date)) continue;
-      if (!isDone(date)) break;
+      if (!isDone(date)) {
+        if (i === 0) continue;
+        break;
+      }
       started = date;
     }
     // syncedAt is cleared so the derived start reaches the account's other
