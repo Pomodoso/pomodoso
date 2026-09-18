@@ -188,6 +188,9 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   // every field that property, which is what this used to special-case.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
   writeExtra(extra, 'sortOrder', h.sortOrder);
+  writeExtra(extra, 'challengeStartedAt', h.challengeStartedAt);
+  writeExtra(extra, 'challengeCompletedAt', h.challengeCompletedAt);
+  writeExtra(extra, 'challengeSkippedDays', JSON.parse(h.challengeSkippedDays || '[]') as string[]);
   return extra;
 }
 
@@ -753,6 +756,15 @@ function applyEntity(entity: SyncEntity): void {
         challengeLengthDays: 'challengeLengthDays' in hExtra ? (hExtra.challengeLengthDays as number | null) : (existing?.challengeLengthDays ?? null),
         days: JSON.stringify(days),
         sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),
+        challengeStartedAt: 'challengeStartedAt' in hExtra
+          ? (hExtra.challengeStartedAt as string | null)
+          : (existing?.challengeStartedAt ?? null),
+        challengeCompletedAt: 'challengeCompletedAt' in hExtra
+          ? (hExtra.challengeCompletedAt as string | null)
+          : (existing?.challengeCompletedAt ?? null),
+        challengeSkippedDays: Array.isArray(hExtra.challengeSkippedDays)
+          ? JSON.stringify(hExtra.challengeSkippedDays)
+          : (existing?.challengeSkippedDays ?? '[]'),
         // Immutable, so unlike the other extras it falls back to the
         // existing/local value (then updated_at) rather than dropping.
         createdAt: (hExtra.createdAt as string | undefined) ?? existing?.createdAt ?? updated_at,

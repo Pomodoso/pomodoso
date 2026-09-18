@@ -21,6 +21,7 @@ export function now(): string {
 // Lives in dates.ts now (see the note there); re-exported so every existing
 // `from './db'` import keeps working.
 export { localDate } from './dates.ts';
+import { localDate } from './dates.ts';
 
 // ─── Task types ────────────────────────────────────────────────────────────────
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'delayed' | 'cancelled';
@@ -104,7 +105,17 @@ export interface HabitRow extends SyncMeta {
   unitAmount?: number;
   timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
   endDate?: string;         // YYYY-MM-DD — hidden from Today after this date
-  challengeLengthDays?: number; // e.g. 21 — renders a "Day N of length" challenge card
+  // `| undefined` spelled out on all four: clearing a challenge (Keep as habit,
+  // Go again) writes undefined through Dexie's UpdateSpec, which `?:` alone
+  // forbids under exactOptionalPropertyTypes.
+  challengeLengthDays?: number | undefined; // e.g. 21 — renders a "Day N of length" challenge card
+  // A challenge used to be a pure view of the current streak, which meant a
+  // missed day silently reset it to zero and a completed run un-completed
+  // itself the first time the streak broke afterwards. These three record the
+  // run itself, so both become representable. See @pomodoso/types' ChallengeState.
+  challengeStartedAt?: string | undefined;      // YYYY-MM-DD the current run began
+  challengeCompletedAt?: string | undefined;    // YYYY-MM-DD it finished — never recomputed
+  challengeSkippedDays?: string[] | undefined;  // missed days the user chose to carry on through
   // Manual display order, ascending. Habits are user-global, so this order is
   // too: the same sequence shows in every workspace and in "all". Habits
   // without one sort last (by creation) until they're first dragged.
@@ -306,6 +317,64 @@ export class PomoDB extends Dexie {
         delete (h as { syncedAt?: string }).syncedAt;
         modified.push(h);
       });
+      if (modified.length) await tx.table('habits').bulkPut(modified);
+    });
+    // v16: give every existing challenge a start date, derived from the run it
+    // is already on rather than from today — starting them over on upgrade
+    // would throw away exactly the progress this change exists to protect.
+    //
+    // The done/scheduled logic is inlined rather than shared with
+    // computeHabitStreak on purpose: a migration has to keep behaving the way
+    // it did the day it shipped, and pointing it at live code that will keep
+    // evolving is how upgrades start producing different results over time.
+    this.version(16).stores({}).upgrade(async tx => {
+      const habits = await tx.table('habits').toArray() as HabitRow[];
+      const history = await tx.table('habitHistory').toArray() as HabitHistoryRow[];
+      // The user's configured timezone decides where a day boundary falls; the
+      // system one is only the fallback the app itself uses when unset.
+      const tzRow = await tx.table('settings').get('timezone') as { value?: unknown } | undefined;
+      const tz = (typeof tzRow?.value === 'string' && tzRow.value)
+        || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const byHabit = new Map<string, Map<string, HabitHistoryRow>>();
+      for (const r of history) {
+        if (!byHabit.has(r.habitId)) byHabit.set(r.habitId, new Map());
+        byHabit.get(r.habitId)!.set(r.date, r);
+      }
+      const modified: HabitRow[] = [];
+      for (const h of habits) {
+        if (!h.challengeLengthDays || h.challengeStartedAt) continue;
+        const rows = byHabit.get(h.id) ?? new Map<string, HabitHistoryRow>();
+        const isDone = (date: string): boolean => {
+          const row = rows.get(date);
+          if (!row) return false;
+          return h.kind === 'counter' ? (row.count ?? 0) >= (h.goal ?? 1) : (row.done ?? false);
+        };
+        const scheduled = (date: string): boolean =>
+          h.days.length === 0 || h.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+
+        // Walk back over scheduled days while they were done; the last one
+        // still done is where the current run began. A habit with no streak
+        // starts its run today.
+        //
+        // Today is skipped when it isn't done yet rather than ending the walk:
+        // the day isn't over, so a user on day 20 who simply hasn't ticked
+        // today must not have their run reset to "starts today" — which is
+        // precisely the progress loss this backfill exists to prevent.
+        let started = localDate(tz);
+        for (let i = 0; i < 3650; i++) {
+          const date = localDate(tz, -i);
+          if (!scheduled(date)) continue;
+          if (!isDone(date)) {
+            if (i === 0) continue;
+            break;
+          }
+          started = date;
+        }
+        h.challengeStartedAt = started;
+        h.challengeSkippedDays = [];
+        delete (h as { syncedAt?: string }).syncedAt;
+        modified.push(h);
+      }
       if (modified.length) await tx.table('habits').bulkPut(modified);
     });
   }

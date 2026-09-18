@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    habit_streak::{challenge_length, compute_streak, scheduled_days},
+    habit_streak::{challenge_progress, challenge_run, challenge_skips_left, scheduled_days},
     middleware::auth::AuthUser,
     routes::habits::habit_logs_by_habit,
     AppState,
@@ -141,6 +141,13 @@ pub struct TodayChallenge {
     pub icon: String,
     pub length_days: i32,
     pub days_done: i32,
+    /// Recorded when the run finished, so a later rest day can't revoke it.
+    pub complete: bool,
+    pub completed_at: Option<NaiveDate>,
+    /// Past scheduled days missed and not forgiven. Non-empty means the run is
+    /// stalled waiting on the user, which the dashboard shows read-only.
+    pub missed_days: Vec<NaiveDate>,
+    pub skips_left: i32,
 }
 
 #[derive(Serialize)]
@@ -565,7 +572,7 @@ pub async fn get_today(
     let challenges: Vec<TodayChallenge> = {
         let with_challenge: Vec<_> = habit_rows
             .iter()
-            .filter_map(|r| challenge_length(&r.extra).map(|len| (r, len)))
+            .filter_map(|r| challenge_run(&r.extra).map(|run| (r, run)))
             .collect();
         if with_challenge.is_empty() {
             Vec::new()
@@ -574,19 +581,26 @@ pub async fn get_today(
             let empty = HashMap::new();
             with_challenge
                 .into_iter()
-                .map(|(r, length_days)| TodayChallenge {
-                    id: r.id,
-                    name: r.name.clone(),
-                    icon: r.icon.clone(),
-                    length_days,
-                    days_done: compute_streak(
+                .map(|(r, run)| {
+                    let progress = challenge_progress(
+                        &run,
                         &r.kind,
                         r.target_count,
                         &scheduled_days(&r.frequency, r.frequency_days.as_deref()),
                         logs.get(&r.id).unwrap_or(&empty),
                         q.date,
-                    )
-                    .days_done,
+                    );
+                    TodayChallenge {
+                        id: r.id,
+                        name: r.name.clone(),
+                        icon: r.icon.clone(),
+                        length_days: run.length_days,
+                        days_done: progress.days_done,
+                        complete: progress.complete,
+                        completed_at: progress.completed_at,
+                        missed_days: progress.missed_days,
+                        skips_left: challenge_skips_left(&run),
+                    }
                 })
                 .collect()
         }

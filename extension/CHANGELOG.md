@@ -2,6 +2,10 @@
 
 ## v1.3.7 (In progress)
 
+### Habits
+
+- **Challenges remember the run, not just the streak** — Missing a day used to wipe a challenge back to "Day 0 of 21" with no warning, and completing one was never recorded: finish 21 days, take a rest day, and the app quietly took the trophy back. A challenge now tracks the run itself, so a missed day asks whether you want to keep going (costs one of a few skips, and gives up the achievement) or start over, and a finished challenge stays finished — with **Go again** or **Keep as habit** when you're done with it.
+
 
 ## v1.3.6
 
