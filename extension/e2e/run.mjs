@@ -13,13 +13,18 @@
 // exists.
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 import { PopupClosedError, launch, openPopup, openTab, resetStorage, sleep } from './driver.mjs';
 import {
+  EXPORT_VIA_UI,
   READ_ACHIEVEMENTS,
   READ_CHALLENGE_COMPLETION,
+  READ_PERSISTED_SHAPE,
   SEED_HABIT_HISTORY,
   TASK_ORDER,
+  openBackupPage,
   seedTasks,
 } from './fixtures.mjs';
 
@@ -154,6 +159,91 @@ async function testCompletionAndAward(browser) {
 }
 
 /**
+ * A backup carries the challenge run and the medals it earned, and restoring
+ * one brings them back.
+ *
+ * CLAUDE.md spells out that a new table has to be added to backup.ts in three
+ * separate places, and that missing one breaks import/export silently. That is
+ * a rule no type checks and no unit test can enforce, so it gets checked by
+ * actually exporting and re-importing through the buttons a user would press.
+ *
+ * Challenge state is the other half: it rides on the habit row rather than in
+ * a table of its own, so it is invisible to a table-level review and is
+ * exactly what a partial write drops.
+ */
+async function testBackupRoundTrip(browser) {
+  const popup = await seedThenOpenPopup(browser, async tab => {
+    await tab.clickButton('/Use template/');
+    await sleep(4000);
+    await tab.js(`(${SEED_HABIT_HISTORY})(20, [], 21)`);
+  });
+  // Visiting Habits is what records the completion and mints the medal.
+  await popup.clickButton("/^Habits$/");
+  await sleep(2500);
+
+  const before = await popup.js(READ_PERSISTED_SHAPE);
+  const parsedBefore = JSON.parse(before);
+  check('backup: the fixture really produced a run and a medal',
+    parsedBefore.challenges?.length > 0 && parsedBefore.achievements?.length > 0,
+    before);
+
+  await openBackupPage(popup);
+  const json = await popup.js(EXPORT_VIA_UI);
+  let envelope;
+  try {
+    envelope = JSON.parse(json);
+  } catch {
+    return check('backup: Export produces a readable backup', false, String(json).slice(0, 120));
+  }
+  // Guards the ordering bug Greptile caught: the click stub used to be restored
+  // inside the createObjectURL hook, which runs *before* the anchor is clicked,
+  // so the real download fired on every run.
+  check('backup: exporting never starts a real download',
+    (await popup.js(`window.__exportClickWasStubbed === true`)) === true);
+
+  check('backup: the export carries achievements as their own table',
+    Array.isArray(envelope.data?.achievements) && envelope.data.achievements.length > 0,
+    `tables: ${Object.keys(envelope.data ?? {}).join(', ')}`);
+
+  const exportedHabit = (envelope.data?.habits ?? []).find(h => h.challengeLengthDays);
+  check('backup: the export carries the challenge run on the habit',
+    Boolean(exportedHabit?.challengeStartedAt && exportedHabit?.challengeCompletedAt),
+    JSON.stringify({
+      startedAt: exportedHabit?.challengeStartedAt ?? null,
+      completedAt: exportedHabit?.challengeCompletedAt ?? null,
+    }));
+
+  // Import it back over a wiped profile — the restore path a user takes after
+  // reinstalling, and the one where a missing table shows up as lost data.
+  const dir = mkdtempSync(join(tmpdir(), 'pomodoso-backup-'));
+  const file = join(dir, 'backup.json');
+  writeFileSync(file, json);
+  try {
+    await browser.send('Target.closeTarget', { targetId: popup.targetId });
+    await sleep(800);
+
+    const fresh = await seedThenOpenPopup(browser, async tab => {
+      await tab.clickButton('/Start empty/');
+      await sleep(2500);
+    });
+    await openBackupPage(fresh);
+    await fresh.setFileInput('#import-file', file);
+    await sleep(1500);
+    const confirmed = await fresh.clickButton('/Replace all data/');
+    check('backup: choosing a file offers the replace-everything confirmation', confirmed === true);
+    // importDb reloads the popup on success.
+    await sleep(4000);
+
+    const after = await fresh.js(READ_PERSISTED_SHAPE);
+    check('backup: the run and its medal survive an export/import round trip',
+      after === before, after === before ? '' : `${before}\n     vs ${after}`);
+    await browser.send('Target.closeTarget', { targetId: fresh.targetId });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Runs a test, retrying once if the popup was closed out from under it.
  *
  * Narrow on purpose: only PopupClosedError retries, and only once. A failed
@@ -182,6 +272,7 @@ try {
   await run(testReorder, browser);
   await run(testChallengeDecision, browser);
   await run(testCompletionAndAward, browser);
+  await run(testBackupRoundTrip, browser);
 } finally {
   browser.close();
 }

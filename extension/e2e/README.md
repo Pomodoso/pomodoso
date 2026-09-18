@@ -32,6 +32,27 @@ behaviour no cheaper test can see.
 | a run complete from history records it | completion was recomputed, so a rest day revoked the trophy |
 | a clean 21-day run awards a medal | awards written only on a fresh toggle were lost |
 | the medal shows its tier | — |
+| a backup carries the run and its medal | a new table missed in `backup.ts` loses that data silently |
+| import restores both | challenge state rides on the habit row, where partial writes drop it |
+
+## It needs an unlocked screen
+
+`chrome.action.openPopup()` requires a **focused** browser window, and macOS
+will not let a background app take focus while the session is locked — not via
+CDP (`Page.bringToFront`, `Target.activateTarget`), not via the extension API
+(`chrome.windows.update({focused: true})`), and not via AppleScript. With the
+screen locked every run fails on the first check with "Could not find an active
+browser window", which looks like a product bug and is not one.
+
+If you get that error, check the session first:
+
+```bash
+ioreg -n Root -d1 -a | grep -A1 CGSSessionScreenIsLocked   # <true/> means locked
+```
+
+This is also the part of wiring it into CI that needs real thought: a headless
+Linux runner has no focused window either, so it would want Xvfb plus a window
+manager that grants focus — not just a `CHROME_PATH`.
 
 ## Not in CI
 
@@ -40,8 +61,8 @@ flaky end-to-end check blocking every PR is worse than none. Run it before
 cutting a release, and after touching anything drag- or challenge-related.
 
 Wiring it into CI is a reasonable next step — it would want a Linux Chrome path
-via `CHROME_PATH` and a verification that the pipe transport behaves the same
-on a runner.
+via `CHROME_PATH`, a verification that the pipe transport behaves the same on a
+runner, and an answer to the focus problem above.
 
 ## How it works
 
@@ -65,6 +86,14 @@ Other things that cost time once, recorded so they don't again:
   matched against trimmed `innerText`.
 - A 21-day run can't be produced by clicking for 21 days; `fixtures.mjs` writes
   history straight into IndexedDB.
+- Settings lives behind the header's icon-only **Menu** button, which has no
+  text to match on — only `title="Menu"`.
+- Exporting must not actually download. A real download hands focus to Chrome's
+  download UI, and a popup closes the moment it loses focus, so the download
+  takes the window the rest of the test needs. The export check stubs the
+  anchor's `click` and reads the blob instead; `exportDb()` still runs for real.
+- Reading a list right after a drop counts dnd-kit's `DragOverlay` clone — four
+  titles for three tasks. Scope DOM reads to `[aria-roledescription="sortable"]`.
 
 ## Files
 

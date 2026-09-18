@@ -187,6 +187,18 @@ function session(send, sessionId) {
         if (Date.now() > deadline) return current;
       }
     },
+    /**
+     * Puts a real file on a hidden `<input type=file>`, the way importing
+     * actually starts. There is no scripting a file picker, and setting
+     * `input.files` from page JS is forbidden; CDP's DOM domain is the only
+     * way in.
+     */
+    async setFileInput(selector, filePath) {
+      const { root } = await call('DOM.getDocument', { depth: 1 });
+      const { nodeId } = await call('DOM.querySelector', { nodeId: root.nodeId, selector });
+      if (!nodeId) throw new Error(`no file input matched ${selector}`);
+      await call('DOM.setFileInputFiles', { nodeId, files: [filePath] });
+    },
     /** Press, move in small steps, release — a drag the sensors actually see. */
     async drag(fromX, fromY, toX, toY, steps = 25) {
       await this.mouse('mouseMoved', fromX, fromY);
@@ -318,6 +330,9 @@ export async function openPopup({ send, extensionId, focus }) {
 
   const { sessionId } = await send('Target.attachToTarget', { targetId: popup.targetId, flatten: true });
   await send('Runtime.enable', {}, sessionId);
+  // DOM too: setFileInput needs nodeIds, and the domain hands none out until
+  // it is enabled on the session.
+  await send('DOM.enable', {}, sessionId);
   await sleep(3000);
   return { ...session(send, sessionId), targetId: popup.targetId };
 }
