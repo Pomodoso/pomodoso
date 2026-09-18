@@ -812,21 +812,17 @@ async fn push_achievement(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity)
         r#"
         INSERT INTO achievement (id, user_id, kind, earned_on, habit_id, updated_at, deleted_at, synced_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (user_id, id) DO UPDATE SET
           kind       = EXCLUDED.kind,
           earned_on  = EXCLUDED.earned_on,
           habit_id   = EXCLUDED.habit_id,
           updated_at = EXCLUDED.updated_at,
           deleted_at = EXCLUDED.deleted_at,
           synced_at  = NOW()
-        -- The ownership check belongs here, not only on the insert: the id is a
-        -- plain primary key, so without it a client holding another account's
-        -- achievement id (from a shared profile or an exported backup) could
-        -- overwrite that account's row by sending a newer timestamp. The other
-        -- user-global tables get this from a composite (user_id, id) key; this
-        -- one has to say it explicitly.
-        WHERE achievement.user_id = $2
-          AND EXCLUDED.updated_at >= achievement.updated_at
+        -- The key is (user_id, id), so a conflict can only ever be this user's
+        -- own row: one account cannot reach another's, and cannot strand it by
+        -- claiming the id first either.
+        WHERE EXCLUDED.updated_at >= achievement.updated_at
         "#,
         id,
         user_id,

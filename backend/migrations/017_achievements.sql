@@ -7,8 +7,14 @@
 --
 -- User-scoped, like habit and detection_rule (spec rule 6's exemption list):
 -- an achievement belongs to the person, not to a work context.
+-- Keyed by (user_id, id), not by id alone — the same shape detection_rule uses.
+-- Ids are client-supplied, so a global primary key would let one account claim
+-- an id it saw in a shared profile or an exported backup. The rightful owner's
+-- later push would then conflict with a row it doesn't own, update nothing, and
+-- still report success: their achievement stranded, silently. Scoping the key
+-- per user makes that unrepresentable rather than guarded against.
 CREATE TABLE IF NOT EXISTS achievement (
-  id           UUID        PRIMARY KEY,
+  id           UUID        NOT NULL,
   user_id      UUID        NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   -- 'challenge_21' today. Kept as free text rather than an enum so a new badge
   -- ships without a migration on a table that is pure history.
@@ -23,7 +29,8 @@ CREATE TABLE IF NOT EXISTS achievement (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at   TIMESTAMPTZ,
-  synced_at    TIMESTAMPTZ
+  synced_at    TIMESTAMPTZ,
+  PRIMARY KEY (user_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS achievement_user_idx ON achievement(user_id);
