@@ -574,3 +574,45 @@ pub async fn get_habits_history(
         days,
     }))
 }
+
+// ─── Achievements ─────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct AchievementInfo {
+    pub kind: String,
+    /// How many of this kind have been earned — the `xN` on the badge.
+    pub count: i64,
+    /// Most recent award, for "earned <date>".
+    pub latest: Option<NaiveDate>,
+}
+
+/// Earned achievements, grouped by kind.
+///
+/// Grouped rather than returned row by row: the dashboard shows one medal per
+/// kind with a count, and a user with forty completed challenges has no use for
+/// forty rows.
+pub async fn list_achievements(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<Vec<AchievementInfo>>> {
+    let rows = sqlx::query!(
+        r#"SELECT kind, COUNT(*) as "count!", MAX(earned_on) as "latest?"
+           FROM achievement
+           WHERE user_id = $1 AND deleted_at IS NULL
+           GROUP BY kind
+           ORDER BY kind"#,
+        auth.id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| AchievementInfo {
+                kind: r.kind,
+                count: r.count,
+                latest: r.latest,
+            })
+            .collect(),
+    ))
+}

@@ -7,6 +7,13 @@ export interface TodayChallenge {
   icon: string;
   length_days: number;
   days_done: number;
+  /** Recorded when the run finished, so a later rest day can't revoke it. */
+  complete?: boolean;
+  completed_at?: string | null;
+  /** Past scheduled days missed and not forgiven. Non-empty means the run is
+   *  waiting on a decision, which is taken in the extension or the app. */
+  missed_days?: string[];
+  skips_left?: number;
 }
 
 /**
@@ -24,7 +31,9 @@ export interface TodayChallenge {
  */
 export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] }) {
   if (challenges.length === 0) return null;
-  const completed = challenges.filter(c => challengeComplete(c.days_done, c.length_days)).length;
+  const completed = challenges.filter(
+    c => c.complete ?? challengeComplete(c.days_done, c.length_days),
+  ).length;
 
   return (
     <div className="pomo-card">
@@ -36,12 +45,15 @@ export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] })
       </div>
       {challenges.map((c) => {
         const shown = challengeDaysShown(c.days_done, c.length_days);
-        const complete = challengeComplete(c.days_done, c.length_days);
+        // The server records completion; falling back to the day count keeps
+        // this working against a backend that predates the run model.
+        const complete = c.complete ?? challengeComplete(c.days_done, c.length_days);
+        const needsDecision = !complete && (c.missed_days?.length ?? 0) > 0;
         return (
           <div
             key={c.id}
             style={{
-              border: `1px solid ${complete ? 'var(--success)' : 'var(--accent)'}`,
+              border: `1px solid ${complete ? 'var(--success)' : needsDecision ? 'var(--border)' : 'var(--accent)'}`,
               borderRadius: 10,
               padding: '12px 14px',
               marginBottom: 8,
@@ -56,7 +68,9 @@ export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] })
               {complete && <i className="ti ti-trophy" style={{ color: 'var(--success)' }} />}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 8 }}>
-              {challengeProgressLabel(shown, c.length_days)}
+              {needsDecision
+                ? `Paused — ${c.missed_days!.length} missed day${c.missed_days!.length === 1 ? '' : 's'} to sort out in the extension or app.`
+                : challengeProgressLabel(shown, c.length_days)}
             </div>
             <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
               <div
@@ -68,7 +82,9 @@ export function ChallengesCard({ challenges }: { challenges: TodayChallenge[] })
               />
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-sec)', marginTop: 6 }}>
-              {challengeStreakLabel(shown, c.length_days)}
+              {complete && c.completed_at
+                ? `Finished ${new Date(c.completed_at + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                : challengeStreakLabel(shown, c.length_days)}
             </div>
           </div>
         );

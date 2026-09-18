@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT kind, COUNT(*) as \"count!\", MAX(earned_on) as \"latest?\"\n           FROM achievement\n           WHERE user_id = $1 AND deleted_at IS NULL\n           GROUP BY kind\n           ORDER BY kind",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "latest?",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "9b0d77220e96e76466d23c1b6e5c770476134ab5e288502a03882b08c6bbe8d7"
+}
