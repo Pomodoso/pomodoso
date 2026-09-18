@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AchievementsSection } from '@/components/AchievementsSection';
 import { ChallengesSection } from '@/components/ChallengesSection';
 import { HabitFormModal } from '@/components/HabitFormModal';
 import { ReorderableSection } from '@/components/ReorderableSection';
@@ -11,11 +12,16 @@ import { HabitRow } from '@/components/HabitRow';
 import { toMondayFirstDow } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
+import { useAchievements } from '@/hooks/useAchievements';
 import { useHabits } from '@/hooks/useHabits';
 import { useSettings } from '@/hooks/useSettings';
 
 export default function HabitsScreen() {
-  const { habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits } = useHabits();
+  const {
+    habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits,
+    keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
+  } = useHabits();
+  const { count: achievementCount } = useAchievements();
   const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
@@ -41,8 +47,15 @@ export default function HabitsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        <AchievementsSection count={achievementCount} />
+
         <ChallengesSection
           habits={challengeHabits}
+          actions={{
+            onKeepGoing: keepChallengeGoing,
+            onStartOver: startChallengeOver,
+            onKeepAsHabit: keepChallengeAsHabit,
+          }}
           showInToday={settings.showChallengesInToday}
           onToggleShowInToday={() => update('showChallengesInToday', !settings.showChallengesInToday)}
         />

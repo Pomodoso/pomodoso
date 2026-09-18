@@ -12,7 +12,7 @@ import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
-import { habitHistory, habits } from '@/db/schema';
+import { achievements, habitHistory, habits } from '@/db/schema';
 import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
 import { habitLogId, uid } from '@/utils/id';
 import { triggerSync } from '@/utils/sync';
@@ -40,6 +40,17 @@ export interface HabitWithProgress {
   /** The challenge run and its progress, or null for a plain habit. */
   challenge: { state: ChallengeState; progress: ChallengeProgress } | null;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
+}
+
+/** The JSON string[] column, tolerant of anything that isn't one. */
+function parseSkippedDays(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((d): d is string => typeof d === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function todayStr(): string {
@@ -196,6 +207,7 @@ export function useHabits() {
         set: { done: sql`NOT ${habitHistory.done}`, updatedAt: now },
       })
       .run();
+    recordCompletionIfFinished(id);
     triggerSync();
   }
 
@@ -213,6 +225,7 @@ export function useHabits() {
         set: { count: sql`max(0, ${habitHistory.count} + ${delta})`, updatedAt: now },
       })
       .run();
+    recordCompletionIfFinished(id);
     triggerSync();
   }
 
@@ -275,6 +288,87 @@ export function useHabits() {
     triggerSync();
   }
 
+  // ── Challenge actions ──────────────────────────────────────────────────────
+  function writeChallenge(id: string, next: ChallengeState): void {
+    db.update(habits)
+      .set({
+        challengeStartedAt: next.startedAt,
+        challengeCompletedAt: next.completedAt,
+        challengeSkippedDays: JSON.stringify(next.skippedDays),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(habits.id, id))
+      .run();
+    triggerSync();
+  }
+
+  function keepChallengeGoing(id: string): void {
+    const habit = merged.find(h => h.id === id);
+    if (!habit?.challenge) return;
+    writeChallenge(id, challengeKeepGoing(habit.challenge.state, habit.challenge.progress.missedDays));
+  }
+
+  function startChallengeOver(id: string): void {
+    const habit = merged.find(h => h.id === id);
+    if (!habit?.challenge) return;
+    writeChallenge(id, challengeStartOver(habit.challenge.state, today));
+  }
+
+  /** Drops the challenge framing; the habit carries on with its ordinary streak. */
+  function keepChallengeAsHabit(id: string): void {
+    db.update(habits)
+      .set({
+        challengeLengthDays: null,
+        challengeStartedAt: null,
+        challengeCompletedAt: null,
+        challengeSkippedDays: '[]',
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(habits.id, id))
+      .run();
+    triggerSync();
+  }
+
+  /**
+   * Records a finish, and awards the medal when the run earned one.
+   *
+   * Reads the habit back out of SQLite rather than trusting `merged`: the
+   * toggle that triggered this hasn't reached the live query yet, and that is
+   * the very day that decides completion.
+   */
+  function recordCompletionIfFinished(id: string): void {
+    const row = db.select().from(habits).where(eq(habits.id, id)).all()[0];
+    if (!row?.challengeLengthDays || row.challengeCompletedAt) return;
+    const day = todayStr();
+    const state: ChallengeState = {
+      lengthDays: row.challengeLengthDays,
+      startedAt: row.challengeStartedAt ?? day,
+      completedAt: null,
+      skippedDays: parseSkippedDays(row.challengeSkippedDays),
+    };
+    const rows = db.select().from(habitHistory).where(eq(habitHistory.habitId, id)).all();
+    const byDate = new Map(rows.map(r => [r.date, { count: r.count, done: r.done }]));
+    const days = parseDays(row.days);
+    const runDays = challengeDaysOf(
+      state.startedAt,
+      day,
+      date => days.length === 0 || days.includes(toMondayFirstDow(new Date(date + 'T12:00:00'))),
+      date => isDone(row.kind, row.goal, byDate.get(date)),
+    );
+    if (!challengeProgress(state, runDays, day).complete) return;
+
+    writeChallenge(id, challengeRecordCompletion(state, day));
+
+    // Append-only: "Go again" clears the run's completion so the habit can
+    // start another, which would quietly decrement a badge already earned.
+    if (!challengeEarnsBadge(state)) return;
+    const stamp = new Date().toISOString();
+    db.insert(achievements)
+      .values({ id: uid(), kind: 'challenge_21', earnedOn: day, habitId: id, createdAt: stamp, updatedAt: stamp })
+      .run();
+    triggerSync();
+  }
+
   function removeHabit(id: string): void {
     // Soft delete (CLAUDE.md rule 4), wrapped in a transaction so both
     // tombstones commit together — an interruption between them would
@@ -288,5 +382,8 @@ export function useHabits() {
     triggerSync();
   }
 
-  return { habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits };
+  return {
+    habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits,
+    keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
+  };
 }
