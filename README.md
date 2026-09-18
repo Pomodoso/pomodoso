@@ -77,6 +77,10 @@ so you can never accidentally load a prod-pointing build locally.
 So: load `extension/dist` for local work; run `make zip` only to produce the Chrome Web
 Store upload.
 
+Before cutting a release, run `pnpm --filter extension e2e` — it drives the real
+popup window, which is where drag-and-drop and the challenge flow can break
+while every other check passes. See `extension/e2e/README.md`.
+
 Packaging lives in `extension/Makefile` and nowhere else. There used to be a second
 path (`pnpm --filter extension zip`) that produced the same artifact under a different
 name — `pomodoso-extension-v<version>.zip` against the Makefile's `pomodoso-<version>.zip`
