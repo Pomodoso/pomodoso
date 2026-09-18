@@ -405,6 +405,7 @@ async function push(client: TokenApiClient): Promise<void> {
     if (meetings.length)   await db.meetings.where('id').anyOf(meetings.map(m => m.id)).modify({ syncedAt: ts });
     if (habits.length)     await db.habits.where('id').anyOf(habits.map(h => h.id)).modify({ syncedAt: ts });
     if (rules.length)      await db.detectionRules.where('id').anyOf(rules.map(r => r.id)).modify({ syncedAt: ts });
+    if (achievements.length) await db.achievements.where('id').anyOf(achievements.map(a => a.id)).modify({ syncedAt: ts });
     for (const r of history) {
       await db.habitHistory.where('[habitId+date]').equals([r.habitId, r.date]).modify({ syncedAt: ts });
     }
