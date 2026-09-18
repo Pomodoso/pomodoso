@@ -24,7 +24,22 @@ import {
   habitStreakLabel,
   nextAchievementTier,
 } from './challenge.ts';
-import type { ChallengeDay, ChallengeState } from './challenge.ts';
+import type { AchievementKind, ChallengeDay, ChallengeState } from './challenge.ts';
+
+// ─── Type-level pin ───────────────────────────────────────────────────────────
+//
+// Checked by `tsc --noEmit`, not at runtime, and that is the point: the runtime
+// assertions below compare values, so `CHALLENGE_BADGE_KIND` widening to
+// `string` would keep every one of them passing while quietly draining the
+// meaning out of AchievementKind everywhere it is used. Exact equality rather
+// than `extends`, so a change in either direction is caught.
+type Equals<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
+
+const KIND_IS_THE_LITERAL: Equals<typeof CHALLENGE_BADGE_KIND, 'challenge_21'> = true;
+const ACHIEVEMENT_KIND_IS_THE_LITERAL: Equals<AchievementKind, 'challenge_21'> = true;
+void KIND_IS_THE_LITERAL;
+void ACHIEVEMENT_KIND_IS_THE_LITERAL;
 
 test('a challenge completes on the day it reaches its length', () => {
   assert.equal(challengeComplete(20, 21), false);
