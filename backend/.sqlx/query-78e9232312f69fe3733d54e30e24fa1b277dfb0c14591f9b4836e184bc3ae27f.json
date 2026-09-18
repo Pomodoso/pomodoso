@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO achievement (id, user_id, kind, earned_on, habit_id, updated_at, deleted_at, synced_at)\n        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())\n        ON CONFLICT (user_id, id) DO UPDATE SET\n          kind       = EXCLUDED.kind,\n          earned_on  = EXCLUDED.earned_on,\n          habit_id   = EXCLUDED.habit_id,\n          updated_at = EXCLUDED.updated_at,\n          deleted_at = EXCLUDED.deleted_at,\n          synced_at  = NOW()\n        -- The key is (user_id, id), so a conflict can only ever be this user's\n        -- own row: one account cannot reach another's, and cannot strand it by\n        -- claiming the id first either.\n        WHERE EXCLUDED.updated_at >= achievement.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Date",
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "78e9232312f69fe3733d54e30e24fa1b277dfb0c14591f9b4836e184bc3ae27f"
+}

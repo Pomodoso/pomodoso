@@ -7,6 +7,7 @@ import {
   challengeProgressLabel,
   challengeStreakLabel,
   achievementTier,
+  challengeAwardId,
   challengeCanKeepGoing,
   challengeDaysOf,
   challengeEarnsBadge,
@@ -255,4 +256,39 @@ test('resolving the miss then lets it complete', () => {
   assert.equal(p.complete, true);
   // ...but the skip it cost means no badge.
   assert.equal(challengeEarnsBadge(state), false);
+});
+
+// ─── challengeAwardId ─────────────────────────────────────────────────────────
+
+test('the award id is stable for a run, so a race cannot mint two medals', () => {
+  const a = challengeAwardId('11111111-2222-3333-4444-555555555555', '2026-09-01');
+  const b = challengeAwardId('11111111-2222-3333-4444-555555555555', '2026-09-01');
+  assert.equal(a, b);
+});
+
+test('a different run of the same habit gets a different award', () => {
+  const habit = '11111111-2222-3333-4444-555555555555';
+  assert.notEqual(challengeAwardId(habit, '2026-09-01'), challengeAwardId(habit, '2026-10-01'));
+});
+
+test('different habits on the same day get different awards', () => {
+  assert.notEqual(
+    challengeAwardId('11111111-2222-3333-4444-555555555555', '2026-09-01'),
+    challengeAwardId('99999999-8888-7777-6666-555555555555', '2026-09-01'),
+  );
+});
+
+test('the award id is a syntactically valid uuid', () => {
+  const id = challengeAwardId('11111111-2222-3333-4444-555555555555', '2026-09-01');
+  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('award ids do not collide across a spread of runs', () => {
+  const ids = new Set<string>();
+  for (let h = 0; h < 40; h++) {
+    for (let d = 1; d <= 28; d++) {
+      ids.add(challengeAwardId(`habit-${h}-aaaa-bbbb-cccc-dddddddddddd`, `2026-09-${String(d).padStart(2, '0')}`));
+    }
+  }
+  assert.equal(ids.size, 40 * 28);
 });

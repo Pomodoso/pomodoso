@@ -279,3 +279,37 @@ export function nextAchievementTier(count: number): { tier: AchievementTier; rem
   const next = ascending.find(t => count < t.atLeast);
   return next ? { tier: next.tier, remaining: next.atLeast - count } : null;
 }
+
+/**
+ * The id of the award a given run would produce.
+ *
+ * Derived from the habit and the run's start date rather than random, so one
+ * run can only ever produce one award. Completion is checked and written
+ * asynchronously, and two quick taps can both observe "not completed yet"
+ * before either write lands — with random ids that races into two medals for
+ * one challenge, silently inflating the count and the tier. A deterministic id
+ * makes the second insert an idempotent upsert instead, on the client and on
+ * the server.
+ *
+ * Not settingId: that maps characters straight to hex and truncates at 16, so
+ * a 36-character habit id plus a date would collide with every other run of
+ * the same habit.
+ */
+export function challengeAwardId(habitId: string, startedAt: string): string {
+  const key = `${habitId}|${startedAt}`;
+  // Four FNV-1a passes with different offset bases — 128 bits of digest from a
+  // hash small enough to state inline, which is all a collision-resistant id
+  // for this needs.
+  const hex = [0x811c9dc5, 0x01000193, 0x7fffffff, 0x9e3779b9]
+    .map(seed => {
+      let h = seed >>> 0;
+      for (let i = 0; i < key.length; i++) {
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      return h.toString(16).padStart(8, '0');
+    })
+    .join('');
+  // Shaped like a v5 UUID: version nibble 5, variant nibble 8.
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}

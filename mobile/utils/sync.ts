@@ -848,10 +848,11 @@ function applyEntity(entity: SyncEntity): void {
       break;
     }
 
-    // 'device', 'user_setting', 'task_order', 'detection_rule': no local
-    // table/handling for these yet (device is push-only even on extension;
-    // the rest are documented gaps at the top of this file) — ignored, not
-    // an error.
+    // 'device', 'user_setting', 'task_order', 'detection_rule', 'achievement':
+    // no local table/handling for these yet (device is push-only even on
+    // extension; the rest are documented gaps at the top of this file) —
+    // ignored, not an error. Achievements are earned and shown on the
+    // extension first; mobile parity is its own change.
     default:
       break;
   }

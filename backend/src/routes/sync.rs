@@ -89,6 +89,14 @@ pub async fn push(
             accepted += 1;
         }
     }
+    // After habits, not before: an achievement names the habit whose run earned
+    // it, so a first sync carrying a new habit and its award together would hit
+    // the foreign key and drop the award silently if this ran first.
+    for entity in body.entities.iter().filter(|e| e.table == "achievement") {
+        if push_achievement(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
     for entity in body.entities.iter().filter(|e| e.table == "habit_log") {
         if push_habit_log(&state, auth.id, entity).await.is_ok() {
             accepted += 1;
@@ -108,7 +116,13 @@ pub async fn push(
     for entity in body.entities.iter().filter(|e| {
         !matches!(
             e.table.as_str(),
-            "workspace" | "user_setting" | "device" | "detection_rule" | "habit" | "habit_log"
+            "workspace"
+                | "user_setting"
+                | "device"
+                | "detection_rule"
+                | "achievement"
+                | "habit"
+                | "habit_log"
         )
     }) {
         let ws = entity_workspace_id(entity, body.workspace_id);
@@ -771,6 +785,58 @@ async fn push_device(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> R
     Ok(())
 }
 
+/// Achievements are append-only history: an award happened, and nothing later
+/// un-happens it. The upsert exists only so the same row arriving from two
+/// devices converges instead of duplicating.
+async fn push_achievement(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+    let Ok(id) = e.id.parse::<uuid::Uuid>() else {
+        return Ok(());
+    };
+    let kind = e.data["kind"].as_str().unwrap_or("").to_owned();
+    if kind.is_empty() {
+        return Ok(());
+    }
+    let Some(earned_on) = e.data["earned_on"]
+        .as_str()
+        .and_then(|s| s.parse::<chrono::NaiveDate>().ok())
+    else {
+        return Ok(());
+    };
+    // A habit deleted on another device leaves the award standing, so a missing
+    // or unknown habit id is recorded as NULL rather than rejecting the row.
+    let habit_id = e.data["habit_id"]
+        .as_str()
+        .and_then(|s| s.parse::<uuid::Uuid>().ok());
+
+    sqlx::query!(
+        r#"
+        INSERT INTO achievement (id, user_id, kind, earned_on, habit_id, updated_at, deleted_at, synced_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+        ON CONFLICT (user_id, id) DO UPDATE SET
+          kind       = EXCLUDED.kind,
+          earned_on  = EXCLUDED.earned_on,
+          habit_id   = EXCLUDED.habit_id,
+          updated_at = EXCLUDED.updated_at,
+          deleted_at = EXCLUDED.deleted_at,
+          synced_at  = NOW()
+        -- The key is (user_id, id), so a conflict can only ever be this user's
+        -- own row: one account cannot reach another's, and cannot strand it by
+        -- claiming the id first either.
+        WHERE EXCLUDED.updated_at >= achievement.updated_at
+        "#,
+        id,
+        user_id,
+        kind,
+        earned_on,
+        habit_id,
+        e.updated_at,
+        e.deleted_at,
+    )
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
 async fn push_detection_rule(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     // Detection-rule ids are stable string keys (e.g. "r-linear"), not UUIDs, so
     // identical presets seeded on every install converge to one row.
@@ -937,6 +1003,30 @@ pub async fn pull(
             data: serde_json::json!({
                 "name": row.name, "url_pattern": row.url_pattern,
                 "active": row.active, "kind": row.kind, "preset_id": row.preset_id,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+
+    // Achievements (user-global history)
+    for row in sqlx::query!(
+        r#"SELECT id, kind, earned_on, habit_id, updated_at, deleted_at
+           FROM achievement
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "achievement".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "kind": row.kind,
+                "earned_on": row.earned_on,
+                "habit_id": row.habit_id,
             }),
             updated_at: row.updated_at,
             deleted_at: row.deleted_at,

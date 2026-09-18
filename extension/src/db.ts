@@ -137,6 +137,19 @@ export interface HabitHistoryRow {
   syncedAt?: string | undefined;
 }
 
+// ─── Achievement types ─────────────────────────────────────────────────────────
+// Earned awards, stored rather than derived from completed challenges. "Go
+// again" clears a run's completion so the habit can start another, which would
+// quietly decrement a badge already earned — an award is history, so it gets
+// its own append-only row.
+export interface AchievementRow extends SyncMeta {
+  id: string;             // client-generated UUID
+  kind: string;           // 'challenge_21'
+  earnedOn: string;       // YYYY-MM-DD, local to the device that earned it
+  habitId?: string | undefined; // the run that earned it; survives that habit's deletion
+  createdAt: string;
+}
+
 // ─── Meeting types ─────────────────────────────────────────────────────────────
 export type MeetingTrackMode = 'once' | 'always' | 'off';
 
@@ -191,6 +204,7 @@ export class PomoDB extends Dexie {
   habitHistory!:   Table<HabitHistoryRow>;
   meetings!:       Table<MeetingRow>;
   detectionRules!: Table<DetectionRuleRow>;
+  achievements!:   Table<AchievementRow>;
   settings!:       Table<SettingRow>;
 
   constructor() {
@@ -376,6 +390,12 @@ export class PomoDB extends Dexie {
         modified.push(h);
       }
       if (modified.length) await tx.table('habits').bulkPut(modified);
+    });
+    // v17: achievements. A new store, so it needs a real schema line rather
+    // than an empty stores({}) — and backup.ts needs the table in all three of
+    // its places, or export/import silently drops every earned badge.
+    this.version(17).stores({
+      achievements: 'id, kind, earnedOn',
     });
   }
 }
