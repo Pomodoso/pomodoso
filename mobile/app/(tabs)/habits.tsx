@@ -21,7 +21,7 @@ export default function HabitsScreen() {
     habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits,
     keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
   } = useHabits();
-  const { count: achievementCount } = useAchievements();
+  const { counts: achievementCounts } = useAchievements();
   const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
@@ -47,7 +47,7 @@ export default function HabitsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <AchievementsSection count={achievementCount} />
+        <AchievementsSection counts={achievementCounts} />
 
         <ChallengesSection
           habits={challengeHabits}

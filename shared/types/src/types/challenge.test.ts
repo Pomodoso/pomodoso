@@ -7,6 +7,7 @@ import {
   challengeProgressLabel,
   challengeStreakLabel,
   achievementTier,
+  badgeKind,
   challengeAwardId,
   challengeCanKeepGoing,
   challengeDaysOf,
@@ -291,4 +292,32 @@ test('award ids do not collide across a spread of runs', () => {
     }
   }
   assert.equal(ids.size, 40 * 28);
+});
+
+// ─── Badge kinds ──────────────────────────────────────────────────────────────
+
+test('the challenge badge describes itself in terms of its length', () => {
+  assert.equal(badgeKind('challenge_21').noun, 'challenger');
+  assert.equal(badgeKind('challenge_21').describe(1), '1 × 21-day challenge completed');
+  assert.equal(badgeKind('challenge_21').describe(4), '4 × 21-day challenges completed');
+});
+
+test('an unknown kind gets a usable stand-in rather than nothing', () => {
+  // A medal earned by a newer client must not be invisible on an older surface.
+  const meta = badgeKind('pomodoro_1000');
+  assert.equal(meta.noun, 'pomodoro_1000');
+  assert.equal(meta.describe(3), '3 earned');
+});
+
+test('a kind named after an inherited object property still falls back', () => {
+  // `kind` is unrestricted text off the wire. A plain-object registry would
+  // answer these with Object.prototype members — truthy, so the fallback never
+  // fires — and the caller would then invoke .describe on something without
+  // one, crashing the achievements view on every device.
+  for (const hostile of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    const meta = badgeKind(hostile);
+    assert.equal(meta.noun, hostile, `noun for ${hostile}`);
+    assert.equal(typeof meta.describe, 'function', `describe for ${hostile}`);
+    assert.equal(meta.describe(2), '2 earned');
+  }
 });

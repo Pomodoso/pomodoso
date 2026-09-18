@@ -313,3 +313,49 @@ export function challengeAwardId(habitId: string, startedAt: string): string {
   // Shaped like a v5 UUID: version nibble 5, variant nibble 8.
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
+
+/**
+ * How each badge kind names and describes itself.
+ *
+ * `kind` is free text on the wire so a new badge ships without a migration,
+ * which means every surface will eventually meet kinds it has never heard of —
+ * from a newer client, or a newer build of itself. Shared so the three don't
+ * each invent their own wording for the same medal, and so adding a badge is
+ * one edit rather than three.
+ *
+ * Icons stay per-client: the extension draws an emoji, mobile an Ionicon, the
+ * web a Tabler class. Nothing useful to share there.
+ */
+export interface BadgeKindMeta {
+  /** Follows the tier: "Bronze challenger". */
+  noun: string;
+  describe: (count: number) => string;
+}
+
+/**
+ * A Map, not an object literal, and that matters here.
+ *
+ * `kind` is unrestricted text off the wire, so a plain-object lookup answers
+ * `BADGE_KINDS['constructor']` with `Object.prototype.constructor` — truthy,
+ * so a `??` fallback never fires, and the caller then invokes `.describe` on a
+ * function that has none. One synced row named `constructor` or `toString`
+ * would crash the achievements view on every device. A Map has no prototype
+ * chain to inherit from, which removes the case rather than guarding it.
+ */
+export const BADGE_KINDS: ReadonlyMap<string, BadgeKindMeta> = new Map([
+  ['challenge_21', {
+    noun: 'challenger',
+    describe: (count: number) => `${count} × ${BADGE_CHALLENGE_LENGTH}-day challenge${count === 1 ? '' : 's'} completed`,
+  }],
+]);
+
+/**
+ * The descriptor for a kind, or a usable stand-in for one this build predates.
+ *
+ * An unknown badge renders under its own kind rather than disappearing — the
+ * failure mode worth avoiding is a medal the user has earned being invisible
+ * because their dashboard is older than the client that awarded it.
+ */
+export function badgeKind(kind: string): BadgeKindMeta {
+  return BADGE_KINDS.get(kind) ?? { noun: kind, describe: count => `${count} earned` };
+}
