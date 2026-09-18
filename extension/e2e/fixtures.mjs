@@ -56,10 +56,21 @@ export const READ_CHALLENGE_COMPLETION = `new Promise((resolve) => {
   };
 })`;
 
-/** Task titles currently rendered, in document order. */
+/**
+ * Task titles in the list, in document order.
+ *
+ * Scoped to the sortable rows on purpose. While a drop animates, dnd-kit's
+ * DragOverlay renders a second copy of the dragged row, so a document-wide
+ * text scan reports four titles for three tasks — one of them twice — and the
+ * assertion fails on a list that is perfectly correct. The overlay clone is a
+ * plain row rather than a sortable, so asking for sortables excludes it by
+ * construction instead of by timing.
+ */
 export const TASK_ORDER = `JSON.stringify(
-  [...document.querySelectorAll('span')].map(e => e.textContent.trim())
-    .filter(t => /^(Alpha|Bravo|Charlie) task$/.test(t))
+  [...document.querySelectorAll('[aria-roledescription="sortable"]')]
+    .map(el => (el.innerText || '').split('\\n').map(s => s.trim())
+      .find(t => /^(Alpha|Bravo|Charlie) task$/.test(t)))
+    .filter(Boolean)
 )`;
 
 /** Onboards, then creates tasks and puts them in Today. */

@@ -27,6 +27,22 @@ const CHROME = process.env.CHROME_PATH
 
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * The popup window went away mid-test.
+ *
+ * A browser-action popup closes the moment its window loses focus, so anything
+ * that steals focus on the machine running this — a notification, another app,
+ * a screen lock — kills the popup and every later call fails with CDP's
+ * unhelpful "Session with given id not found". That is the environment, not the
+ * product, so it is worth naming and worth one retry.
+ */
+export class PopupClosedError extends Error {
+  constructor(method) {
+    super(`the popup closed mid-test (during ${method}) — something stole focus from Chrome`);
+    this.name = 'PopupClosedError';
+  }
+}
+
 /** Launches Chrome with a throwaway profile and the extension loaded. */
 export async function launch(extensionDir) {
   const profile = mkdtempSync(join(tmpdir(), 'pomodoso-e2e-'));
@@ -53,39 +69,92 @@ export async function launch(extensionDir) {
       let msg;
       try { msg = JSON.parse(raw); } catch { continue; }
       if (msg.id && pending.has(msg.id)) {
-        const { res, rej } = pending.get(msg.id);
+        const { res, rej, method } = pending.get(msg.id);
         pending.delete(msg.id);
-        msg.error ? rej(new Error(JSON.stringify(msg.error))) : res(msg.result);
+        // Name the call. "Session with given id not found" says nothing about
+        // which session or why, and the popup closing on focus loss makes that
+        // a routine thing to have to diagnose.
+        msg.error ? rej(new Error(`CDP ${method}: ${msg.error.message ?? JSON.stringify(msg.error)}`)) : res(msg.result);
       }
     }
   });
 
-  const send = (method, params = {}, sessionId) => {
+  const send = (method, params = {}, sessionId, timeoutMs = 20000) => {
     const id = ++nextId;
     return new Promise((res, rej) => {
-      pending.set(id, { res, rej });
+      pending.set(id, { res, rej, method });
       chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
       setTimeout(() => {
         if (pending.has(id)) { pending.delete(id); rej(new Error(`CDP timeout: ${method}`)); }
-      }, 20000);
+      }, timeoutMs);
     });
   };
-
-  await sleep(4000);
-  const { id: extensionId } = await send('Extensions.loadUnpacked', { path: extensionDir });
-  await sleep(2000);
 
   const close = () => {
     chrome.kill();
     try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
   };
 
-  return { send, extensionId, close };
+  // Cleanup has to cover setup itself. If loadUnpacked rejects or times out,
+  // launch() never returns and the caller's finally never runs — leaving a
+  // Chrome process and a temp profile behind on every failed run.
+  try {
+    // Poll for readiness rather than sleeping a guessed interval. A fixed wait
+    // is fine until the machine is busy or a previous Chrome is still shutting
+    // down, and then the first real call times out — which is a flake, not a
+    // failure, and the worst kind of thing to leave in a checked-in test.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await send('Browser.getVersion', {}, undefined, 3000);
+        break;
+      } catch (err) {
+        if (attempt >= 15) throw new Error(`Chrome never became ready: ${err.message}`);
+        await sleep(500);
+      }
+    }
+
+    // Without discovery, a stopped MV3 service worker isn't listed at all —
+    // and it stops whenever it goes idle, which is most of the time between
+    // tests. openPopup has to reach it to call chrome.action.openPopup().
+    await send('Target.setDiscoverTargets', { discover: true });
+    // Longer than the default: loading and starting an unpacked extension is
+    // the slowest call here by a wide margin on a cold profile.
+    const { id: extensionId } = await send('Extensions.loadUnpacked', { path: extensionDir }, undefined, 60000);
+    await sleep(2000);
+
+    // One page kept for the whole session, and its window forced out of any
+    // minimised state. chrome.action.openPopup() refuses without an active
+    // browser window, and a window whose last tab was closed — or that Chrome
+    // never brought forward — does not count as one.
+    const { targetId: focusTarget } = await send('Target.createTarget', { url: 'about:blank' });
+    const focusSession = (await send('Target.attachToTarget', { targetId: focusTarget, flatten: true })).sessionId;
+    await send('Page.enable', {}, focusSession);
+    const { windowId } = await send('Browser.getWindowForTarget', { targetId: focusTarget });
+    await send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } }).catch(() => {});
+
+    const focus = async () => {
+      await send('Target.activateTarget', { targetId: focusTarget });
+      await send('Page.bringToFront', {}, focusSession).catch(() => {});
+      await sleep(900);
+    };
+
+    return { send, extensionId, close, focus };
+  } catch (err) {
+    close();
+    throw err;
+  }
 }
 
 /** Wraps a CDP session so callers deal in `js()` and `mouse()`, not raw methods. */
 function session(send, sessionId) {
-  const call = (method, params = {}) => send(method, params, sessionId);
+  const call = async (method, params = {}) => {
+    try {
+      return await send(method, params, sessionId);
+    } catch (err) {
+      if (/Session with given id not found/.test(err.message)) throw new PopupClosedError(method);
+      throw err;
+    }
+  };
   return {
     call,
     async js(expression) {
@@ -101,6 +170,22 @@ function session(send, sessionId) {
         buttons: type === 'mouseReleased' ? 0 : 1,
         clickCount: 1, pointerType: 'mouse',
       });
+    },
+    /**
+     * Evaluates until two consecutive reads agree, so nothing is asserted
+     * mid-animation. A drop reflows the list over a transition; sampling once
+     * the instant the mouse comes up catches it halfway.
+     */
+    async settled(expression, { timeoutMs = 6000, interval = 350 } = {}) {
+      const deadline = Date.now() + timeoutMs;
+      let previous = await this.js(expression);
+      for (;;) {
+        await sleep(interval);
+        const current = await this.js(expression);
+        if (current === previous) return current;
+        previous = current;
+        if (Date.now() > deadline) return current;
+      }
     },
     /** Press, move in small steps, release — a drag the sensors actually see. */
     async drag(fromX, fromY, toX, toY, steps = 25) {
@@ -178,43 +263,61 @@ export async function openTab({ send, extensionId }) {
  *
  * This is the whole point of the file. A tab is not a substitute for it.
  */
-export async function openPopup({ send, extensionId }) {
-  const { targetInfos } = await send('Target.getTargets');
-  const sw = targetInfos.find(t => t.type === 'service_worker' && t.url.includes(extensionId));
-  if (!sw) throw new Error('extension service worker not found');
-
-  const swSession = (await send('Target.attachToTarget', { targetId: sw.targetId, flatten: true })).sessionId;
+export async function openPopup({ send, extensionId, focus }) {
+  // MV3 service workers shut down when idle, so the worker found a moment ago
+  // may be gone by the time we attach — and it dies again between tests.
+  // Look it up and attach as one retried step rather than two hopeful ones.
+  let swSession;
+  for (let attempt = 0; attempt < 10 && !swSession; attempt++) {
+    const { targetInfos } = await send('Target.getTargets');
+    const sw = targetInfos.find(t => t.type === 'service_worker' && t.url.includes(extensionId));
+    if (sw) {
+      try {
+        swSession = (await send('Target.attachToTarget', { targetId: sw.targetId, flatten: true })).sessionId;
+      } catch {
+        swSession = undefined; // died between the lookup and the attach
+      }
+    }
+    if (!swSession) await sleep(600);
+  }
+  if (!swSession) throw new Error('extension service worker never became attachable');
   await send('Runtime.enable', {}, swSession);
 
   // openPopup() refuses without a focused browser window, and tests that open
   // and close tabs can leave none focused. Rather than hoping one is there,
   // make a page, focus it, and try again if Chrome still disagrees — the
   // failure is a timing one, not a permanent one.
-  let opened;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { targetId: blank } = await send('Target.createTarget', { url: 'about:blank' });
-    await send('Target.activateTarget', { targetId: blank });
-    const s = (await send('Target.attachToTarget', { targetId: blank, flatten: true })).sessionId;
-    await send('Page.enable', {}, s);
-    await send('Page.bringToFront', {}, s).catch(() => {});
-    await sleep(1200);
+  const findPopup = async () => {
+    const { targetInfos: all } = await send('Target.getTargets');
+    return all.find(t => t.type === 'page' && t.url.includes(`${extensionId}/popup/index.html`));
+  };
 
-    opened = await send('Runtime.evaluate', {
+  let popup;
+  let lastError = 'not attempted';
+  for (let attempt = 0; attempt < 4 && !popup; attempt++) {
+    // Refocus the session's page rather than making a new one: fresh tabs pile
+    // up and each one steals focus from the popup we just asked for.
+    await focus();
+
+    const opened = await send('Runtime.evaluate', {
       expression: `chrome.action.openPopup().then(() => 'ok').catch(e => 'ERR ' + e.message)`,
       returnByValue: true, awaitPromise: true,
     }, swSession);
-    if (opened.result.value === 'ok') break;
-    await sleep(1000);
-  }
-  if (opened.result.value !== 'ok') throw new Error(`openPopup failed: ${opened.result.value}`);
-  await sleep(2500);
+    lastError = opened.result.value;
+    if (lastError !== 'ok') { await sleep(1000); continue; }
 
-  const after = (await send('Target.getTargets')).targetInfos;
-  const popup = after.find(t => t.type === 'page' && t.url.includes(`${extensionId}/popup/index.html`));
-  if (!popup) throw new Error('popup window did not appear');
+    // The call resolving doesn't mean the target is listed yet, so poll for it
+    // rather than sampling once and declaring it missing.
+    for (let i = 0; i < 12 && !popup; i++) {
+      await sleep(400);
+      popup = await findPopup();
+    }
+    if (!popup) lastError = 'opened but no popup target appeared';
+  }
+  if (!popup) throw new Error(`openPopup failed: ${lastError}`);
 
   const { sessionId } = await send('Target.attachToTarget', { targetId: popup.targetId, flatten: true });
   await send('Runtime.enable', {}, sessionId);
   await sleep(3000);
-  return session(send, sessionId);
+  return { ...session(send, sessionId), targetId: popup.targetId };
 }
