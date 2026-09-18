@@ -26,10 +26,13 @@ interface Habit {
   log_done: boolean;
   challenge_length_days: number | null;
   challenge_days_done: number;
-  challenge_complete: boolean;
-  challenge_completed_at: string | null;
-  challenge_missed_days: string[];
-  challenge_skips_left: number;
+  // Optional on purpose: the API generic is a compile-time cast, not a
+  // validation, and this page deliberately renders against a backend that
+  // predates the run model. Declaring them required would hide that.
+  challenge_complete?: boolean;
+  challenge_completed_at?: string | null;
+  challenge_missed_days?: string[];
+  challenge_skips_left?: number;
   streak: number;
 }
 
