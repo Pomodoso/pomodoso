@@ -467,32 +467,43 @@ export function HomeState({
     // lost once, but every retry turned into a no-op.
     const next = challengeRecordCompletion(state, today);
     const ts = now();
-    await db.transaction('rw', [db.habits, db.achievements], async () => {
-      await db.habits.update(id, {
-        challengeStartedAt: next.startedAt,
-        challengeSkippedDays: next.skippedDays,
-        challengeCompletedAt: next.completedAt ?? undefined,
-        updatedAt: ts,
-      });
-      // The award is a separate, append-only row rather than a count derived
-      // from completed runs: "Go again" clears this run's completion so the
-      // habit can start another, which would quietly decrement a badge already
-      // earned.
-      if (!challengeEarnsBadge(state)) return;
-      await db.achievements.put({
-        // Derived from the run, not random: this whole function is
-        // read-then-write and two quick taps can both see "not completed yet"
-        // before either write lands. With a random id that races into two
-        // medals for one challenge; with this one the second write is an
-        // idempotent upsert.
-        id: challengeAwardId(id, state.startedAt),
-        kind: 'challenge_21',
-        earnedOn: today,
-        habitId: id,
-        createdAt: ts,
-        updatedAt: ts,
-      });
-    });
+    // Caught here rather than at each call site: the reconciling effect
+    // discards its promise, and the toggle handlers await it before
+    // triggerSync, so an IndexedDB failure would either surface as an
+    // unhandled rejection or swallow the sync that follows. Nothing is lost by
+    // returning — the run is still complete and unrecorded, so the next render
+    // or popup open reconciles it again.
+    try {
+      await db.transaction('rw', [db.habits, db.achievements], async () => {
+        await db.habits.update(id, {
+          challengeStartedAt: next.startedAt,
+          challengeSkippedDays: next.skippedDays,
+          challengeCompletedAt: next.completedAt ?? undefined,
+          updatedAt: ts,
+        });
+        // The award is a separate, append-only row rather than a count derived
+        // from completed runs: "Go again" clears this run's completion so the
+        // habit can start another, which would quietly decrement a badge already
+        // earned.
+        if (!challengeEarnsBadge(state)) return;
+        await db.achievements.put({
+          // Derived from the run, not random: this whole function is
+          // read-then-write and two quick taps can both see "not completed yet"
+          // before either write lands. With a random id that races into two
+          // medals for one challenge; with this one the second write is an
+          // idempotent upsert.
+          id: challengeAwardId(id, state.startedAt),
+          kind: 'challenge_21',
+          earnedOn: today,
+          habitId: id,
+          createdAt: ts,
+          updatedAt: ts,
+        });
+        });
+    } catch (err) {
+      console.warn('Could not record challenge completion; will retry', err);
+      return;
+    }
     triggerSync();
   }, [today]);
 
