@@ -24,9 +24,13 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  challengeComplete, challengeDaysShown, challengeProgressLabel, challengeStreakLabel,
+  BADGE_CHALLENGE_LENGTH,
+  challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
+  challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
+  challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
   habitStreakLabel, reorderSubset,
 } from '@pomodoso/types';
+import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
 import {
   db, now, localDate,
@@ -354,9 +358,103 @@ export function HomeState({
   // Challenges run to a fixed length, so a habit past its end date still has a
   // result worth showing; only the schedule-based Today list hides those.
   const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
-  const challengeDaysDone = new Map(
-    challengeHabits.map(h => [h.id, habitStreaks.get(h.id)?.daysDone ?? 0]),
-  );
+
+  // A challenge is no longer a view of the live streak — it is a run with a
+  // start date, forgiven days and a recorded finish. challengeStateOf reads
+  // that run off the habit; the fallback start date covers a habit whose
+  // migration hasn't run on this device yet.
+  const challengeStateOf = useCallback((h: HabitDef): ChallengeState => ({
+    lengthDays: h.challengeLengthDays ?? 21,
+    startedAt: h.challengeStartedAt ?? today,
+    completedAt: h.challengeCompletedAt ?? null,
+    skippedDays: h.challengeSkippedDays ?? [],
+  }), [today]);
+
+  const challengeViews = useMemo(() => {
+    const views = new Map<string, { state: ChallengeState; progress: ChallengeProgress }>();
+    for (const h of challengeHabits) {
+      const state = challengeStateOf(h);
+      const rows = habitHistoryByHabit.get(h.id) ?? new Map<string, HabitHistoryRow>();
+      const isDone = (date: string): boolean => {
+        const row = rows.get(date);
+        if (!row) return false;
+        return h.kind === 'counter' ? (row.count ?? 0) >= (h.goal ?? 1) : (row.done ?? false);
+      };
+      const isScheduled = (date: string): boolean =>
+        h.days.length === 0 || h.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+      const days = challengeDaysOf(state.startedAt, today, isScheduled, isDone);
+      views.set(h.id, { state, progress: challengeProgress(state, days, today) });
+    }
+    return views;
+  }, [challengeHabits, challengeStateOf, habitHistoryByHabit, today]);
+
+  // ── Challenge actions ──────────────────────────────────────────────────────
+  const writeChallenge = useCallback(async (id: string, next: ChallengeState) => {
+    await db.habits.update(id, {
+      challengeStartedAt: next.startedAt,
+      challengeSkippedDays: next.skippedDays,
+      // Dexie's update merges, so an explicit undefined is what clears the field.
+      challengeCompletedAt: next.completedAt ?? undefined,
+      updatedAt: now(),
+    });
+    triggerSync();
+  }, []);
+
+  const handleChallengeKeepGoing = useCallback((id: string) => {
+    const view = challengeViews.get(id);
+    if (!view) return;
+    void writeChallenge(id, challengeKeepGoing(view.state, view.progress.missedDays));
+  }, [challengeViews, writeChallenge]);
+
+  const handleChallengeStartOver = useCallback((id: string) => {
+    const view = challengeViews.get(id);
+    if (!view) return;
+    void writeChallenge(id, challengeStartOver(view.state, today));
+  }, [challengeViews, writeChallenge, today]);
+
+  // "Keep as habit" drops the challenge framing entirely; the habit carries on
+  // with its ordinary streak, which is what the rest of the Habits tab shows.
+  const handleChallengeKeepAsHabit = useCallback((id: string) => {
+    void (async () => {
+      await db.habits.update(id, {
+        challengeLengthDays: undefined,
+        challengeStartedAt: undefined,
+        challengeCompletedAt: undefined,
+        challengeSkippedDays: [],
+        updatedAt: now(),
+      });
+      triggerSync();
+    })();
+  }, []);
+
+  // Records a finish the moment the last day is logged. Done on the write path
+  // rather than on render: a render-time write fires again on every re-render
+  // and races itself, and this is the one moment the run actually changes.
+  const recordCompletionIfFinished = useCallback(async (id: string) => {
+    // Reads straight from Dexie rather than from challengeViews: the toggle
+    // that triggered this hasn't reached the live query yet, so the rendered
+    // view is one day stale — exactly the day that decides completion.
+    const habit = await db.habits.get(id);
+    if (!habit?.challengeLengthDays || habit.challengeCompletedAt) return;
+    const state: ChallengeState = {
+      lengthDays: habit.challengeLengthDays,
+      startedAt: habit.challengeStartedAt ?? today,
+      completedAt: null,
+      skippedDays: habit.challengeSkippedDays ?? [],
+    };
+    const rows = await db.habitHistory.filter(r => r.habitId === id).toArray();
+    const byDate = new Map(rows.map(r => [r.date, r]));
+    const isDone = (date: string): boolean => {
+      const row = byDate.get(date);
+      if (!row) return false;
+      return habit.kind === 'counter' ? (row.count ?? 0) >= (habit.goal ?? 1) : (row.done ?? false);
+    };
+    const isScheduled = (date: string): boolean =>
+      habit.days.length === 0 || habit.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+    const days = challengeDaysOf(state.startedAt, today, isScheduled, isDone);
+    if (challengeProgress(state, days, today).daysDone < state.lengthDays) return;
+    await writeChallenge(id, challengeRecordCompletion(state, today));
+  }, [today, writeChallenge]);
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
   const todayHabits = visibleHabits.filter(h =>
@@ -451,8 +549,9 @@ export function HomeState({
       ...(justCompleted ? { completedAt: now() } : {}),
       updatedAt: now(),
     });
+    await recordCompletionIfFinished(id);
     triggerSync();
-  }, [habits, today]);
+  }, [habits, today, recordCompletionIfFinished]);
 
   const handleHabitToggle = useCallback(async (id: string) => {
     const existing = await db.habitHistory.get([id, today]);
@@ -465,8 +564,9 @@ export function HomeState({
       ...(nowDone ? { completedAt: now() } : {}),
       updatedAt: now(),
     });
+    await recordCompletionIfFinished(id);
     triggerSync();
-  }, [today]);
+  }, [today, recordCompletionIfFinished]);
 
   const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
   const [dismissedTicketId, setDismissedTicketId] = useState<string | null>(null);
@@ -1340,7 +1440,7 @@ export function HomeState({
             )}
             {showChallengesInToday && challengeHabits.length > 0 && (
               <div style={{ padding: '12px 14px 0' }}>
-                <ChallengesSection habits={challengeHabits} daysDoneById={challengeDaysDone} />
+                <ChallengesSection habits={challengeHabits} views={challengeViews} />
               </div>
             )}
             <TodayFooter
@@ -1409,6 +1509,12 @@ export function HomeState({
                   onDeleteHabit={(id) => { void db.habits.update(id, { deletedAt: now(), updatedAt: now() }); triggerSync(); }}
                   onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
                   streaks={habitStreaks}
+                  challengeViews={challengeViews}
+                  challengeActions={{
+                    onKeepGoing: handleChallengeKeepGoing,
+                    onStartOver: handleChallengeStartOver,
+                    onKeepAsHabit: handleChallengeKeepAsHabit,
+                  }}
                   showChallengesInToday={showChallengesInToday}
                   onToggleShowChallengesInToday={() => setShowChallengesInToday(v => !v)}
                 />
@@ -4234,14 +4340,72 @@ function computeHabitStreak(
   return { pastStreak, doneToday, daysDone: pastStreak + (doneToday ? 1 : 0) };
 }
 
-function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number }) {
-  const length = habit.challengeLengthDays ?? 21;
-  const clamped = challengeDaysShown(daysDone, length);
-  const complete = challengeComplete(daysDone, length);
+export interface ChallengeView {
+  state: ChallengeState;
+  progress: ChallengeProgress;
+}
+
+export interface ChallengeActions {
+  onKeepGoing: (habitId: string) => void;
+  onStartOver: (habitId: string) => void;
+  onKeepAsHabit: (habitId: string) => void;
+}
+
+function ChallengeAction({ label, hint, tone, onClick }: {
+  label: string;
+  hint?: string;
+  tone: 'primary' | 'quiet';
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1, padding: '6px 8px', cursor: 'pointer',
+        borderRadius: 'var(--radius-sm)', lineHeight: 1.3,
+        border: `1px solid ${tone === 'primary' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        background: tone === 'primary' ? 'var(--color-accent)' : 'transparent',
+        color: tone === 'primary' ? '#fff' : 'var(--color-text-muted)',
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 600 }}>{label}</div>
+      {hint && (
+        <div style={{ fontSize: 9, fontWeight: 400, opacity: 0.85, marginTop: 1 }}>{hint}</div>
+      )}
+    </button>
+  );
+}
+
+/** "Tuesday", or "Tuesday and Wednesday", or "3 days". */
+function missedDaysLabel(dates: string[]): string {
+  const dayName = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+  if (dates.length === 1) return dayName(dates[0]!);
+  if (dates.length === 2) return `${dayName(dates[0]!)} and ${dayName(dates[1]!)}`;
+  return `${dates.length} days`;
+}
+
+function ChallengeCard({ habit, view, actions }: {
+  habit: HabitDef;
+  view: ChallengeView;
+  actions?: ChallengeActions;
+}) {
+  const { state, progress } = view;
+  const length = state.lengthDays;
+  const clamped = challengeDaysShown(progress.daysDone, length);
+  const complete = progress.complete;
+  const needsDecision = challengeNeedsDecision(progress);
+  const canKeepGoing = challengeCanKeepGoing(state, progress.missedDays);
+  const skipsLeft = challengeSkipsLeft(state);
+  const earnsBadge = challengeEarnsBadge(state);
+
+  const accent = complete
+    ? 'var(--color-success)'
+    : needsDecision ? 'var(--color-border-strong)' : 'var(--color-accent)';
+
   return (
     <div style={{
       background: complete ? 'var(--color-success-bg)' : 'var(--color-accent-bg, rgba(200,85,61,0.08))',
-      border: `1px solid ${complete ? 'var(--color-success)' : 'var(--color-accent)'}`,
+      border: `1px solid ${accent}`,
       borderRadius: 'var(--radius-md)',
       padding: '12px 14px',
       marginBottom: 8,
@@ -4251,18 +4415,63 @@ function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number 
         <span style={{ fontSize: 13, fontWeight: 700 }}>{habit.name}</span>
         {complete && <span style={{ fontSize: 12 }} title="Challenge complete">🏆</span>}
       </div>
+
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
-        {challengeProgressLabel(clamped, length)}
+        {needsDecision
+          ? `You missed ${missedDaysLabel(progress.missedDays)}.`
+          : challengeProgressLabel(clamped, length)}
       </div>
+
       <div style={{ height: 6, borderRadius: 3, background: 'var(--color-border)', overflow: 'hidden' }}>
         <div style={{
           width: `${(clamped / length) * 100}%`, height: '100%',
           background: complete ? 'var(--color-success)' : 'var(--color-accent)',
         }} />
       </div>
+
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 6 }}>
-        {challengeStreakLabel(clamped, length)}
+        {complete && state.completedAt
+          ? `Finished ${new Date(state.completedAt + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+              + (state.skippedDays.length > 0 ? ` · ${state.skippedDays.length} skipped` : '')
+          : challengeStreakLabel(clamped, length)}
       </div>
+
+      {/* Completed: the run is over, so offer a way out of it. Without this a
+          finished card sits in Today forever with nothing to do about it. */}
+      {complete && actions && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          <ChallengeAction tone="primary" label="Go again" onClick={() => actions.onStartOver(habit.id)} />
+          <ChallengeAction tone="quiet" label="Keep as habit" onClick={() => actions.onKeepAsHabit(habit.id)} />
+        </div>
+      )}
+
+      {/* Broken: never silent, and the cost of each option is on the button.
+          Spending a skip saves the run but forfeits the badge, so finding that
+          out at day 21 would be the worst version of this. */}
+      {!complete && needsDecision && actions && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {canKeepGoing ? (
+            <ChallengeAction
+              tone="primary"
+              label="Keep going"
+              hint={earnsBadge
+                ? `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left · gives up the badge`
+                : `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left`}
+              onClick={() => actions.onKeepGoing(habit.id)}
+            />
+          ) : (
+            <div style={{ flex: 1, fontSize: 10, color: 'var(--color-text-faint)', alignSelf: 'center', lineHeight: 1.4 }}>
+              No skips left — this run has to start over.
+            </div>
+          )}
+          <ChallengeAction
+            tone={canKeepGoing ? 'quiet' : 'primary'}
+            label="Start over"
+            {...(canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
+            onClick={() => actions.onStartOver(habit.id)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -4271,14 +4480,17 @@ function ChallengeCard({ habit, daysDone }: { habit: HabitDef; daysDone: number 
 // an end — so they get their own titled block rather than floating above the
 // Habits header unlabelled. Rendered in both the Habits tab and (when pinned)
 // Today, hence the shared component.
-function ChallengesSection({ habits, daysDoneById, showInToday, onToggleShowInToday }: {
+function ChallengesSection({ habits, views, actions, showInToday, onToggleShowInToday }: {
   habits: HabitDef[];
-  daysDoneById: Map<string, number>;
+  views: Map<string, ChallengeView>;
+  /** Omitted on Today, where the cards are a read-only summary — the decisions
+   *  live on the Habits tab so one stray tap can't end a 20-day run. */
+  actions?: ChallengeActions;
   showInToday?: boolean;
   onToggleShowInToday?: () => void;
 }) {
   if (habits.length === 0) return null;
-  const done = habits.filter(h => (daysDoneById.get(h.id) ?? 0) >= (h.challengeLengthDays ?? 21)).length;
+  const done = habits.filter(h => views.get(h.id)?.progress.complete).length;
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -4300,9 +4512,12 @@ function ChallengesSection({ habits, daysDoneById, showInToday, onToggleShowInTo
           </button>
         )}
       </div>
-      {habits.map(h => (
-        <ChallengeCard key={h.id} habit={h} daysDone={daysDoneById.get(h.id) ?? 0} />
-      ))}
+      {habits.map(h => {
+        const view = views.get(h.id);
+        return view ? (
+          <ChallengeCard key={h.id} habit={h} view={view} {...(actions ? { actions } : {})} />
+        ) : null;
+      })}
     </div>
   );
 }
@@ -4323,11 +4538,13 @@ interface HabitsContentProps {
   onReorder: (orderedIds: string[]) => void;
   showChallengesInToday: boolean;
   onToggleShowChallengesInToday: () => void;
+  challengeViews: Map<string, ChallengeView>;
+  challengeActions: ChallengeActions;
   /** Per-habit streak/challenge progress, computed once in HomeState. */
   streaks: Map<string, { pastStreak: number; doneToday: boolean; daysDone: number }>;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks, challengeViews, challengeActions }: HabitsContentProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const dragGuard = useDragResizeGuard();
   const today = new Date();
@@ -4377,7 +4594,8 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
 
       <ChallengesSection
         habits={challengeHabits}
-        daysDoneById={new Map(challengeHabits.map(h => [h.id, streaksById.get(h.id)?.daysDone ?? 0]))}
+        views={challengeViews}
+        actions={challengeActions}
         showInToday={showChallengesInToday}
         onToggleShowInToday={onToggleShowChallengesInToday}
       />
@@ -5121,8 +5339,14 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
               />
               <span style={{ fontSize: 12, color: 'var(--color-text-faint)' }}>days</span>
             </div>
-            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
-              Shows a progress card counting today's active streak toward the goal. Missing a scheduled day resets it.
+            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4, lineHeight: 1.5 }}>
+              Shows a progress card counting the days you complete. Miss a day and you choose:
+              keep going (costs a skip) or start over.
+              {Number(challengeLengthDays) === BADGE_CHALLENGE_LENGTH ? (
+                <> Finishing this one with no skips earns an achievement. 🏆</>
+              ) : (
+                <> Only {BADGE_CHALLENGE_LENGTH}-day challenges earn an achievement.</>
+              )}
             </div>
           </>
         )}

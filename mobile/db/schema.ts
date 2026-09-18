@@ -55,6 +55,13 @@ export const habits = sqliteTable('habits', {
   // current streak (see useHabits.ts's daysDone), capped at this length.
   // Missing a scheduled day resets it to zero like any other streak.
   challengeLengthDays: integer('challenge_length_days'),
+  // The run itself, so a missed day stops silently resetting progress and a
+  // completed challenge stops un-completing itself. Mirrors the extension's
+  // HabitRow and @pomodoso/types' ChallengeState.
+  challengeStartedAt: text('challenge_started_at'),
+  challengeCompletedAt: text('challenge_completed_at'),
+  /** JSON-stringified string[] of forgiven missed days. */
+  challengeSkippedDays: text('challenge_skipped_days').notNull().default('[]'),
   sortOrder: integer('sort_order').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

@@ -12,7 +12,11 @@ use std::collections::HashMap;
 
 use crate::{
     error::{AppError, Result},
-    habit_streak::{challenge_length, compute_streak, scheduled_days, sort_order, HabitStreak},
+    habit_streak::ChallengeProgress,
+    habit_streak::{
+        challenge_length, challenge_progress, challenge_run, challenge_skips_left, compute_streak,
+        scheduled_days, sort_order, HabitStreak,
+    },
     middleware::auth::AuthUser,
     AppState,
 };
@@ -46,8 +50,14 @@ pub struct HabitInfo {
     pub log_completed_at: Option<DateTime<Utc>>,
     /// Set when the habit runs as a fixed-length challenge; `None` otherwise.
     pub challenge_length_days: Option<i32>,
-    /// Days into the challenge — `streak`, plus today once it is done.
+    /// Days into the current run.
     pub challenge_days_done: i32,
+    /// Recorded when the run finished, so a later rest day can't revoke it.
+    pub challenge_complete: bool,
+    pub challenge_completed_at: Option<NaiveDate>,
+    /// Non-empty means the run is stalled waiting on the user.
+    pub challenge_missed_days: Vec<NaiveDate>,
+    pub challenge_skips_left: i32,
     /// Consecutive scheduled days completed before today.
     pub streak: i32,
 }
@@ -116,7 +126,11 @@ struct HabitRow {
     log_completed_at: Option<DateTime<Utc>>,
 }
 
-fn row_to_info(row: HabitRow, streak: HabitStreak) -> HabitInfo {
+fn row_to_info(
+    row: HabitRow,
+    streak: HabitStreak,
+    challenge: Option<ChallengeProgress>,
+) -> HabitInfo {
     let unit = row
         .extra
         .get("unit")
@@ -133,6 +147,9 @@ fn row_to_info(row: HabitRow, streak: HabitStreak) -> HabitInfo {
         _ => row.log_completed_at.is_some(),
     };
     let challenge_length_days = challenge_length(&row.extra);
+    let skips_left = challenge_run(&row.extra)
+        .as_ref()
+        .map_or(0, challenge_skips_left);
     HabitInfo {
         id: row.id,
         name: row.name,
@@ -147,7 +164,11 @@ fn row_to_info(row: HabitRow, streak: HabitStreak) -> HabitInfo {
         log_done: done,
         log_completed_at: row.log_completed_at,
         challenge_length_days,
-        challenge_days_done: streak.days_done,
+        challenge_days_done: challenge.as_ref().map_or(streak.days_done, |c| c.days_done),
+        challenge_complete: challenge.as_ref().is_some_and(|c| c.complete),
+        challenge_completed_at: challenge.as_ref().and_then(|c| c.completed_at),
+        challenge_missed_days: challenge.map(|c| c.missed_days).unwrap_or_default(),
+        challenge_skips_left: skips_left,
         streak: streak.past_streak,
     }
 }
@@ -224,6 +245,17 @@ pub async fn list_habits(
                 logs.get(&r.id).unwrap_or(&empty),
                 date,
             );
+            let run = challenge_run(&r.extra);
+            let challenge = run.as_ref().map(|run| {
+                challenge_progress(
+                    run,
+                    &r.kind,
+                    r.target_count,
+                    &scheduled_days(&r.frequency, r.frequency_days.as_deref()),
+                    logs.get(&r.id).unwrap_or(&empty),
+                    date,
+                )
+            });
             let order = sort_order(&r.extra);
             let info = row_to_info(
                 HabitRow {
@@ -239,6 +271,7 @@ pub async fn list_habits(
                     log_completed_at: r.log_completed_at,
                 },
                 streak,
+                challenge,
             );
             (order, info)
         })
@@ -301,6 +334,10 @@ pub async fn create_habit(
         // and has no history to have a streak from either.
         challenge_length_days: None,
         challenge_days_done: 0,
+        challenge_complete: false,
+        challenge_completed_at: None,
+        challenge_missed_days: Vec::new(),
+        challenge_skips_left: 0,
         streak: 0,
     }))
 }
@@ -358,6 +395,7 @@ pub async fn update_habit(
             log_completed_at: None,
         },
         HabitStreak::default(),
+        None,
     )))
 }
 

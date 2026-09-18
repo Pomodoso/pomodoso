@@ -445,6 +445,11 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   // "the user cleared this", which would wipe a real order held by another
   // device. A habit with no local order simply omits the field.
   writeExtra(extra, 'sortOrder', h.sortOrder);
+  writeExtra(extra, 'challengeStartedAt', h.challengeStartedAt);
+  // Explicitly null when absent, so clearing it (Go again, Start over) travels
+  // rather than leaving another device showing a run as finished.
+  writeExtra(extra, 'challengeCompletedAt', h.challengeCompletedAt ?? null);
+  writeExtra(extra, 'challengeSkippedDays', h.challengeSkippedDays ?? []);
   return extra;
 }
 
@@ -620,6 +625,9 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(hExtra['challengeLengthDays'] ? { challengeLengthDays: hExtra['challengeLengthDays'] as number } : {}),
         // 0 is a legitimate order, so this tests the type rather than truthiness.
         ...(typeof hExtra['sortOrder'] === 'number' ? { sortOrder: hExtra['sortOrder'] } : {}),
+        ...(hExtra['challengeStartedAt'] ? { challengeStartedAt: hExtra['challengeStartedAt'] as string } : {}),
+        ...(hExtra['challengeCompletedAt'] ? { challengeCompletedAt: hExtra['challengeCompletedAt'] as string } : {}),
+        ...(Array.isArray(hExtra['challengeSkippedDays']) ? { challengeSkippedDays: hExtra['challengeSkippedDays'] as string[] } : {}),
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };
       await db.habits.put(row);

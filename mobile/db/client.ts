@@ -92,6 +92,58 @@ function hasStaleId(table: string): boolean {
   }
 }
 
+/**
+ * Gives every existing challenge a start date derived from the run it is
+ * already on.
+ *
+ * Walks back over scheduled days while they were done; the last still-done day
+ * is where the current run began. A habit with no streak starts its run today.
+ * Inlined rather than sharing useHabits' streak code because a backfill has to
+ * keep behaving the way it did when it shipped, and pointing it at live code
+ * that keeps evolving is how upgrades start producing different results.
+ */
+function backfillChallengeStarts(database: typeof expoDb): void {
+  const pending = database.getAllSync<{ id: string; kind: string; goal: number | null; days: string }>(
+    'SELECT id, kind, goal, days FROM habits WHERE challenge_length_days IS NOT NULL AND challenge_started_at IS NULL',
+  );
+  if (pending.length === 0) return;
+
+  for (const habit of pending) {
+    let days: number[] = [];
+    try {
+      days = JSON.parse(habit.days) as number[];
+    } catch {
+      days = [];
+    }
+    const rows = database.getAllSync<{ date: string; count: number; done: number }>(
+      'SELECT date, count, done FROM habit_history WHERE habit_id = ? AND deleted_at IS NULL',
+      [habit.id],
+    );
+    const byDate = new Map(rows.map(r => [r.date, r]));
+    const isDone = (date: string): boolean => {
+      const row = byDate.get(date);
+      if (!row) return false;
+      return habit.kind === 'counter' ? row.count >= (habit.goal ?? 1) : row.done === 1;
+    };
+    const scheduled = (date: string): boolean =>
+      days.length === 0 || days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+
+    let started = dateOffset(0);
+    for (let i = 0; i < 3650; i++) {
+      const date = dateOffset(i);
+      if (!scheduled(date)) continue;
+      if (!isDone(date)) break;
+      started = date;
+    }
+    // syncedAt is cleared so the derived start reaches the account's other
+    // devices instead of each one inventing its own.
+    database.runSync(
+      'UPDATE habits SET challenge_started_at = ?, challenge_skipped_days = ?, synced_at = NULL WHERE id = ?',
+      [started, '[]', habit.id],
+    );
+  }
+}
+
 function initDb(): void {
   // This is a throwaway spike DB (see schema.ts) — no migration story yet, so
   // if an earlier version of the schema is on disk (missing `kind`), just
@@ -189,6 +241,9 @@ function initDb(): void {
       unit_amount INTEGER,
       days TEXT NOT NULL DEFAULT '[]',
       challenge_length_days INTEGER,
+      challenge_started_at TEXT,
+      challenge_completed_at TEXT,
+      challenge_skipped_days TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -315,6 +370,27 @@ function initDb(): void {
   } catch {
     /* column already present */
   }
+
+  // Same additive pattern. A challenge used to be a pure view of the current
+  // streak, so a missed day silently reset it and a finished run un-completed
+  // itself the next time the streak broke. These three record the run itself.
+  //
+  // challenge_started_at is backfilled from the streak the habit is already on
+  // rather than from today: starting everyone over on upgrade would throw away
+  // exactly the progress this change exists to protect. The walk needs history,
+  // so it runs in JS below rather than in SQL.
+  for (const ddl of [
+    'ALTER TABLE habits ADD COLUMN challenge_started_at TEXT;',
+    'ALTER TABLE habits ADD COLUMN challenge_completed_at TEXT;',
+    "ALTER TABLE habits ADD COLUMN challenge_skipped_days TEXT NOT NULL DEFAULT '[]';",
+  ]) {
+    try {
+      expoDb.execSync(ddl);
+    } catch {
+      /* column already present */
+    }
+  }
+  backfillChallengeStarts(expoDb);
 
   // Seeds one real-UUID workspace on first run — not a sentinel string id
   // like extension's old 'default' (a migration scar there, not a design
