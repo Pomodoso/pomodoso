@@ -452,7 +452,12 @@ export function HomeState({
     const isScheduled = (date: string): boolean =>
       habit.days.length === 0 || habit.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
     const days = challengeDaysOf(state.startedAt, today, isScheduled, isDone);
-    if (challengeProgress(state, days, today).daysDone < state.lengthDays) return;
+    // `complete`, not `daysDone >= lengthDays`: the rule also requires every
+    // miss to have been answered. Checking the raw count here would let a run
+    // that broke on day 8 and kept being logged record a finish, skip the
+    // decision, and stay badge-eligible with skippedDays still empty — which
+    // is the whole thing the rule was tightened to prevent.
+    if (!challengeProgress(state, days, today).complete) return;
     await writeChallenge(id, challengeRecordCompletion(state, today));
   }, [today, writeChallenge]);
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
@@ -5108,6 +5113,9 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
     const hasUnitAmount = !isTime && hasUnit && !isNaN(parsedUnitAmount) && parsedUnitAmount > 0;
     const parsedChallengeLength = parseInt(challengeLengthDays, 10);
     const hasChallenge = isChallenge && !isNaN(parsedChallengeLength) && parsedChallengeLength > 0;
+    // The run survives an edit only when the challenge it belongs to is
+    // untouched. Same length, still enabled — anything else is a new run.
+    const keepsSameRun = hasChallenge && initialHabit?.challengeLengthDays === parsedChallengeLength;
     onSave({
       id: initialHabit?.id ?? crypto.randomUUID(),
       createdAt: initialHabit?.createdAt ?? now(),
@@ -5128,9 +5136,15 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       // challenge run is the same trap, and losing it would turn a finished
       // 21-day challenge back into a fresh one starting today.
       ...(initialHabit?.sortOrder !== undefined ? { sortOrder: initialHabit.sortOrder } : {}),
-      ...(initialHabit?.challengeStartedAt !== undefined ? { challengeStartedAt: initialHabit.challengeStartedAt } : {}),
-      ...(initialHabit?.challengeCompletedAt !== undefined ? { challengeCompletedAt: initialHabit.challengeCompletedAt } : {}),
-      ...(initialHabit?.challengeSkippedDays !== undefined ? { challengeSkippedDays: initialHabit.challengeSkippedDays } : {}),
+      // ...but only while it is still the same run. Turning the challenge off,
+      // or changing its length, starts a new one — carrying the old start date,
+      // forgiven days and completion into it would make a freshly configured
+      // 30-day challenge show up already finished.
+      ...(keepsSameRun ? {
+        ...(initialHabit?.challengeStartedAt !== undefined ? { challengeStartedAt: initialHabit.challengeStartedAt } : {}),
+        ...(initialHabit?.challengeCompletedAt !== undefined ? { challengeCompletedAt: initialHabit.challengeCompletedAt } : {}),
+        ...(initialHabit?.challengeSkippedDays !== undefined ? { challengeSkippedDays: initialHabit.challengeSkippedDays } : {}),
+      } : {}),
       streakLabel: initialHabit?.streakLabel ?? 'New habit',
       days: selectedDays.length === 7 ? [] : selectedDays,
       workspaceId: null, // habits are user-global
