@@ -1,5 +1,6 @@
 import { eq, isNull, sql } from 'drizzle-orm';
 import {
+  challengeAwardId,
   challengeDaysOf,
   challengeEarnsBadge,
   challengeKeepGoing,
@@ -364,7 +365,18 @@ export function useHabits() {
     if (!challengeEarnsBadge(state)) return;
     const stamp = new Date().toISOString();
     db.insert(achievements)
-      .values({ id: uid(), kind: 'challenge_21', earnedOn: day, habitId: id, createdAt: stamp, updatedAt: stamp })
+      // Derived from the run, not random: this is read-then-write, so two quick
+      // taps — or two devices finishing the same run — would otherwise mint two
+      // medals for one challenge. A stable id makes the second an upsert.
+      .values({
+        id: challengeAwardId(id, state.startedAt),
+        kind: 'challenge_21',
+        earnedOn: day,
+        habitId: id,
+        createdAt: stamp,
+        updatedAt: stamp,
+      })
+      .onConflictDoNothing()
       .run();
     triggerSync();
   }
