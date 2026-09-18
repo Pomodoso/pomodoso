@@ -332,12 +332,22 @@ export interface BadgeKindMeta {
   describe: (count: number) => string;
 }
 
-export const BADGE_KINDS: Record<string, BadgeKindMeta> = {
-  challenge_21: {
+/**
+ * A Map, not an object literal, and that matters here.
+ *
+ * `kind` is unrestricted text off the wire, so a plain-object lookup answers
+ * `BADGE_KINDS['constructor']` with `Object.prototype.constructor` — truthy,
+ * so a `??` fallback never fires, and the caller then invokes `.describe` on a
+ * function that has none. One synced row named `constructor` or `toString`
+ * would crash the achievements view on every device. A Map has no prototype
+ * chain to inherit from, which removes the case rather than guarding it.
+ */
+export const BADGE_KINDS: ReadonlyMap<string, BadgeKindMeta> = new Map([
+  ['challenge_21', {
     noun: 'challenger',
-    describe: count => `${count} × ${BADGE_CHALLENGE_LENGTH}-day challenge${count === 1 ? '' : 's'} completed`,
-  },
-};
+    describe: (count: number) => `${count} × ${BADGE_CHALLENGE_LENGTH}-day challenge${count === 1 ? '' : 's'} completed`,
+  }],
+]);
 
 /**
  * The descriptor for a kind, or a usable stand-in for one this build predates.
@@ -347,5 +357,5 @@ export const BADGE_KINDS: Record<string, BadgeKindMeta> = {
  * because their dashboard is older than the client that awarded it.
  */
 export function badgeKind(kind: string): BadgeKindMeta {
-  return BADGE_KINDS[kind] ?? { noun: kind, describe: count => `${count} earned` };
+  return BADGE_KINDS.get(kind) ?? { noun: kind, describe: count => `${count} earned` };
 }

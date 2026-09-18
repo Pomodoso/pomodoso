@@ -308,3 +308,16 @@ test('an unknown kind gets a usable stand-in rather than nothing', () => {
   assert.equal(meta.noun, 'pomodoro_1000');
   assert.equal(meta.describe(3), '3 earned');
 });
+
+test('a kind named after an inherited object property still falls back', () => {
+  // `kind` is unrestricted text off the wire. A plain-object registry would
+  // answer these with Object.prototype members — truthy, so the fallback never
+  // fires — and the caller would then invoke .describe on something without
+  // one, crashing the achievements view on every device.
+  for (const hostile of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    const meta = badgeKind(hostile);
+    assert.equal(meta.noun, hostile, `noun for ${hostile}`);
+    assert.equal(typeof meta.describe, 'function', `describe for ${hostile}`);
+    assert.equal(meta.describe(2), '2 earned');
+  }
+});
