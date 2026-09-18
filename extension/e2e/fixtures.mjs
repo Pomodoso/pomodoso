@@ -168,22 +168,45 @@ export const EXPORT_VIA_UI = `new Promise((resolve) => {
 
   const originalCreate = URL.createObjectURL.bind(URL);
   const originalClick = HTMLAnchorElement.prototype.click;
-  const restore = () => {
+  let timer;
+  const finish = (value) => {
     URL.createObjectURL = originalCreate;
     HTMLAnchorElement.prototype.click = originalClick;
+    window.removeEventListener('unhandledrejection', onReject);
+    clearTimeout(timer);
+    resolve(value);
   };
-  HTMLAnchorElement.prototype.click = function () { /* no download, no focus loss */ };
+  // handleExport has a try/finally and no catch, so a failing exportDb()
+  // surfaces only as an unhandled rejection. Without this the promise below
+  // just sits until the timeout and the test reports "unreadable backup"
+  // instead of the actual error.
+  const onReject = (e) => finish('EXPORT REJECTED: ' + ((e.reason && e.reason.message) || String(e.reason)));
+  window.addEventListener('unhandledrejection', onReject);
+
+  // The flag is read back by the test: if the real click ever runs instead of
+  // this one, a download starts, focus goes to Chrome's download UI and the
+  // popup closes. That failure is timing-dependent and looks like something
+  // else entirely, so it gets asserted rather than hoped for.
+  window.__exportClickWasStubbed = false;
+  HTMLAnchorElement.prototype.click = function () {
+    window.__exportClickWasStubbed = true; // no download, no focus loss
+  };
   URL.createObjectURL = (blob) => {
-    restore();
+    // Only the URL hook is restored here. handleExport creates the object URL
+    // and *then* clicks the anchor, synchronously — so restoring the click stub
+    // at this point would hand the real download back before it runs, which is
+    // the single thing this whole dance exists to prevent. finish() restores
+    // it, and finish() runs from the FileReader callback, after the click.
+    URL.createObjectURL = originalCreate;
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => resolve('READ ERROR');
+    reader.onload = () => finish(reader.result);
+    reader.onerror = () => finish('READ ERROR');
     reader.readAsText(blob);
     return originalCreate(blob);
   };
 
+  timer = setTimeout(() => finish('EXPORT TIMED OUT'), 15000);
   button.click();
-  setTimeout(() => { restore(); resolve('EXPORT TIMED OUT'); }, 15000);
 })`;
 
 /**

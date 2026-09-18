@@ -195,6 +195,12 @@ async function testBackupRoundTrip(browser) {
   } catch {
     return check('backup: Export produces a readable backup', false, String(json).slice(0, 120));
   }
+  // Guards the ordering bug Greptile caught: the click stub used to be restored
+  // inside the createObjectURL hook, which runs *before* the anchor is clicked,
+  // so the real download fired on every run.
+  check('backup: exporting never starts a real download',
+    (await popup.js(`window.__exportClickWasStubbed === true`)) === true);
+
   check('backup: the export carries achievements as their own table',
     Array.isArray(envelope.data?.achievements) && envelope.data.achievements.length > 0,
     `tables: ${Object.keys(envelope.data ?? {}).join(', ')}`);
