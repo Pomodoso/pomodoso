@@ -249,7 +249,24 @@ export function challengeRecordCompletion(state: ChallengeState, today: string):
 // badges show on every device. One row per earning, append-only: the count is
 // the number of rows, which is what the `xN` chip shows.
 
-export type AchievementKind = 'challenge_21';
+/**
+ * The kind string for the challenge badge, derived rather than written out.
+ *
+ * The rule that decides whether a badge is earned is
+ * `lengthDays === BADGE_CHALLENGE_LENGTH`, so spelling the kind as a literal
+ * lets the two drift: change the constant to 30 and every client would award a
+ * badge called `challenge_21` for a thirty-day run, described as "30-day"
+ * under a name that says 21.
+ *
+ * Deriving it also does the right thing to badges already earned. They stay
+ * `challenge_21` rows, and a build whose constant has moved on renders them
+ * through `badgeKind`'s fallback instead of folding them into the new badge —
+ * which is correct, because a 21-day run and a 30-day run are not the same
+ * achievement and their counts should not be added together.
+ */
+export const CHALLENGE_BADGE_KIND = `challenge_${BADGE_CHALLENGE_LENGTH}` as const;
+
+export type AchievementKind = typeof CHALLENGE_BADGE_KIND;
 
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 
@@ -343,7 +360,7 @@ export interface BadgeKindMeta {
  * chain to inherit from, which removes the case rather than guarding it.
  */
 export const BADGE_KINDS: ReadonlyMap<string, BadgeKindMeta> = new Map([
-  ['challenge_21', {
+  [CHALLENGE_BADGE_KIND, {
     noun: 'challenger',
     describe: (count: number) => `${count} × ${BADGE_CHALLENGE_LENGTH}-day challenge${count === 1 ? '' : 's'} completed`,
   }],
