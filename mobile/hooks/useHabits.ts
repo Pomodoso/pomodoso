@@ -11,6 +11,7 @@ import {
 } from '@pomodoso/types';
 import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useEffect } from 'react';
 
 import { db } from '@/db/client';
 import { achievements, habitHistory, habits } from '@/db/schema';
@@ -289,6 +290,20 @@ export function useHabits() {
     triggerSync();
   }
 
+  // A run can reach its length without any new toggle here — a backfilled
+  // history, or logs pulled from another device, can already satisfy it. The
+  // card would show "complete" while nothing was ever recorded, and "Go again"
+  // would then reset the run and lose the medal it had actually earned.
+  // Reconciling on read closes that: idempotent, because completedAt gates
+  // re-entry and the award id is derived from the run.
+  useEffect(() => {
+    for (const habit of merged) {
+      if (habit.challenge?.progress.complete && !habit.challenge.state.completedAt) {
+        recordCompletionIfFinished(habit.id);
+      }
+    }
+  }, [merged]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Challenge actions ──────────────────────────────────────────────────────
   function writeChallenge(id: string, next: ChallengeState): void {
     db.update(habits)
@@ -358,26 +373,42 @@ export function useHabits() {
     );
     if (!challengeProgress(state, runDays, day).complete) return;
 
-    writeChallenge(id, challengeRecordCompletion(state, day));
-
-    // Append-only: "Go again" clears the run's completion so the habit can
-    // start another, which would quietly decrement a badge already earned.
-    if (!challengeEarnsBadge(state)) return;
+    // One transaction: the completion marker gates re-entry, so committing it
+    // before the award means an interrupted or failed insert leaves the run
+    // permanently medal-less — every later attempt returns early because
+    // challengeCompletedAt is already set.
     const stamp = new Date().toISOString();
-    db.insert(achievements)
-      // Derived from the run, not random: this is read-then-write, so two quick
-      // taps — or two devices finishing the same run — would otherwise mint two
-      // medals for one challenge. A stable id makes the second an upsert.
-      .values({
-        id: challengeAwardId(id, state.startedAt),
-        kind: 'challenge_21',
-        earnedOn: day,
-        habitId: id,
-        createdAt: stamp,
-        updatedAt: stamp,
-      })
-      .onConflictDoNothing()
-      .run();
+    const next = challengeRecordCompletion(state, day);
+    const earnsBadge = challengeEarnsBadge(state);
+    db.transaction(tx => {
+      tx.update(habits)
+        .set({
+          challengeStartedAt: next.startedAt,
+          challengeCompletedAt: next.completedAt,
+          challengeSkippedDays: JSON.stringify(next.skippedDays),
+          updatedAt: stamp,
+        })
+        .where(eq(habits.id, id))
+        .run();
+      // Append-only: "Go again" clears the run's completion so the habit can
+      // start another, which would quietly decrement a badge already earned.
+      if (!earnsBadge) return;
+      tx.insert(achievements)
+        // Derived from the run, not random: this is read-then-write, so two
+        // quick taps — or two devices finishing the same run — would otherwise
+        // mint two medals for one challenge. A stable id makes the second a
+        // no-op.
+        .values({
+          id: challengeAwardId(id, state.startedAt),
+          kind: 'challenge_21',
+          earnedOn: day,
+          habitId: id,
+          createdAt: stamp,
+          updatedAt: stamp,
+        })
+        .onConflictDoNothing()
+        .run();
+    });
     triggerSync();
   }
 
