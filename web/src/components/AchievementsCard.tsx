@@ -1,4 +1,4 @@
-import { achievementTier, badgeKind, nextAchievementTier } from '@pomodoso/types';
+import { achievementTier, badgeKind, CHALLENGE_BADGE_KIND, nextAchievementTier } from '@pomodoso/types';
 import type { AchievementTier } from '@pomodoso/types';
 
 export interface AchievementInfo {
@@ -18,7 +18,7 @@ const TIER_STYLE: Record<AchievementTier, { ring: string; label: string }> = {
  * Icons stay local: the naming and wording of a badge is shared through
  * @pomodoso/types, but Tabler classes mean nothing to the extension or the app.
  */
-const BADGE_ICONS: Record<string, string> = { challenge_21: 'ti-trophy' };
+const BADGE_ICONS: Record<string, string> = { [CHALLENGE_BADGE_KIND]: 'ti-trophy' };
 const badgeIcon = (kind: string) => BADGE_ICONS[kind] ?? 'ti-award';
 
 function Badge({ achievement }: { achievement: AchievementInfo }) {

@@ -7,7 +7,9 @@ import {
   challengeProgressLabel,
   challengeStreakLabel,
   achievementTier,
+  BADGE_CHALLENGE_LENGTH,
   badgeKind,
+  CHALLENGE_BADGE_KIND,
   challengeAwardId,
   challengeCanKeepGoing,
   challengeDaysOf,
@@ -295,6 +297,17 @@ test('award ids do not collide across a spread of runs', () => {
 });
 
 // ─── Badge kinds ──────────────────────────────────────────────────────────────
+
+test('the badge kind is the wire string, derived from the length', () => {
+  // Pinned deliberately. The kind is what's written to every client's database
+  // and pushed to the server, so it is a wire format: rows already earned say
+  // `challenge_21` forever. Deriving it keeps the name honest if the length
+  // ever changes, and this asserts the derivation still produces exactly the
+  // string those rows use.
+  assert.equal(CHALLENGE_BADGE_KIND, 'challenge_21');
+  assert.equal(CHALLENGE_BADGE_KIND, `challenge_${BADGE_CHALLENGE_LENGTH}`);
+  assert.equal(badgeKind(CHALLENGE_BADGE_KIND).noun, 'challenger');
+});
 
 test('the challenge badge describes itself in terms of its length', () => {
   assert.equal(badgeKind('challenge_21').noun, 'challenger');

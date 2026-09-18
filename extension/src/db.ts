@@ -144,7 +144,7 @@ export interface HabitHistoryRow {
 // its own append-only row.
 export interface AchievementRow extends SyncMeta {
   id: string;             // client-generated UUID
-  kind: string;           // 'challenge_21'
+  kind: string;           // CHALLENGE_BADGE_KIND, or a kind a newer client awarded
   earnedOn: string;       // YYYY-MM-DD, local to the device that earned it
   habitId?: string | undefined; // the run that earned it; survives that habit's deletion
   createdAt: string;

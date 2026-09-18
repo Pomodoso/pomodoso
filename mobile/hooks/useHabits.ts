@@ -1,5 +1,6 @@
 import { eq, isNull, sql } from 'drizzle-orm';
 import {
+  CHALLENGE_BADGE_KIND,
   challengeAwardId,
   challengeDaysOf,
   challengeEarnsBadge,
@@ -400,7 +401,7 @@ export function useHabits() {
         // no-op.
         .values({
           id: challengeAwardId(id, state.startedAt),
-          kind: 'challenge_21',
+          kind: CHALLENGE_BADGE_KIND,
           earnedOn: day,
           habitId: id,
           createdAt: stamp,

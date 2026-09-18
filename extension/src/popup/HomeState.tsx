@@ -24,7 +24,7 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  achievementTier, badgeKind, BADGE_CHALLENGE_LENGTH, challengeAwardId, nextAchievementTier,
+  achievementTier, badgeKind, BADGE_CHALLENGE_LENGTH, CHALLENGE_BADGE_KIND, challengeAwardId, nextAchievementTier,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
@@ -493,7 +493,7 @@ export function HomeState({
           // medals for one challenge; with this one the second write is an
           // idempotent upsert.
           id: challengeAwardId(id, state.startedAt),
-          kind: 'challenge_21',
+          kind: CHALLENGE_BADGE_KIND,
           earnedOn: today,
           habitId: id,
           createdAt: ts,
