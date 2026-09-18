@@ -192,6 +192,10 @@ async fn main() -> anyhow::Result<()> {
             post(routes::habits::log_habit).route_layer(auth.clone()),
         )
         .route(
+            "/achievements",
+            get(routes::habits::list_achievements).route_layer(auth.clone()),
+        )
+        .route(
             "/billing/checkout",
             post(routes::billing::create_checkout).route_layer(auth.clone()),
         )

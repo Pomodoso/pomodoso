@@ -3,6 +3,8 @@ import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { HabitsActivityHeatmap } from '../../components/HabitsActivityHeatmap.tsx';
 import { ChallengesCard } from '../../components/ChallengesCard.tsx';
+import { AchievementsCard } from '../../components/AchievementsCard.tsx';
+import type { AchievementInfo } from '../../components/AchievementsCard.tsx';
 import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
 import { habitStreakLabel } from '@pomodoso/types';
 
@@ -24,6 +26,10 @@ interface Habit {
   log_done: boolean;
   challenge_length_days: number | null;
   challenge_days_done: number;
+  challenge_complete: boolean;
+  challenge_completed_at: string | null;
+  challenge_missed_days: string[];
+  challenge_skips_left: number;
   streak: number;
 }
 
@@ -290,6 +296,7 @@ export default function HabitsPage() {
   const { user } = useAuth();
   const minYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const [habits, setHabits] = useState<Habit[] | null>(null);
+  const [achievements, setAchievements] = useState<AchievementInfo[]>([]);
   // Challenges are a view over the same habits, not a separate fetch — the list
   // endpoint already carries each one's length and progress.
   const challenges = (habits ?? [])
@@ -300,6 +307,10 @@ export default function HabitsPage() {
       icon: h.icon,
       length_days: h.challenge_length_days,
       days_done: h.challenge_days_done,
+      complete: h.challenge_complete,
+      completed_at: h.challenge_completed_at,
+      missed_days: h.challenge_missed_days,
+      skips_left: h.challenge_skips_left,
     }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -314,6 +325,12 @@ export default function HabitsPage() {
       .then(setHabits)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false));
+    // Separate and deliberately non-blocking: badges are a flourish, and an
+    // older backend without the endpoint should cost the habit list nothing.
+    api
+      .get<AchievementInfo[]>('/achievements')
+      .then(setAchievements)
+      .catch(() => setAchievements([]));
   };
 
   useEffect(refresh, []);
@@ -389,6 +406,12 @@ export default function HabitsPage() {
           onSave={value => handleUpdate(editingHabit.id, value)}
           onCancel={() => setEditingId(null)}
         />
+      )}
+
+      {!loading && achievements.length > 0 && (
+        <div style={{ maxWidth: 560, marginBottom: 16 }}>
+          <AchievementsCard achievements={achievements} />
+        </div>
       )}
 
       {!loading && challenges.length > 0 && (
