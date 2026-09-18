@@ -1,5 +1,14 @@
 import { eq, isNull, sql } from 'drizzle-orm';
-import { habitStreakLabel } from '@pomodoso/types';
+import {
+  challengeDaysOf,
+  challengeEarnsBadge,
+  challengeKeepGoing,
+  challengeProgress,
+  challengeRecordCompletion,
+  challengeStartOver,
+  habitStreakLabel,
+} from '@pomodoso/types';
+import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import { db } from '@/db/client';
@@ -28,6 +37,8 @@ export interface HabitWithProgress {
   // done — see computeStreak's doc comment for why this differs from the
   // "past streak" the flame streakLabel shows.
   daysDone: number;
+  /** The challenge run and its progress, or null for a plain habit. */
+  challenge: { state: ChallengeState; progress: ChallengeProgress } | null;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
 }
 
@@ -133,6 +144,27 @@ export function useHabits() {
     const todayRow = byDate.get(today);
     const days = parseDays(h.days);
     const { pastStreak, daysDone } = computeStreak(h.kind, h.goal, days, byDate);
+
+    // A challenge is a run, not a view of the streak: it has a start date,
+    // forgiven days and a recorded finish. The fallback start date covers a
+    // habit whose backfill hasn't run on this device yet.
+    let challenge: HabitWithProgress['challenge'] = null;
+    if (h.challengeLengthDays) {
+      const state: ChallengeState = {
+        lengthDays: h.challengeLengthDays,
+        startedAt: h.challengeStartedAt ?? today,
+        completedAt: h.challengeCompletedAt ?? null,
+        skippedDays: parseSkippedDays(h.challengeSkippedDays),
+      };
+      const runDays = challengeDaysOf(
+        state.startedAt,
+        today,
+        date => days.length === 0 || days.includes(toMondayFirstDow(new Date(date + 'T12:00:00'))),
+        date => isDone(h.kind, h.goal, byDate.get(date)),
+      );
+      challenge = { state, progress: challengeProgress(state, runDays, today) };
+    }
+
     return {
       ...h,
       days,
@@ -141,6 +173,7 @@ export function useHabits() {
       scheduledToday: isScheduledToday(days),
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
+      challenge,
       weekFilled: weekFilled(h.kind, h.goal, byDate),
     };
   });
