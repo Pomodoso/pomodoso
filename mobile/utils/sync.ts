@@ -5,7 +5,7 @@ import { and, asc, eq, inArray, isNull, not, or, lt, isNotNull } from 'drizzle-o
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 import { db } from '@/db/client';
-import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
+import { achievements, habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
@@ -408,6 +408,22 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
+  // Achievements (user-global history) — append-only.
+  const dirtyAchievements = db
+    .select()
+    .from(achievements)
+    .where(or(isNull(achievements.syncedAt), lt(achievements.syncedAt, achievements.updatedAt)))
+    .all();
+  for (const a of dirtyAchievements) {
+    entities.push(
+      toEntity('achievement', a.id, a.updatedAt, a.deletedAt, {
+        kind: a.kind,
+        earned_on: a.earnedOn,
+        habit_id: a.habitId,
+      }),
+    );
+  }
+
   // Shared preferences. utils/syncedSettings.ts owns the reshaping between
   // mobile's one-row-per-setting storage and the wire's bundled
   // timer_settings — see that file for why neither side changed.
@@ -740,6 +756,26 @@ function applyEntity(entity: SyncEntity): void {
       break;
     }
 
+    case 'achievement': {
+      const existing = db.select().from(achievements).where(eq(achievements.id, id)).all()[0];
+      if (existing && existing.updatedAt >= updated_at) return;
+      const row = {
+        id,
+        kind: String(data.kind ?? ''),
+        earnedOn: String(data.earned_on ?? '').slice(0, 10),
+        habitId: (data.habit_id as string | null) ?? null,
+        createdAt: existing?.createdAt ?? updated_at,
+        updatedAt: updated_at,
+        deletedAt: deleted_at,
+        syncedAt,
+      };
+      db.insert(achievements)
+        .values(row)
+        .onConflictDoUpdate({ target: achievements.id, set: { ...row, id: undefined, createdAt: undefined } as never })
+        .run();
+      break;
+    }
+
     case 'habit': {
       const existing = db.select().from(habits).where(eq(habits.id, id)).all()[0];
       if (existing && existing.updatedAt >= updated_at) return;
@@ -848,11 +884,10 @@ function applyEntity(entity: SyncEntity): void {
       break;
     }
 
-    // 'device', 'user_setting', 'task_order', 'detection_rule', 'achievement':
-    // no local table/handling for these yet (device is push-only even on
-    // extension; the rest are documented gaps at the top of this file) —
-    // ignored, not an error. Achievements are earned and shown on the
-    // extension first; mobile parity is its own change.
+    // 'device', 'user_setting', 'task_order', 'detection_rule': no local
+    // table/handling for these yet (device is push-only even on extension;
+    // the rest are documented gaps at the top of this file) — ignored, not
+    // an error.
     default:
       break;
   }

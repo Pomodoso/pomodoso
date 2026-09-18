@@ -69,6 +69,23 @@ export const habits = sqliteTable('habits', {
   syncedAt: text('synced_at'),
 });
 
+// Earned awards, stored rather than derived from completed challenges — "Go
+// again" clears a run's completion so the habit can start another, which would
+// quietly decrement a badge already earned. Mirrors the extension's
+// AchievementRow and the backend's `achievement` table.
+export const achievements = sqliteTable('achievements', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  /** YYYY-MM-DD local to the device that earned it. */
+  earnedOn: text('earned_on').notNull(),
+  /** The run that earned it. Survives that habit's deletion. */
+  habitId: text('habit_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
+});
+
 export const habitHistory = sqliteTable('habit_history', {
   id: text('id').primaryKey(),
   habitId: text('habit_id').notNull(),
