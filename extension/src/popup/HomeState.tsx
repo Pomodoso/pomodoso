@@ -24,7 +24,7 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  achievementTier, BADGE_CHALLENGE_LENGTH, challengeAwardId, nextAchievementTier,
+  achievementTier, badgeKind, BADGE_CHALLENGE_LENGTH, challengeAwardId, nextAchievementTier,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
@@ -4603,58 +4603,78 @@ const TIER_STYLE: Record<AchievementTier, { ring: string; glow: string; label: s
  * into a checklist of things you haven't done, which is the opposite of what
  * finishing a 21-day run should feel like.
  */
-function AchievementsSection({ achievements }: { achievements: AchievementRow[] }) {
-  const count = achievements.filter(a => a.kind === 'challenge_21').length;
-  if (count === 0) return null;
+function AchievementBadge({ kind, count }: { kind: string; count: number }) {
   const tier = achievementTier(count);
   if (!tier) return null;
   const style = TIER_STYLE[tier];
+  const meta = badgeKind(kind);
   const next = nextAchievementTier(count);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div
+          title={`${style.label} · ${count} earned`}
+          style={{
+            width: 52, height: 52, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 24,
+            border: `2px solid ${style.ring}`,
+            background: `radial-gradient(circle at 50% 35%, ${style.glow}, transparent 70%)`,
+            boxShadow: `0 0 10px ${style.glow}`,
+          }}
+        >
+          🏆
+        </div>
+        {count > 1 && (
+          <span style={{
+            position: 'absolute', bottom: -2, right: -4,
+            padding: '1px 5px', borderRadius: 8,
+            fontSize: 10, fontWeight: 700, lineHeight: 1.4,
+            background: style.ring, color: '#fff',
+            border: '1px solid var(--color-bg)',
+          }}>
+            x{count}
+          </span>
+        )}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}>{style.label} {meta.noun}</div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{meta.describe(count)}</div>
+        {next && (
+          <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 2 }}>
+            {next.remaining} more for {TIER_STYLE[next.tier].label}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Earned badges, GitHub-profile style: one medal per kind with an xN chip.
+ *
+ * Every kind present is rendered, not a hard-coded one: `kind` is free text on
+ * the wire so a new badge ships without a migration, and a medal awarded by a
+ * newer client must not be invisible here.
+ *
+ * Only earned badges are shown. A grid of locked placeholders turns the tab
+ * into a checklist of things you haven't done, which is the opposite of what
+ * finishing a 21-day run should feel like.
+ */
+function AchievementsSection({ achievements }: { achievements: AchievementRow[] }) {
+  const counts = new Map<string, number>();
+  for (const a of achievements) counts.set(a.kind, (counts.get(a.kind) ?? 0) + 1);
+  if (counts.size === 0) return null;
 
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8 }}>
         Achievements
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <div
-            title={`${style.label} · ${count} challenge${count === 1 ? '' : 's'} completed`}
-            style={{
-              width: 52, height: 52, borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 24,
-              border: `2px solid ${style.ring}`,
-              background: `radial-gradient(circle at 50% 35%, ${style.glow}, transparent 70%)`,
-              boxShadow: `0 0 10px ${style.glow}`,
-            }}
-          >
-            🏆
-          </div>
-          {count > 1 && (
-            <span style={{
-              position: 'absolute', bottom: -2, right: -4,
-              padding: '1px 5px', borderRadius: 8,
-              fontSize: 10, fontWeight: 700, lineHeight: 1.4,
-              background: style.ring, color: '#fff',
-              border: '1px solid var(--color-bg)',
-            }}>
-              x{count}
-            </span>
-          )}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700 }}>{style.label} challenger</div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-            {count} × 21-day challenge{count === 1 ? '' : 's'} completed
-          </div>
-          {next && (
-            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 2 }}>
-              {next.remaining} more for {TIER_STYLE[next.tier].label}
-            </div>
-          )}
-        </div>
-      </div>
+      {[...counts].map(([kind, count]) => (
+        <AchievementBadge key={kind} kind={kind} count={count} />
+      ))}
     </div>
   );
 }

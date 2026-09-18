@@ -1,4 +1,4 @@
-import { achievementTier, nextAchievementTier } from '@pomodoso/types';
+import { achievementTier, badgeKind, nextAchievementTier } from '@pomodoso/types';
 import type { AchievementTier } from '@pomodoso/types';
 
 export interface AchievementInfo {
@@ -15,28 +15,11 @@ const TIER_STYLE: Record<AchievementTier, { ring: string; label: string }> = {
 };
 
 /**
- * How each badge kind presents itself.
- *
- * `kind` is free text on the wire precisely so a new badge ships without a
- * migration, which means this page will meet kinds it has never heard of —
- * from a newer client, or a newer version of itself. Those render with the
- * kind as their name rather than vanishing.
+ * Icons stay local: the naming and wording of a badge is shared through
+ * @pomodoso/types, but Tabler classes mean nothing to the extension or the app.
  */
-const BADGE_KINDS: Record<string, { noun: string; icon: string; describe: (n: number) => string }> = {
-  challenge_21: {
-    noun: 'challenger',
-    icon: 'ti-trophy',
-    describe: n => `${n} × 21-day challenge${n === 1 ? '' : 's'} completed`,
-  },
-};
-
-function badgeKind(kind: string) {
-  return BADGE_KINDS[kind] ?? {
-    noun: kind,
-    icon: 'ti-award',
-    describe: (n: number) => `${n} earned`,
-  };
-}
+const BADGE_ICONS: Record<string, string> = { challenge_21: 'ti-trophy' };
+const badgeIcon = (kind: string) => BADGE_ICONS[kind] ?? 'ti-award';
 
 function Badge({ achievement }: { achievement: AchievementInfo }) {
   const { count, kind } = achievement;
@@ -57,7 +40,7 @@ function Badge({ achievement }: { achievement: AchievementInfo }) {
             border: `2px solid ${style.ring}`, fontSize: 24,
           }}
         >
-          <i className={`ti ${meta.icon}`} style={{ color: style.ring }} />
+          <i className={`ti ${badgeIcon(kind)}`} style={{ color: style.ring }} />
         </div>
         {count > 1 && (
           <span style={{

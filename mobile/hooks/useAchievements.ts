@@ -7,16 +7,18 @@ import { achievements } from '@/db/schema';
 /**
  * Earned achievements, counted per kind.
  *
- * Only `challenge_21` exists today; the hook returns the count rather than a
- * boolean so the `xN` chip and the tier both come from one number.
+ * Counts rather than booleans, because the `xN` chip and the tier both come
+ * from the same number.
  */
 export function useAchievements() {
   const { data } = useLiveQuery(
     db.select().from(achievements).where(isNull(achievements.deletedAt)),
   );
   const rows = data ?? [];
-  return {
-    rows,
-    count: rows.filter(a => a.kind === 'challenge_21').length,
-  };
+  // Counted per kind rather than for one hard-coded kind: `kind` is free text
+  // on the wire so a new badge ships without a migration, and a medal awarded
+  // by a newer client must not be invisible here.
+  const counts = new Map<string, number>();
+  for (const a of rows) counts.set(a.kind, (counts.get(a.kind) ?? 0) + 1);
+  return { rows, counts };
 }

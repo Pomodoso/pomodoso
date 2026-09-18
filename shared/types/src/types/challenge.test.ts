@@ -7,6 +7,7 @@ import {
   challengeProgressLabel,
   challengeStreakLabel,
   achievementTier,
+  badgeKind,
   challengeAwardId,
   challengeCanKeepGoing,
   challengeDaysOf,
@@ -291,4 +292,19 @@ test('award ids do not collide across a spread of runs', () => {
     }
   }
   assert.equal(ids.size, 40 * 28);
+});
+
+// ─── Badge kinds ──────────────────────────────────────────────────────────────
+
+test('the challenge badge describes itself in terms of its length', () => {
+  assert.equal(badgeKind('challenge_21').noun, 'challenger');
+  assert.equal(badgeKind('challenge_21').describe(1), '1 × 21-day challenge completed');
+  assert.equal(badgeKind('challenge_21').describe(4), '4 × 21-day challenges completed');
+});
+
+test('an unknown kind gets a usable stand-in rather than nothing', () => {
+  // A medal earned by a newer client must not be invisible on an older surface.
+  const meta = badgeKind('pomodoro_1000');
+  assert.equal(meta.noun, 'pomodoro_1000');
+  assert.equal(meta.describe(3), '3 earned');
 });
