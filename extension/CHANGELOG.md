@@ -6,6 +6,7 @@
 
 - **New: achievements for completed 21-day challenges** — Finishing a 21-day challenge without spending a skip earns a medal, with a count on it like GitHub's. It levels up as you collect them: Bronze at 1, Silver at 3, Gold at 5, Platinum at 10. Earned medals sync, so they follow you to every device.
 - **Challenges remember the run, not just the streak** — Missing a day used to wipe a challenge back to "Day 0 of 21" with no warning, and completing one was never recorded: finish 21 days, take a rest day, and the app quietly took the trophy back. A challenge now tracks the run itself, so a missed day asks whether you want to keep going (costs one of a few skips, and gives up the achievement) or start over, and a finished challenge stays finished — with **Go again** or **Keep as habit** when you're done with it.
+- **Challenges and medals on the web dashboard** — The dashboard shows where each challenge run stands and the medals you've earned, on both Today and Habits. Reading only, on purpose: a run is decided where you live the habit, so a stray click on a dashboard can't end three weeks of work. A run that's waiting on a decision says so and points you to where to make it.
 
 
 ## v1.3.6
