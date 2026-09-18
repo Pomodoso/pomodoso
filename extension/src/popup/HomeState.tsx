@@ -24,7 +24,7 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  achievementTier, BADGE_CHALLENGE_LENGTH, nextAchievementTier,
+  achievementTier, BADGE_CHALLENGE_LENGTH, challengeAwardId, nextAchievementTier,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
@@ -468,7 +468,11 @@ export function HomeState({
     // start another, which would quietly decrement a badge already earned.
     if (!challengeEarnsBadge(state)) return;
     await db.achievements.put({
-      id: crypto.randomUUID(),
+      // Derived from the run, not random: this whole function is read-then-write
+      // and two quick taps can both see "not completed yet" before either write
+      // lands. With a random id that races into two medals for one challenge;
+      // with this one the second write is an idempotent upsert.
+      id: challengeAwardId(id, state.startedAt),
       kind: 'challenge_21',
       earnedOn: today,
       habitId: id,

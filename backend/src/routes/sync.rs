@@ -82,15 +82,18 @@ pub async fn push(
             accepted += 1;
         }
     }
-    for entity in body.entities.iter().filter(|e| e.table == "achievement") {
-        if push_achievement(&state, auth.id, entity).await.is_ok() {
-            accepted += 1;
-        }
-    }
     // Habits are user-global (not workspace-scoped) — handled here, never in the
     // workspace loop below.
     for entity in body.entities.iter().filter(|e| e.table == "habit") {
         if push_habit(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
+    // After habits, not before: an achievement names the habit whose run earned
+    // it, so a first sync carrying a new habit and its award together would hit
+    // the foreign key and drop the award silently if this ran first.
+    for entity in body.entities.iter().filter(|e| e.table == "achievement") {
+        if push_achievement(&state, auth.id, entity).await.is_ok() {
             accepted += 1;
         }
     }
@@ -816,7 +819,14 @@ async fn push_achievement(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity)
           updated_at = EXCLUDED.updated_at,
           deleted_at = EXCLUDED.deleted_at,
           synced_at  = NOW()
-        WHERE EXCLUDED.updated_at >= achievement.updated_at
+        -- The ownership check belongs here, not only on the insert: the id is a
+        -- plain primary key, so without it a client holding another account's
+        -- achievement id (from a shared profile or an exported backup) could
+        -- overwrite that account's row by sending a newer timestamp. The other
+        -- user-global tables get this from a composite (user_id, id) key; this
+        -- one has to say it explicitly.
+        WHERE achievement.user_id = $2
+          AND EXCLUDED.updated_at >= achievement.updated_at
         "#,
         id,
         user_id,

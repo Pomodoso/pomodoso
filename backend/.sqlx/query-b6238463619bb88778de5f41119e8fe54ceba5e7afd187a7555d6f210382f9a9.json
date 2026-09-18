@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO achievement (id, user_id, kind, earned_on, habit_id, updated_at, deleted_at, synced_at)\n        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())\n        ON CONFLICT (id) DO UPDATE SET\n          kind       = EXCLUDED.kind,\n          earned_on  = EXCLUDED.earned_on,\n          habit_id   = EXCLUDED.habit_id,\n          updated_at = EXCLUDED.updated_at,\n          deleted_at = EXCLUDED.deleted_at,\n          synced_at  = NOW()\n        -- The ownership check belongs here, not only on the insert: the id is a\n        -- plain primary key, so without it a client holding another account's\n        -- achievement id (from a shared profile or an exported backup) could\n        -- overwrite that account's row by sending a newer timestamp. The other\n        -- user-global tables get this from a composite (user_id, id) key; this\n        -- one has to say it explicitly.\n        WHERE achievement.user_id = $2\n          AND EXCLUDED.updated_at >= achievement.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Date",
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6238463619bb88778de5f41119e8fe54ceba5e7afd187a7555d6f210382f9a9"
+}
