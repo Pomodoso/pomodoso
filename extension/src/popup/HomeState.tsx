@@ -390,7 +390,6 @@ export function HomeState({
     }
     return views;
   }, [challengeHabits, challengeStateOf, habitHistoryByHabit, today]);
-
   // ── Challenge actions ──────────────────────────────────────────────────────
   const writeChallenge = useCallback(async (id: string, next: ChallengeState) => {
     await db.habits.update(id, {
@@ -461,25 +460,56 @@ export function HomeState({
     // decision, and stay badge-eligible with skippedDays still empty — which
     // is the whole thing the rule was tightened to prevent.
     if (!challengeProgress(state, days, today).complete) return;
-    await writeChallenge(id, challengeRecordCompletion(state, today));
 
-    // The award is a separate, append-only row rather than a count derived from
-    // completed runs: "Go again" clears this run's completion so the habit can
-    // start another, which would quietly decrement a badge already earned.
-    if (!challengeEarnsBadge(state)) return;
-    await db.achievements.put({
-      // Derived from the run, not random: this whole function is read-then-write
-      // and two quick taps can both see "not completed yet" before either write
-      // lands. With a random id that races into two medals for one challenge;
-      // with this one the second write is an idempotent upsert.
-      id: challengeAwardId(id, state.startedAt),
-      kind: 'challenge_21',
-      earnedOn: today,
-      habitId: id,
-      createdAt: now(),
-      updatedAt: now(),
+    // One transaction. The completion marker is what makes later attempts
+    // return early, so committing it before the award means a failed or
+    // interrupted insert leaves the run permanently medal-less — not a medal
+    // lost once, but every retry turned into a no-op.
+    const next = challengeRecordCompletion(state, today);
+    const ts = now();
+    await db.transaction('rw', [db.habits, db.achievements], async () => {
+      await db.habits.update(id, {
+        challengeStartedAt: next.startedAt,
+        challengeSkippedDays: next.skippedDays,
+        challengeCompletedAt: next.completedAt ?? undefined,
+        updatedAt: ts,
+      });
+      // The award is a separate, append-only row rather than a count derived
+      // from completed runs: "Go again" clears this run's completion so the
+      // habit can start another, which would quietly decrement a badge already
+      // earned.
+      if (!challengeEarnsBadge(state)) return;
+      await db.achievements.put({
+        // Derived from the run, not random: this whole function is
+        // read-then-write and two quick taps can both see "not completed yet"
+        // before either write lands. With a random id that races into two
+        // medals for one challenge; with this one the second write is an
+        // idempotent upsert.
+        id: challengeAwardId(id, state.startedAt),
+        kind: 'challenge_21',
+        earnedOn: today,
+        habitId: id,
+        createdAt: ts,
+        updatedAt: ts,
+      });
     });
-  }, [today, writeChallenge]);
+    triggerSync();
+  }, [today]);
+
+  // A run can reach its length without any toggle happening here — the
+  // migration backfill, or habit logs pulled from another device, can already
+  // satisfy it. The card would read "complete" while nothing was ever
+  // recorded, and "Go again" would then reset the run and lose the medal it
+  // had actually earned. Reconciling on read closes that: idempotent, because
+  // the completion marker gates re-entry and the award id comes from the run.
+  useEffect(() => {
+    for (const [habitId, view] of challengeViews) {
+      if (view.progress.complete && view.state.completedAt === null) {
+        void recordCompletionIfFinished(habitId);
+      }
+    }
+  }, [challengeViews]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
   const todayHabits = visibleHabits.filter(h =>
