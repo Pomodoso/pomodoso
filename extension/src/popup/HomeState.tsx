@@ -5372,9 +5372,15 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
   // date after which the habit is read-only. Worth saying, not worth blocking —
   // a user who never skips is fine, and refusing the save would force margin
   // onto people who do not need it.
+  // The allowance is the run's total, not a further grant on top of what has
+  // been spent — challengeSkipsLeft reads `allowance - spent` — so the latest
+  // a run can finish is with `allowance` days forgiven, full stop. Adding the
+  // spent ones projected too far and warned about end dates that were fine.
+  // The max() only guards a run carrying more spent days than its length now
+  // allows, which a length edit on an older client could leave behind.
+  const worstCaseSkips = Math.max(spentSkips, challengeSkipAllowance(parsedLength || 1));
   const skipRoom = lengthIsUsable
-    ? challengeProjectedEnd(runStart, parsedLength, scheduledOn,
-        spentSkips + challengeSkipAllowance(parsedLength))
+    ? challengeProjectedEnd(runStart, parsedLength, scheduledOn, worstCaseSkips)
     : null;
   const endDateLeavesNoSkipRoom = Boolean(
     !endDateCutsChallenge && skipRoom && endDate && endDate < skipRoom,
