@@ -178,6 +178,70 @@ export function challengeSkipAllowance(lengthDays: number): number {
   return Math.max(1, Math.floor(lengthDays / 7));
 }
 
+/**
+ * Do two stored schedules mean the same week?
+ *
+ * Shared because both clients have to agree on when a run survives an edit.
+ * Progress is replayed from the start date against the habit's *current*
+ * schedule, so widening Mon–Fri to every day retroactively turns every past
+ * weekend into a missed day and breaks a healthy run on the spot; narrowing it
+ * does the reverse and quietly heals a broken one. Either way the run would be
+ * judged by a rule it never ran under, so a schedule change has to start a new
+ * run — and that decision is worthless if the two clients disagree on what
+ * counts as a change.
+ *
+ * An empty array means "every day", so it compares equal to a full seven:
+ * toggling the last day off and on again is not a change.
+ */
+export function sameSchedule(a: readonly number[], b: readonly number[]): boolean {
+  const norm = (d: readonly number[]) =>
+    (d.length === 0 || d.length === 7 ? '0,1,2,3,4,5,6' : [...d].sort((x, y) => x - y).join(','));
+  return norm(a) === norm(b);
+}
+
+/**
+ * The calendar date a run of `lengthDays` scheduled days lands on.
+ *
+ * A challenge counts the days you were supposed to show up, not the days on
+ * the calendar. For a habit scheduled every day those are the same thing; for
+ * one scheduled Monday to Friday, "21 days" is 21 weekdays — twenty-nine days
+ * of calendar, four weeks and a day. Nothing in the product said so, so this
+ * exists to let the UI say it.
+ *
+ * `alreadyLost` pushes the finish out by that many scheduled days: a forgiven
+ * day never counts toward the total, so spending a skip genuinely moves the
+ * end date, and a projection that ignored it would quietly go stale the first
+ * time a user chose "keep going".
+ *
+ * Returns null when no such date exists inside the lookahead — a habit whose
+ * schedule is empty of scheduled days would otherwise spin forever.
+ */
+export function challengeProjectedEnd(
+  startedAt: string,
+  lengthDays: number,
+  isScheduled: (date: string) => boolean,
+  alreadyLost = 0,
+): string | null {
+  const needed = lengthDays + alreadyLost;
+  if (needed <= 0) return null;
+  let counted = 0;
+  let date = startedAt;
+  for (let i = 0; i < MAX_PROJECTION_DAYS; i++) {
+    if (isScheduled(date)) {
+      counted++;
+      if (counted >= needed) return date;
+    }
+    date = addDays(date, 1);
+  }
+  return null;
+}
+
+// Ten years. Long enough for any real schedule to reach any real length — a
+// once-a-week habit on a 21-day challenge finishes inside five months — and
+// short enough that a habit with no scheduled days at all terminates instead
+// of hanging the popup.
+const MAX_PROJECTION_DAYS = 3650;
+
 export function challengeSkipsLeft(state: ChallengeState): number {
   return Math.max(0, challengeSkipAllowance(state.lengthDays) - state.skippedDays.length);
 }

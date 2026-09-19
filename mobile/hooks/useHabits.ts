@@ -8,6 +8,7 @@ import {
   challengeProgress,
   challengeRecordCompletion,
   challengeStartOver,
+  sameSchedule,
   habitStreakLabel,
 } from '@pomodoso/types';
 import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
@@ -160,8 +161,10 @@ export function useHabits() {
     const { pastStreak, daysDone } = computeStreak(h.kind, h.goal, days, byDate);
 
     // A challenge is a run, not a view of the streak: it has a start date,
-    // forgiven days and a recorded finish. The fallback start date covers a
-    // habit whose backfill hasn't run on this device yet.
+    // forgiven days and a recorded finish. The fallback start date covers the
+    // moment before the effect below writes one — it is a default for this
+    // render, never a substitute for storing it, because a stored date is what
+    // stops the run restarting tomorrow.
     let challenge: HabitWithProgress['challenge'] = null;
     if (h.challengeLengthDays) {
       const state: ChallengeState = {
@@ -255,6 +258,17 @@ export function useHabits() {
   }
 
   function updateHabit(id: string, input: HabitInput): void {
+    const previous = (habitRows ?? []).find(r => r.id === id);
+    const nextDays = input.days.length === 7 ? [] : input.days;
+    // The run survives an edit only while the challenge it belongs to is
+    // untouched — same length, same schedule, still on. This is a partial
+    // update, so without clearing them the run fields simply persist, and the
+    // run would then be scored against a schedule it never ran under: widening
+    // Mon–Fri to every day retroactively turns past weekends into missed days.
+    // The reconciling effect above stamps the new run's start date.
+    const keepsSameRun = Boolean(input.challengeLengthDays)
+      && previous?.challengeLengthDays === input.challengeLengthDays
+      && sameSchedule(parseDays(previous?.days ?? '[]'), nextDays);
     db.update(habits)
       .set({
         name: input.name.trim(),
@@ -263,8 +277,15 @@ export function useHabits() {
         goal: input.goal,
         unit: input.unit,
         unitAmount: input.unitAmount,
-        days: JSON.stringify(input.days.length === 7 ? [] : input.days),
+        days: JSON.stringify(nextDays),
         challengeLengthDays: input.challengeLengthDays,
+        ...(keepsSameRun ? {} : {
+          challengeStartedAt: null,
+          challengeCompletedAt: null,
+          // The column is NOT NULL with '[]' as its default, so an empty run
+          // is the empty list, not null — the same value keepAsHabit writes.
+          challengeSkippedDays: '[]',
+        }),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(habits.id, id))
@@ -304,6 +325,27 @@ export function useHabits() {
       }
     }
   }, [merged]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A run needs its start date on disk, not merely defaulted at read time.
+  //
+  // The fallback above reads as a harmless default and is fatal without this:
+  // nothing else writes the field for a challenge created here, so tomorrow it
+  // resolves against the new today and the run starts over. The card sits on
+  // "Day 1 of 21" forever. Only habits the migration backfilled ever had a
+  // start date, which is why every run that got tested worked.
+  useEffect(() => {
+    // Reads the raw rows, not `merged`: the merged view has already had the
+    // fallback applied, so it can no longer tell a stored date from a defaulted
+    // one — which is precisely the distinction this is here to act on.
+    for (const row of habitRows ?? []) {
+      if (row.challengeLengthDays && row.challengeStartedAt == null) {
+        db.update(habits)
+          .set({ challengeStartedAt: today, updatedAt: new Date().toISOString() })
+          .where(eq(habits.id, row.id))
+          .run();
+      }
+    }
+  }, [habitRows, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Challenge actions ──────────────────────────────────────────────────────
   function writeChallenge(id: string, next: ChallengeState): void {

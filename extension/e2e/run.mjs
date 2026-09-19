@@ -19,11 +19,13 @@ import { tmpdir } from 'node:os';
 import { PopupClosedError, launch, openPopup, openTab, resetStorage, sleep } from './driver.mjs';
 import {
   EXPORT_VIA_UI,
+  READ_CHALLENGE_STARTS,
   READ_ACHIEVEMENTS,
   READ_CHALLENGE_COMPLETION,
   READ_PERSISTED_SHAPE,
   SEED_HABIT_HISTORY,
   TASK_ORDER,
+  createChallengeHabit,
   openBackupPage,
   seedTasks,
 } from './fixtures.mjs';
@@ -159,6 +161,33 @@ async function testCompletionAndAward(browser) {
 }
 
 /**
+ * A challenge created in the app records the day its run began.
+ *
+ * The regression this exists for shipped in 1.3.7 and was total: nothing wrote
+ * `challengeStartedAt`, and the read path defaulted it to *today*. The default
+ * looked reasonable and was fatal — recomputed against a new today tomorrow, so
+ * the run restarted every day and the card sat on "Day 1 of 21" forever. It
+ * survived because every run anyone had tested was backfilled by the migration
+ * and so already had a start date; only challenges created after upgrading were
+ * broken, which is exactly the set nobody had.
+ */
+async function testChallengeStartIsPersisted(browser) {
+  const popup = await seedThenOpenPopup(browser, async tab => {
+    await tab.clickButton('/Start empty/');
+    await sleep(2500);
+  });
+  await popup.clickButton("/^Habits$/");
+  await sleep(1800);
+  await createChallengeHabit(popup, 'Persisted run');
+
+  const starts = await popup.js(READ_CHALLENGE_STARTS);
+  check('challenge: a new run records its start date instead of defaulting to today',
+    Array.isArray(starts) && starts.length === 1 && starts[0] !== 'UNDEFINED',
+    JSON.stringify(starts));
+  await browser.send('Target.closeTarget', { targetId: popup.targetId });
+}
+
+/**
  * A backup carries the challenge run and the medals it earned, and restoring
  * one brings them back.
  *
@@ -272,6 +301,7 @@ try {
   await run(testReorder, browser);
   await run(testChallengeDecision, browser);
   await run(testCompletionAndAward, browser);
+  await run(testChallengeStartIsPersisted, browser);
   await run(testBackupRoundTrip, browser);
 } finally {
   browser.close();
