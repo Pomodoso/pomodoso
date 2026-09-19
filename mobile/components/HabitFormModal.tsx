@@ -3,6 +3,8 @@ import type { ComponentProps } from 'react';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { MAX_CHALLENGE_LENGTH_DAYS } from '@pomodoso/types';
+
 import { DAY_LABELS } from '@/constants/habitDays';
 import { HABIT_ICON_OPTIONS } from '@/constants/habitIcons';
 import { colors } from '@/constants/theme';
@@ -21,7 +23,8 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 // Must not exceed useHabits.ts's computeStreak scan bound (3650) — a longer
 // challenge would be accepted here but could never reach 100% since the
 // streak calculation itself can't count past that many days.
-const MAX_CHALLENGE_LENGTH_DAYS = 3650;
+// Shared with the projection horizon: a longer run cannot be projected, so
+// it cannot be reasoned about either.
 
 // Mirrors extension's habit form (HomeState.tsx): name, icon, boolean/counter
 // kind, days-of-week toggle row defaulting to every day, no separate

@@ -236,11 +236,20 @@ export function challengeProjectedEnd(
   return null;
 }
 
-// Ten years. Long enough for any real schedule to reach any real length — a
-// once-a-week habit on a 21-day challenge finishes inside five months — and
-// short enough that a habit with no scheduled days at all terminates instead
-// of hanging the popup.
-const MAX_PROJECTION_DAYS = 3650;
+/**
+ * Ten years, and the longest challenge a client should accept.
+ *
+ * It is the lookahead `challengeProjectedEnd` will walk before giving up, so a
+ * length beyond it cannot be projected and therefore cannot be checked against
+ * an end date. Exported so the forms cap the input at the same number rather
+ * than accepting a length the rest of the code silently cannot reason about.
+ *
+ * Long enough for any real schedule to reach any real length — a once-a-week
+ * habit on a 21-day challenge finishes inside five months — and short enough
+ * that a habit with no scheduled days at all terminates instead of hanging.
+ */
+export const MAX_CHALLENGE_LENGTH_DAYS = 3650;
+const MAX_PROJECTION_DAYS = MAX_CHALLENGE_LENGTH_DAYS;
 
 export function challengeSkipsLeft(state: ChallengeState): number {
   return Math.max(0, challengeSkipAllowance(state.lengthDays) - state.skippedDays.length);
