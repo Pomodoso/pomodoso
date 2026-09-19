@@ -24,7 +24,8 @@ import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
 import type { TimerStartPayload, TimerAttachPayload, TimerState, TicketRef } from '@pomodoso/types';
 import {
-  achievementTier, badgeKind, BADGE_CHALLENGE_LENGTH, CHALLENGE_BADGE_KIND, challengeAwardId, nextAchievementTier,
+  achievementTier, badgeKind, BADGE_CHALLENGE_LENGTH, CHALLENGE_BADGE_KIND, challengeAwardId, challengeProjectedEnd, challengeSkipAllowance, MAX_CHALLENGE_LENGTH_DAYS,
+  nextAchievementTier, sameSchedule,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
@@ -520,6 +521,28 @@ export function HomeState({
       }
     }
   }, [challengeViews]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A run needs its start date on disk, not merely defaulted at read time.
+  //
+  // challengeStateOf falls back to `today` when the field is missing, which
+  // reads as a sensible default and is in fact fatal: nothing ever wrote it, so
+  // the fallback is recomputed tomorrow against the new today, and the run
+  // restarts every single day. A challenge created in the app sat on "Day 1 of
+  // 21" forever — only habits backfilled by the v16 migration worked, which is
+  // why it survived: every run anyone had tested predated the feature.
+  //
+  // Done here rather than in the form because this is the one place that
+  // catches every route a challenge arrives by — created, enabled on an
+  // existing habit, restarted by an edit, imported from a backup, or pulled
+  // from a device running an older build — and because `today` here is the
+  // user's configured timezone rather than the browser's.
+  useEffect(() => {
+    for (const h of challengeHabits) {
+      if (h.challengeStartedAt === undefined) {
+        void db.habits.update(h.id, { challengeStartedAt: today, updatedAt: now() });
+      }
+    }
+  }, [challengeHabits, today]);
 
   // days[] uses 0=Mon…6=Sun; empty = every day. Filter for Today tab only.
   const todayDow = (new Date(today + 'T12:00:00').getDay() + 6) % 7;
@@ -1529,6 +1552,7 @@ export function HomeState({
         {activeTab === 'habits' && (
           isAddingHabit ? (
             <HabitForm
+              today={today}
               onSave={(habit) => {
                 // A new habit goes to the end of the manual order, matching
                 // where the list already puts it before any dragging.
@@ -1543,6 +1567,7 @@ export function HomeState({
           ) : editingHabit ? (
             <HabitForm
               initialHabit={editingHabit}
+              today={today}
               onSave={(updated) => {
                 // put (full replace), not update (merge) — so turning a field OFF
                 // (time unit, end date, unit) actually clears it instead of
@@ -4465,6 +4490,16 @@ function ChallengeCard({ habit, view, actions }: {
   const skipsLeft = challengeSkipsLeft(state);
   const earnsBadge = challengeEarnsBadge(state);
 
+  // When the habit isn't daily, the run spans more calendar than its name
+  // suggests — 21 weekdays is four weeks and a day. Showing the date it lands
+  // on is the only way the count stops being misleading, and it moves as skips
+  // are spent, so it is derived here rather than stored.
+  const scheduledOn = (date: string): boolean =>
+    habit.days.length === 0 || habit.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+  const projectedEnd = complete
+    ? null
+    : challengeProjectedEnd(state.startedAt, length, scheduledOn, state.skippedDays.length);
+
   const accent = complete
     ? 'var(--color-success)'
     : needsDecision ? 'var(--color-border-strong)' : 'var(--color-accent)';
@@ -4502,6 +4537,12 @@ function ChallengeCard({ habit, view, actions }: {
               + (state.skippedDays.length > 0 ? ` · ${state.skippedDays.length} skipped` : '')
           : challengeStreakLabel(clamped, length)}
       </div>
+
+      {projectedEnd && !needsDecision && (
+        <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 3 }}>
+          {habit.days.length === 0 ? 'Finishes' : 'Finishes around'} {fmtShortDate(projectedEnd)}
+        </div>
+      )}
 
       {/* Completed: the run is over, so offer a way out of it. Without this a
           finished card sits in Today forever with nothing to do about it. */}
@@ -5223,8 +5264,37 @@ const FORM_INPUT_STYLE: React.CSSProperties = {
 const ICON_OPTIONS: HabitIconKind[] = ['water', 'fitness', 'book', 'sleep', 'run', 'meditate', 'journal'];
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-function HabitForm({ initialHabit, onSave, onCancel }: {
+/** The cautionary strip the habit form uses for anything that blocks a save. */
+const FORM_NOTICE_STYLE: React.CSSProperties = {
+  fontSize: 10, marginTop: 6, lineHeight: 1.5, padding: '6px 8px',
+  color: 'var(--color-accent)', background: 'rgba(200,85,61,0.07)',
+  border: '1px solid rgba(200,85,61,0.2)', borderRadius: 'var(--radius-sm)',
+};
+
+/** "Mon, Oct 19" — the same shape the challenge card already uses for dates. */
+function fmtShortDate(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/** Inclusive span in calendar days, which is how a person counts them. */
+function daysBetween(from: string, to: string): number {
+  const ms = new Date(to + 'T12:00:00').getTime() - new Date(from + 'T12:00:00').getTime();
+  return Math.round(ms / 86400000) + 1;
+}
+
+function HabitForm({ initialHabit, today, onSave, onCancel }: {
   initialHabit?: HabitDef;
+  /**
+   * The user's today, in their configured timezone.
+   *
+   * Passed in rather than read from the browser: the reconciling effect stamps
+   * a new run's start date with this same value, so a form projecting from
+   * `new Date()` would disagree with the run it is describing whenever the two
+   * fall on different days — and would validate the end date against the wrong
+   * finish.
+   */
+  today: string;
   onSave: (habit: Omit<HabitDef, 'updatedAt'>) => void;
   onCancel: () => void;
 }) {
@@ -5254,6 +5324,74 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
 
   const isTime = kind === 'counter' && unitMode === 'time';
 
+  // Stored shape: seven days means "every day" and is kept as an empty array.
+  const daysValue = selectedDays.length === 7 ? [] : selectedDays;
+  const scheduledOn = (date: string): boolean =>
+    daysValue.length === 0 || daysValue.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+
+  const parsedLength = parseInt(challengeLengthDays, 10);
+  const lengthIsUsable = isChallenge && !isNaN(parsedLength)
+    && parsedLength > 0 && parsedLength <= MAX_CHALLENGE_LENGTH_DAYS;
+  const lengthOutOfRange = isChallenge && challengeLengthDays.trim() !== '' && !lengthIsUsable;
+
+  const sameLength = initialHabit?.challengeLengthDays === parsedLength;
+  const sameScheduleAsBefore = sameSchedule(initialHabit?.days ?? [], daysValue);
+
+  // Only a run that actually exists can be restarted — a challenge being
+  // switched on for the first time has nothing to lose.
+  const hasLiveRun = Boolean(initialHabit?.challengeLengthDays && initialHabit?.challengeStartedAt);
+  const restartsRun = hasLiveRun && lengthIsUsable && (!sameLength || !sameScheduleAsBefore);
+
+  // A run that survives this edit keeps its own start and the days it has
+  // spent. One that is about to be restarted must be projected from today, not
+  // from the run it is replacing — otherwise the finish shown here, and the end
+  // date validated against it, both belong to a run that is being thrown away.
+  const keepsRun = hasLiveRun && lengthIsUsable && !restartsRun;
+  const runStart = (keepsRun && initialHabit?.challengeStartedAt) || today;
+  const spentSkips = keepsRun ? (initialHabit?.challengeSkippedDays?.length ?? 0) : 0;
+  const projectedEnd = lengthIsUsable
+    ? challengeProjectedEnd(runStart, parsedLength, scheduledOn, spentSkips)
+    : null;
+  // No projection means the run cannot be shown to fit inside ten years of
+  // lookahead. Treated as a validation failure rather than waved through: a
+  // null here used to switch the end-date check off silently, which is the
+  // opposite of what an unprojectable run deserves.
+  const projectionUnavailable = lengthIsUsable && projectedEnd === null;
+
+  // Counting scheduled days means "21 days" can be twenty-nine of calendar, so
+  // say so rather than leaving the user to discover it in week five.
+  const spansMoreThanItSays = projectedEnd !== null && daysValue.length > 0;
+
+  // The end date closes the habit, so one that falls before the run can finish
+  // makes the challenge unwinnable — the habit stops being tickable while the
+  // run keeps accruing missed days the user can no longer answer.
+  const endDateCutsChallenge = Boolean(projectedEnd && endDate && endDate < projectedEnd);
+
+  // Finishing exactly on the end date is legal but leaves no room to ever use
+  // a skip: "keep going" adds a forgiven day, which pushes the finish past a
+  // date after which the habit is read-only. Worth saying, not worth blocking —
+  // a user who never skips is fine, and refusing the save would force margin
+  // onto people who do not need it.
+  // The allowance is the run's total, not a further grant on top of what has
+  // been spent — challengeSkipsLeft reads `allowance - spent` — so the latest
+  // a run can finish is with `allowance` days forgiven, full stop. Adding the
+  // spent ones projected too far and warned about end dates that were fine.
+  // The max() only guards a run carrying more spent days than its length now
+  // allows, which a length edit on an older client could leave behind.
+  const worstCaseSkips = Math.max(spentSkips, challengeSkipAllowance(parsedLength || 1));
+  const skipRoom = lengthIsUsable
+    ? challengeProjectedEnd(runStart, parsedLength, scheduledOn, worstCaseSkips)
+    : null;
+  const endDateLeavesNoSkipRoom = Boolean(
+    !endDateCutsChallenge && skipRoom && endDate && endDate < skipRoom,
+  );
+
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const canSaveHabit = Boolean(name.trim())
+    && !endDateCutsChallenge && !projectionUnavailable && !lengthOutOfRange;
+  // Reverting the schedule takes the question away again.
+  const awaitingRestartConfirm = confirmRestart && restartsRun;
+
   const toggleDay = (day: number) => {
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a, b) => a - b)
@@ -5262,6 +5400,13 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
 
   const handleSave = () => {
     if (!name.trim()) return;
+    if (endDateCutsChallenge || projectionUnavailable || lengthOutOfRange) return;
+    // Restarting is destructive, and silent otherwise: the card would simply
+    // read "Day 1" next time it was opened, with no hint that weeks of
+    // progress had been dropped by a schedule edit. Confirmed inline rather
+    // than with confirm() — a native dialog is used nowhere else in this
+    // popup, and it takes focus, which is what closes a popup window.
+    if (restartsRun && !confirmRestart) { setConfirmRestart(true); return; }
     const effUnit = (unitMode === 'preset' || unitMode === 'custom') ? unit.trim() : '';
     const hasUnit = effUnit.length > 0;
     const parsedUnitAmount = parseInt(unitAmount, 10);
@@ -5269,8 +5414,19 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
     const parsedChallengeLength = parseInt(challengeLengthDays, 10);
     const hasChallenge = isChallenge && !isNaN(parsedChallengeLength) && parsedChallengeLength > 0;
     // The run survives an edit only when the challenge it belongs to is
-    // untouched. Same length, still enabled — anything else is a new run.
-    const keepsSameRun = hasChallenge && initialHabit?.challengeLengthDays === parsedChallengeLength;
+    // untouched. Same length, same schedule, still enabled — anything else is
+    // a new run.
+    //
+    // The schedule matters as much as the length, and less obviously: progress
+    // is replayed from the start date against the habit's *current* days, so
+    // widening Mon–Fri to every day retroactively turns every past weekend
+    // into a missed day and breaks a healthy run on the spot. Narrowing it
+    // does the reverse and quietly heals a broken one. Either way the run is
+    // being judged by a rule it did not run under, so it is a new run.
+    const sameScheduleAsBefore = sameSchedule(initialHabit?.days ?? [], daysValue);
+    const keepsSameRun = hasChallenge
+      && initialHabit?.challengeLengthDays === parsedChallengeLength
+      && sameScheduleAsBefore;
     onSave({
       id: initialHabit?.id ?? crypto.randomUUID(),
       createdAt: initialHabit?.createdAt ?? now(),
@@ -5489,9 +5645,25 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
             ? <button onClick={() => setEndDate('')} style={{ fontSize: 11, color: 'var(--color-text-faint)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
             : <button onClick={() => setEndDate(new Date().toLocaleDateString('en-CA'))} style={{ fontSize: 11, color: 'var(--color-text-faint)', background: 'none', border: 'none', cursor: 'pointer' }}>End today</button>}
         </div>
-        {endDate && (
+        {endDate && !endDateCutsChallenge && (
           <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4 }}>
             Stops appearing in Today after this date — history is kept.
+          </div>
+        )}
+        {endDateCutsChallenge && (
+          <div style={FORM_NOTICE_STYLE}>
+            This ends the habit on {fmtShortDate(endDate)}, before the challenge can finish
+            on {fmtShortDate(projectedEnd!)}. The habit would stop appearing in Today while
+            the run kept counting days you could no longer tick — an unwinnable challenge.
+            Move the end date, or turn the challenge off.
+          </div>
+        )}
+        {endDateLeavesNoSkipRoom && (
+          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+            The challenge fits, but only exactly. Choosing <strong>Keep going</strong> after a
+            missed day adds a day to the run, which would push the finish past
+            {' '}{fmtShortDate(endDate)} — after which the habit is read-only. Ending on
+            {' '}{fmtShortDate(skipRoom!)} or later leaves room for every skip.
           </div>
         )}
       </div>
@@ -5499,7 +5671,9 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: isChallenge ? 8 : 0 }}>
           <input type="checkbox" checked={isChallenge} onChange={e => setIsChallenge(e.target.checked)} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>21-day challenge</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>
+            {BADGE_CHALLENGE_LENGTH}-day challenge
+          </span>
         </label>
         {isChallenge && (
           <>
@@ -5511,8 +5685,39 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
                 onChange={e => setChallengeLengthDays(e.target.value)}
                 style={{ ...FORM_INPUT_STYLE, width: 60 }}
               />
-              <span style={{ fontSize: 12, color: 'var(--color-text-faint)' }}>days</span>
+              <span style={{ fontSize: 12, color: 'var(--color-text-faint)' }}>
+                {spansMoreThanItSays ? 'scheduled days' : 'days'}
+              </span>
             </div>
+            {lengthOutOfRange && (
+              <div style={FORM_NOTICE_STYLE}>
+                Enter a number from 1 to {MAX_CHALLENGE_LENGTH_DAYS}.
+              </div>
+            )}
+            {projectionUnavailable && (
+              <div style={FORM_NOTICE_STYLE}>
+                This run can't be placed on the calendar — {parsedLength} scheduled days on
+                this schedule reach past the ten years the app looks ahead. Shorten it, or
+                schedule the habit on more days.
+              </div>
+            )}
+            {projectedEnd && (
+              <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+                {spansMoreThanItSays
+                  ? <>Counts the days this habit is scheduled, so it finishes around{' '}
+                      <strong>{fmtShortDate(projectedEnd)}</strong> — {daysBetween(runStart, projectedEnd)} days
+                      of calendar, not {parsedLength}.</>
+                  : <>Finishes around <strong>{fmtShortDate(projectedEnd)}</strong>.</>}
+                {spentSkips > 0 && <> A spent skip has already pushed this out.</>}
+              </div>
+            )}
+            {restartsRun && (
+              <div style={FORM_NOTICE_STYLE}>
+                {awaitingRestartConfirm ? 'Press again to confirm: this' : 'Saving'} starts the run
+                over from today, losing its current progress. Days are counted against the habit's
+                schedule, so a different schedule is a different run.
+              </div>
+            )}
             <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4, lineHeight: 1.5 }}>
               Shows a progress card counting the days you complete. Miss a day and you choose:
               keep going (costs a skip) or start over.
@@ -5535,15 +5740,17 @@ function HabitForm({ initialHabit, onSave, onCancel }: {
         </button>
         <button
           onClick={handleSave}
-          disabled={!name.trim()}
+          disabled={!canSaveHabit}
           style={{
             flex: 2, padding: '8px 0', border: 'none', borderRadius: 'var(--radius-md)',
-            background: name.trim() ? 'var(--color-accent)' : 'var(--color-border)',
-            color: name.trim() ? '#fff' : 'var(--color-text-muted)',
-            fontSize: 13, fontWeight: 600, cursor: name.trim() ? 'pointer' : 'not-allowed',
+            background: canSaveHabit ? 'var(--color-accent)' : 'var(--color-border)',
+            color: canSaveHabit ? '#fff' : 'var(--color-text-muted)',
+            fontSize: 13, fontWeight: 600, cursor: canSaveHabit ? 'pointer' : 'not-allowed',
           }}
         >
-          {initialHabit ? 'Save changes' : 'Save habit'}
+          {awaitingRestartConfirm
+            ? 'Start over and save'
+            : initialHabit ? 'Save changes' : 'Save habit'}
         </button>
       </div>
     </div>

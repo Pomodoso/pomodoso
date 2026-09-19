@@ -2,6 +2,13 @@
 
 ## v1.3.8 (In progress)
 
+### Habits
+
+- **Fix: a challenge no longer restarts itself every day** — A 21-day challenge created in the app stayed on "Day 1 of 21" no matter how many days you completed. The run never recorded the day it began, so each morning it assumed it had started that morning. Challenges that existed before 1.3.7 were unaffected, which is why this got through. Runs already under way keep their progress.
+- **Challenges say how long they'll actually take** — On a habit scheduled Monday to Friday, "21 days" means 21 weekdays — four weeks and a day, not three weeks. The challenge always counted the days you're scheduled, but nothing said so. The habit form and the progress card now show the date the run is expected to finish, and it moves when you spend a skip.
+- **Fix: changing a habit's schedule no longer breaks its challenge** — Progress is measured against the days a habit is scheduled, so switching a running challenge from weekdays to every day turned every past weekend into a missed day and broke the run on the spot. Changing the schedule now starts a new run instead, and says so before you save.
+- **Fix: an end date can't make a challenge impossible** — Setting an end date before the challenge could finish closed the habit while the run kept counting days you could no longer tick. The form now flags it and won't save until it's resolved.
+
 
 ## v1.3.7
 

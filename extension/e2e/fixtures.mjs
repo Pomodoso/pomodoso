@@ -239,3 +239,40 @@ export async function openBackupPage(popup) {
   }
   await sleep(1500);
 }
+
+/** Start dates of every challenge habit, or the string 'UNDEFINED' when unset. */
+export const READ_CHALLENGE_STARTS = `new Promise((resolve) => {
+  const req = indexedDB.open('pomodoso');
+  req.onerror = () => resolve('OPEN ERROR');
+  req.onsuccess = () => {
+    const q = req.result.transaction('habits', 'readonly').objectStore('habits').getAll();
+    q.onsuccess = () => resolve(
+      q.result.filter(h => h.challengeLengthDays)
+        .map(h => h.challengeStartedAt === undefined ? 'UNDEFINED' : h.challengeStartedAt)
+    );
+  };
+})`;
+
+/** Creates a habit with the challenge switched on, through the form. */
+export async function createChallengeHabit(popup, name) {
+  if (!(await popup.clickButton('/Add/'))) throw new Error('no Add button on Habits');
+  await sleep(1500);
+  await popup.js(`(() => {
+    const i = [...document.querySelectorAll('input')].find(e => e.type === 'text' || !e.type);
+    if (!i) return;
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    set.call(i, ${JSON.stringify(name)});
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await sleep(500);
+  await popup.js(`(() => {
+    const c = [...document.querySelectorAll('input')].find(e => e.type === 'checkbox');
+    if (c) c.click();
+  })()`);
+  await sleep(800);
+  await popup.js(`(() => {
+    const b = [...document.querySelectorAll('button')].filter(x => /Save/.test(x.innerText));
+    if (b.length) b[b.length - 1].click();
+  })()`);
+  await sleep(2500);
+}

@@ -17,6 +17,8 @@ import {
   challengeKeepGoing,
   challengeNeedsDecision,
   challengeProgress,
+  challengeProjectedEnd,
+  sameSchedule,
   challengeRecordCompletion,
   challengeSkipAllowance,
   challengeSkipsLeft,
@@ -309,6 +311,75 @@ test('award ids do not collide across a spread of runs', () => {
     }
   }
   assert.equal(ids.size, 40 * 28);
+});
+
+// ─── Schedules ────────────────────────────────────────────────────────────────
+
+test('an empty schedule and a full week mean the same thing', () => {
+  // Empty is how "every day" is stored, so toggling the last day off and back
+  // on must not read as a change and restart a live run.
+  assert.equal(sameSchedule([], [0,1,2,3,4,5,6]), true);
+  assert.equal(sameSchedule([0,1,2,3,4,5,6], []), true);
+  assert.equal(sameSchedule([], []), true);
+});
+
+test('order does not make a schedule different', () => {
+  assert.equal(sameSchedule([4,0,2], [0,2,4]), true);
+});
+
+test('adding or dropping a day is a different schedule', () => {
+  assert.equal(sameSchedule([0,1,2,3,4], [0,1,2,3,4,5]), false);
+  assert.equal(sameSchedule([0,1,2,3,4], [0,1,2,3]), false);
+  // Weekdays are not every day, however the other side is spelled.
+  assert.equal(sameSchedule([0,1,2,3,4], []), false);
+});
+
+// ─── Projected end ────────────────────────────────────────────────────────────
+
+// Monday-to-Friday. 2026-09-21 is a Monday.
+const WEEKDAYS = (date: string) => {
+  const dow = new Date(date + 'T12:00:00').getDay();
+  return dow >= 1 && dow <= 5;
+};
+const EVERY_DAY = () => true;
+
+test('a daily habit finishes on the day the count says', () => {
+  assert.equal(challengeProjectedEnd('2026-09-21', 21, EVERY_DAY), '2026-10-11');
+});
+
+test('a weekday habit takes four weeks and a day to reach 21', () => {
+  // The whole point of the function: "21 days" is 21 *scheduled* days, so a
+  // Monday-to-Friday habit spends twenty-nine days of calendar getting there.
+  const end = challengeProjectedEnd('2026-09-21', 21, WEEKDAYS);
+  assert.equal(end, '2026-10-19');
+  assert.equal(new Date(end + 'T12:00:00').getDay(), 1); // lands on a Monday
+});
+
+test('a spent skip pushes the finish out by a scheduled day', () => {
+  // A forgiven day never counts toward the total, so "keep going" really does
+  // move the end date. A projection that ignored it would go stale the first
+  // time anyone used the button.
+  assert.equal(challengeProjectedEnd('2026-09-21', 21, EVERY_DAY, 1), '2026-10-12');
+  // Across a weekend boundary it moves by a scheduled day, not a calendar one:
+  // day 21 is a Monday, so one more lands on the Tuesday.
+  assert.equal(challengeProjectedEnd('2026-09-21', 21, WEEKDAYS, 1), '2026-10-20');
+});
+
+test('a one-day challenge ends the day it starts', () => {
+  assert.equal(challengeProjectedEnd('2026-09-21', 1, EVERY_DAY), '2026-09-21');
+});
+
+test('a start date off-schedule does not count itself', () => {
+  // 2026-09-19 is a Saturday: the run begins on the Monday that follows.
+  assert.equal(challengeProjectedEnd('2026-09-19', 1, WEEKDAYS), '2026-09-21');
+});
+
+test('a schedule with no days at all terminates instead of hanging', () => {
+  assert.equal(challengeProjectedEnd('2026-09-21', 21, () => false), null);
+});
+
+test('a non-positive length has no end', () => {
+  assert.equal(challengeProjectedEnd('2026-09-21', 0, EVERY_DAY), null);
 });
 
 // ─── Badge kinds ──────────────────────────────────────────────────────────────
