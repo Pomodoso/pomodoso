@@ -4540,7 +4540,10 @@ function ChallengeCard({ habit, view, actions }: {
 
       {projectedEnd && !needsDecision && (
         <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 3 }}>
-          {habit.days.length === 0 ? 'Finishes' : 'Finishes around'} {fmtShortDate(projectedEnd)}
+          {/* "around" whatever the schedule: a missed day answered with
+              "keep going" adds a forgiven day and moves this, so it is a
+              projection on every habit, not only the ones with days off. */}
+          Finishes around {fmtShortDate(projectedEnd)}
         </div>
       )}
 
