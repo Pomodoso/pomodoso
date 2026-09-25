@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   challengeCanKeepGoing,
@@ -19,6 +19,21 @@ export interface ChallengeActions {
   onKeepGoing: (habitId: string) => void;
   onStartOver: (habitId: string) => void;
   onKeepAsHabit: (habitId: string) => void;
+}
+
+/**
+ * Confirms the decisions that throw work away.
+ *
+ * These are one tap on a card you scroll past with a thumb, and starting over
+ * is up to three weeks of run — an accidental brush shouldn't be able to spend
+ * it. Keeping going isn't here on purpose: it costs a skip, but it is the
+ * choice that *saves* the run, so a confirmation would only be in the way.
+ */
+function confirmDecision(title: string, message: string, confirmLabel: string, onConfirm: () => void): void {
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+  ]);
 }
 
 /** "Tuesday", or "Tuesday and Wednesday", or "3 days". */
@@ -41,6 +56,11 @@ function CardAction({ label, hint, tone, compact, onPress }: {
   return (
     <Pressable
       style={[styles.action, compact && styles.actionCompact, tone === 'primary' && styles.actionPrimary]}
+      // A single-line compact button draws about 34pt tall, under the 44pt a
+      // thumb needs. The card can't afford the height, so the touchable area
+      // grows past the border instead of the button doing it. Vertical only:
+      // these sit side by side, and horizontal slop would have them overlap.
+      hitSlop={compact ? { top: 6, bottom: 6 } : undefined}
       onPress={onPress}
     >
       <Text style={[styles.actionText, tone === 'primary' && styles.actionTextPrimary]}>{label}</Text>
@@ -140,7 +160,17 @@ export function ChallengesSection({ habits, actions, compact = false, showInToda
             {complete && actions && (
               <View style={[styles.actionRow, compact && styles.actionRowCompact]}>
                 <CardAction tone="primary" label="Go again" compact={compact} onPress={() => actions.onStartOver(habit.id)} />
-                <CardAction tone="quiet" label="Keep as habit" compact={compact} onPress={() => actions.onKeepAsHabit(habit.id)} />
+                <CardAction
+                  tone="quiet"
+                  label="Keep as habit"
+                  compact={compact}
+                  onPress={() => confirmDecision(
+                    'Keep as habit?',
+                    `This drops the challenge. ${habit.name} carries on as an ordinary habit with its streak.`,
+                    'Keep as habit',
+                    () => actions.onKeepAsHabit(habit.id),
+                  )}
+                />
               </View>
             )}
 
@@ -167,7 +197,12 @@ export function ChallengesSection({ habits, actions, compact = false, showInToda
                     label="Start over"
                     compact={compact}
                     {...(!compact && canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
-                    onPress={() => actions.onStartOver(habit.id)}
+                    onPress={() => confirmDecision(
+                      'Start over?',
+                      `This ends the current run at ${clamped} of ${length} days and starts again from day 1.`,
+                      'Start over',
+                      () => actions.onStartOver(habit.id),
+                    )}
                   />
                 </View>
                 {/* A hint under every label doubles the height of the row, which
