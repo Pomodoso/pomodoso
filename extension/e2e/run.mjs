@@ -117,6 +117,22 @@ async function testChallengeDecision(browser) {
     await sleep(4000);
     await tab.js(`(${SEED_HABIT_HISTORY})(20, [3], 21)`);
   });
+  // Today first: the card is pinned there by default, and a broken run you can
+  // only read is a dead end on the tab where you actually notice it.
+  const inToday = await popup.js(`JSON.stringify({
+    buttons: [...document.querySelectorAll('button')].map(b => b.innerText.replace(/\\n/g, ' / '))
+      .filter(t => /Keep going|Start over/.test(t)),
+    text: document.body.innerText,
+  })`);
+  const today = JSON.parse(inToday);
+  check('challenge: Today offers the decision too',
+    today.buttons.some(t => /Keep going/.test(t)) && today.buttons.some(t => /Start over/.test(t)),
+    JSON.stringify(today.buttons));
+  // Today's buttons are label-only, so the cost moves to a line of its own
+  // rather than being dropped.
+  check('challenge: Today still states what a skip costs',
+    /gives up the badge/.test(today.text));
+
   await popup.clickButton("/^Habits$/");
   await sleep(2500);
 
