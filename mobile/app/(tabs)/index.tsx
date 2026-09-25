@@ -43,7 +43,10 @@ export default function HomeScreen() {
   const { workspace, isAll } = useWorkspace();
   // intoToday: a task added from this screen belongs on this screen.
   const addTaskSheet = useAddTask({ intoToday: true });
-  const { habits, toggleHabit, incrementHabit, reorderHabits } = useHabits();
+  const {
+    habits, toggleHabit, incrementHabit, reorderHabits,
+    keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
+  } = useHabits();
   const { meetings } = useMeetings();
   const { settings } = useSettings();
   const {
@@ -339,7 +342,15 @@ export default function HomeScreen() {
         )}
 
         {settings.showChallengesInToday && (
-          <ChallengesSection habits={habits.filter(h => (h.challengeLengthDays ?? 0) > 0)} />
+          <ChallengesSection
+            habits={habits.filter(h => (h.challengeLengthDays ?? 0) > 0)}
+            actions={{
+              onKeepGoing: keepChallengeGoing,
+              onStartOver: startChallengeOver,
+              onKeepAsHabit: keepChallengeAsHabit,
+            }}
+            compact
+          />
         )}
 
         {settings.showMeetingsInToday && meetings.length > 0 && (
