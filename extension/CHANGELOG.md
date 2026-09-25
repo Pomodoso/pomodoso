@@ -1,6 +1,9 @@
 # Changelog
 
-## v1.3.9 (In progress)
+## v1.3.10 (In progress)
+
+
+## v1.3.9
 
 ### Habits
 
