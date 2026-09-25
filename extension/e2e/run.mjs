@@ -20,6 +20,7 @@ import { PopupClosedError, launch, openPopup, openTab, resetStorage, sleep } fro
 import {
   EXPORT_VIA_UI,
   READ_CHALLENGE_SKIPS,
+  READ_TODAY_DONE,
   READ_CHALLENGE_STARTS,
   READ_ACHIEVEMENTS,
   READ_CHALLENGE_COMPLETION,
@@ -133,6 +134,25 @@ async function testChallengeDecision(browser) {
   // rather than being dropped.
   check('challenge: Today still states what a skip costs',
     /gives up the badge/.test(today.text));
+
+  // The habit row flags the paused run even when the card is pinned below it:
+  // the card can be unpinned from Today, the row cannot.
+  check('challenge: the habit row says the run is paused',
+    await popup.js(`/Challenge paused/.test(document.body.innerText)`));
+
+  // And the tick still works. The tick is habit history — it feeds the ordinary
+  // streak and the reports — so an unanswered challenge must not block it.
+  const doneBefore = await popup.js(READ_TODAY_DONE);
+  const toggled = await popup.js(`(() => {
+    const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '✓');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  await sleep(2000);
+  const doneAfter = await popup.js(READ_TODAY_DONE);
+  check('challenge: the habit can still be ticked while the run is paused',
+    toggled === true && doneAfter === !doneBefore, `${doneBefore} -> ${doneAfter}`);
 
   await popup.clickButton("/^Habits$/");
   await sleep(2500);

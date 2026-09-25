@@ -1531,6 +1531,11 @@ export function HomeState({
                 onCounterChange={handleHabitCounterChange}
                 onToggle={handleHabitToggle}
                 onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
+                challengeViews={challengeViews}
+                // The row carries the buttons only when the Challenges section
+                // isn't below it; otherwise the same decision would be offered
+                // twice on one screen.
+                {...(showChallengesInToday ? {} : { challengeActions })}
               />
             )}
             {showChallengesInToday && challengeHabits.length > 0 && (
@@ -2037,6 +2042,7 @@ function TodayMeetingRow({ meeting, timezone, onStart, onSelect }: {
 
 function TodayHabits({
   habits, habitCounters, habitDone, weekStart, timezone, onCounterChange, onToggle, onReorder,
+  challengeViews, challengeActions,
 }: {
   habits: HabitDef[];
   habitCounters: Record<string, number>;
@@ -2046,6 +2052,11 @@ function TodayHabits({
   onCounterChange: (id: string, delta: number) => void;
   onToggle: (id: string) => void;
   onReorder: (orderedIds: string[]) => void;
+  challengeViews: Map<string, ChallengeView>;
+  /** Only passed when the Challenges section isn't also in Today. With both on
+   *  screen the same two buttons would sit twice within a hundred pixels, so
+   *  the row flags the run and the card below holds the decision. */
+  challengeActions?: ChallengeActions;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const dragGuard = useDragResizeGuard();
@@ -2077,26 +2088,74 @@ function TodayHabits({
           const count = habitCounters[habit.id] ?? 0;
           const checked = habitDone[habit.id] ?? false;
           const isDone = habit.kind === 'boolean' ? checked : count >= (habit.goal ?? 1);
+          // A run waiting on a decision can't complete, so it is worth saying
+          // here and not only on the challenge card — the card can be unpinned
+          // from Today, the habit row can't. Ticking still works: the tick is
+          // habit history, which feeds the ordinary streak and the reports, and
+          // an unanswered challenge has no business breaking those.
+          const run = challengeViews.get(habit.id);
+          const paused = run ? challengeNeedsDecision(run.progress) : false;
+          const skipsLeft = run ? challengeSkipsLeft(run.state) : 0;
+          const canKeepGoing = run ? challengeCanKeepGoing(run.state, run.progress.missedDays) : false;
           return (
             <SortableHabitRow
               key={habit.id}
               id={habit.id}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10,
+                display: 'flex', alignItems: paused ? 'flex-start' : 'center', gap: 10,
                 padding: '8px 12px',
                 borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
-                background: isDone ? 'var(--color-success-bg)' : 'transparent',
+                background: isDone
+                  ? 'var(--color-success-bg)'
+                  : paused ? 'var(--color-warning-bg)' : 'transparent',
               }}
             >
               <HabitIcon kind={habit.icon} size={24} />
-              <span style={{
-                flex: 1, fontSize: 13, fontWeight: 500,
-                color: isDone ? 'var(--color-success)' : 'var(--color-text)',
-                textDecoration: isDone && habit.kind === 'boolean' ? 'line-through' : 'none',
-                opacity: isDone && habit.kind === 'boolean' ? 0.7 : 1,
-              }}>
-                {habit.name}
-              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{
+                  fontSize: 13, fontWeight: 500,
+                  color: isDone ? 'var(--color-success)' : 'var(--color-text)',
+                  textDecoration: isDone && habit.kind === 'boolean' ? 'line-through' : 'none',
+                  opacity: isDone && habit.kind === 'boolean' ? 0.7 : 1,
+                }}>
+                  {habit.name}
+                </span>
+                {paused && (
+                  <div style={{ fontSize: 10, color: 'var(--color-warning)', fontWeight: 600, marginTop: 2 }}>
+                    ⚠ Challenge paused
+                  </div>
+                )}
+                {paused && challengeActions && (
+                  <>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      {canKeepGoing ? (
+                        <ChallengeAction
+                          tone="primary"
+                          label="Keep going"
+                          compact
+                          onClick={() => challengeActions.onKeepGoing(habit.id)}
+                        />
+                      ) : (
+                        <div style={{ flex: 1, fontSize: 10, color: 'var(--color-text-faint)', alignSelf: 'center', lineHeight: 1.4 }}>
+                          No skips left — this run has to start over.
+                        </div>
+                      )}
+                      <ChallengeAction
+                        tone={canKeepGoing ? 'quiet' : 'primary'}
+                        label="Start over"
+                        compact
+                        onClick={() => challengeActions.onStartOver(habit.id)}
+                      />
+                    </div>
+                    {canKeepGoing && (
+                      <div style={{ fontSize: 9, color: 'var(--color-text-faint)', marginTop: 4, lineHeight: 1.4 }}>
+                        {skipsLeft} skip{skipsLeft === 1 ? '' : 's'} left
+                        {run && challengeEarnsBadge(run.state) ? ' · gives up the badge' : ''}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
               {habit.kind === 'counter' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
