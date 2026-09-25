@@ -142,17 +142,25 @@ async function testChallengeDecision(browser) {
 
   // And the tick still works. The tick is habit history — it feeds the ordinary
   // streak and the reports — so an unanswered challenge must not block it.
-  const doneBefore = await popup.js(READ_TODAY_DONE);
-  const toggled = await popup.js(`(() => {
+  // Both directions, because the fixture leaves today already done: one click
+  // would only prove a paused habit can be *un*-ticked, which is not the claim.
+  const clickTick = `(() => {
     const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '✓');
     if (!b) return false;
     b.click();
     return true;
-  })()`);
+  })()`;
+  const doneBefore = await popup.js(READ_TODAY_DONE);
+  const clicked1 = await popup.js(clickTick);
+  await sleep(2000);
+  const doneMid = await popup.js(READ_TODAY_DONE);
+  const clicked2 = await popup.js(clickTick);
   await sleep(2000);
   const doneAfter = await popup.js(READ_TODAY_DONE);
-  check('challenge: the habit can still be ticked while the run is paused',
-    toggled === true && doneAfter === !doneBefore, `${doneBefore} -> ${doneAfter}`);
+  check('challenge: a paused habit can still be logged done and undone',
+    clicked1 === true && clicked2 === true
+      && doneMid === !doneBefore && doneAfter === doneBefore && doneAfter === true,
+    `${doneBefore} -> ${doneMid} -> ${doneAfter}`);
 
   await popup.clickButton("/^Habits$/");
   await sleep(2500);
@@ -183,6 +191,59 @@ async function testChallengeDecision(browser) {
     `${JSON.stringify(skipsBefore)} -> ${JSON.stringify(skipsAfter)}`);
   check("challenge: Today's card stops asking once the skip is spent",
     await popup.js(`!/You missed/.test(document.body.innerText)`));
+  await browser.send('Target.closeTarget', { targetId: popup.targetId });
+}
+
+/**
+ * With Challenges unpinned from Today, the habit row carries the decision.
+ *
+ * Its own test because spending the skip resolves the run: the pinned test
+ * presses the card's button, and one run cannot answer the same miss twice.
+ */
+async function testChallengeDecisionFromRow(browser) {
+  let popup = await seedThenOpenPopup(browser, async tab => {
+    await tab.clickButton('/Use template/');
+    await sleep(4000);
+    await tab.js(`(${SEED_HABIT_HISTORY})(20, [3], 21)`);
+  });
+
+  // Unpin through the pin itself rather than by writing storage — the storage
+  // key is an implementation detail and the pin is what a user presses.
+  await popup.clickButton("/^Habits$/");
+  await sleep(2500);
+  const pinned = await popup.js(`(() => {
+    const hdr = [...document.querySelectorAll('div')].find(d =>
+      /^Challenges/.test(d.textContent.trim()) && d.querySelector('button'));
+    const b = hdr && hdr.querySelector('button');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  check('challenge: the Challenges pin is on the Habits tab', pinned === true);
+
+  // Reopening lands on Today; clicking "Today" there would hit the Today/History
+  // sub-toggle on the Habits tab instead of the bottom nav.
+  await browser.send('Target.closeTarget', { targetId: popup.targetId });
+  await sleep(1000);
+  popup = await openPopup(browser);
+  await sleep(2500);
+
+  check('challenge: unpinning takes the card out of Today',
+    await popup.js(`!/CHALLENGES/.test(document.body.innerText)`));
+  check('challenge: the row carries the decision when the card is gone',
+    await popup.js(`/Challenge paused/.test(document.body.innerText)`)
+      && await popup.js(`[...document.querySelectorAll('button')].some(b => /^Keep going/.test(b.innerText.trim()))`));
+
+  const skipsBefore = await popup.js(READ_CHALLENGE_SKIPS);
+  await popup.clickButton('/^Keep going/');
+  await sleep(2500);
+  const skipsAfter = await popup.js(READ_CHALLENGE_SKIPS);
+  check('challenge: keeping going from the habit row spends a skip',
+    Array.isArray(skipsAfter)
+      && skipsAfter.reduce((a, b) => a + b, 0) === skipsBefore.reduce((a, b) => a + b, 0) + 1,
+    `${JSON.stringify(skipsBefore)} -> ${JSON.stringify(skipsAfter)}`);
+  check('challenge: the row stops flagging once the skip is spent',
+    await popup.js(`!/Challenge paused/.test(document.body.innerText)`));
   await browser.send('Target.closeTarget', { targetId: popup.targetId });
 }
 
@@ -356,6 +417,7 @@ const browser = await launch(EXTENSION_DIR);
 try {
   await run(testReorder, browser);
   await run(testChallengeDecision, browser);
+  await run(testChallengeDecisionFromRow, browser);
   await run(testCompletionAndAward, browser);
   await run(testChallengeStartIsPersisted, browser);
   await run(testBackupRoundTrip, browser);
