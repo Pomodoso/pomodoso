@@ -2,6 +2,10 @@
 
 ## v1.3.10 (In progress)
 
+### Habits
+
+- **A paused challenge says so on the habit itself** — A run waiting on a missed day can't finish until you answer it, and the only place that showed was the challenge card — which you can unpin from Today. The habit's own row in Today now flags it, and carries **Keep going** / **Start over** when the card isn't on screen. Ticking the habit still works while a run is paused: that's your streak and your reports, and an unanswered challenge has no business breaking them.
+
 
 ## v1.3.9
 

@@ -253,6 +253,25 @@ export const READ_CHALLENGE_STARTS = `new Promise((resolve) => {
   };
 })`;
 
+/** Whether the challenge habit is logged done for today. */
+export const READ_TODAY_DONE = `new Promise((resolve) => {
+  const req = indexedDB.open('pomodoso');
+  req.onerror = () => resolve('OPEN ERROR');
+  req.onsuccess = () => {
+    const db = req.result;
+    const tx = db.transaction(['habits', 'habitHistory'], 'readonly');
+    tx.objectStore('habits').getAll().onsuccess = (ev) => {
+      const habit = ev.target.result.find(h => h.challengeLengthDays);
+      if (!habit) { resolve('no challenge habit'); return; }
+      const today = new Date().toLocaleDateString('en-CA');
+      tx.objectStore('habitHistory').getAll().onsuccess = (e2) => {
+        const row = e2.target.result.find(r => r.habitId === habit.id && r.date === today);
+        resolve(Boolean(row && row.done));
+      };
+    };
+  };
+})`;
+
 /** The skips each running challenge has spent — what "keep going" writes. */
 export const READ_CHALLENGE_SKIPS = `new Promise((resolve) => {
   const req = indexedDB.open('pomodoso');
