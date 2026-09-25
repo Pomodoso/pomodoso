@@ -430,6 +430,12 @@ export function HomeState({
     })();
   }, []);
 
+  const challengeActions: ChallengeActions = useMemo(() => ({
+    onKeepGoing: handleChallengeKeepGoing,
+    onStartOver: handleChallengeStartOver,
+    onKeepAsHabit: handleChallengeKeepAsHabit,
+  }), [handleChallengeKeepGoing, handleChallengeStartOver, handleChallengeKeepAsHabit]);
+
   // Records a finish the moment the last day is logged. Done on the write path
   // rather than on render: a render-time write fires again on every re-render
   // and races itself, and this is the one moment the run actually changes.
@@ -1529,7 +1535,12 @@ export function HomeState({
             )}
             {showChallengesInToday && challengeHabits.length > 0 && (
               <div style={{ padding: '12px 14px 0' }}>
-                <ChallengesSection habits={challengeHabits} views={challengeViews} />
+                <ChallengesSection
+                  habits={challengeHabits}
+                  views={challengeViews}
+                  actions={challengeActions}
+                  compact
+                />
               </div>
             )}
             <TodayFooter
@@ -1602,11 +1613,7 @@ export function HomeState({
                   streaks={habitStreaks}
                   challengeViews={challengeViews}
                   achievements={achievements}
-                  challengeActions={{
-                    onKeepGoing: handleChallengeKeepGoing,
-                    onStartOver: handleChallengeStartOver,
-                    onKeepAsHabit: handleChallengeKeepAsHabit,
-                  }}
+                  challengeActions={challengeActions}
                   showChallengesInToday={showChallengesInToday}
                   onToggleShowChallengesInToday={() => setShowChallengesInToday(v => !v)}
                 />
@@ -4443,24 +4450,27 @@ export interface ChallengeActions {
   onKeepAsHabit: (habitId: string) => void;
 }
 
-function ChallengeAction({ label, hint, tone, onClick }: {
+function ChallengeAction({ label, hint, tone, compact, onClick }: {
   label: string;
   hint?: string;
   tone: 'primary' | 'quiet';
+  /** Today's copy of the card is a summary, so its buttons stay lighter than
+   *  the ones on the Habits tab. Same decisions, less weight on the screen. */
+  compact?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
       style={{
-        flex: 1, padding: '6px 8px', cursor: 'pointer',
+        flex: 1, padding: compact ? '4px 7px' : '6px 8px', cursor: 'pointer',
         borderRadius: 'var(--radius-sm)', lineHeight: 1.3,
         border: `1px solid ${tone === 'primary' ? 'var(--color-accent)' : 'var(--color-border)'}`,
         background: tone === 'primary' ? 'var(--color-accent)' : 'transparent',
         color: tone === 'primary' ? '#fff' : 'var(--color-text-muted)',
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: compact ? 10 : 11, fontWeight: 600 }}>{label}</div>
       {hint && (
         <div style={{ fontSize: 9, fontWeight: 400, opacity: 0.85, marginTop: 1 }}>{hint}</div>
       )}
@@ -4476,10 +4486,11 @@ function missedDaysLabel(dates: string[]): string {
   return `${dates.length} days`;
 }
 
-function ChallengeCard({ habit, view, actions }: {
+function ChallengeCard({ habit, view, actions, compact = false }: {
   habit: HabitDef;
   view: ChallengeView;
   actions?: ChallengeActions;
+  compact?: boolean;
 }) {
   const { state, progress } = view;
   const length = state.lengthDays;
@@ -4509,7 +4520,7 @@ function ChallengeCard({ habit, view, actions }: {
       background: complete ? 'var(--color-success-bg)' : 'var(--color-accent-bg, rgba(200,85,61,0.08))',
       border: `1px solid ${accent}`,
       borderRadius: 'var(--radius-md)',
-      padding: '12px 14px',
+      padding: compact ? '10px 12px' : '12px 14px',
       marginBottom: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -4550,9 +4561,9 @@ function ChallengeCard({ habit, view, actions }: {
       {/* Completed: the run is over, so offer a way out of it. Without this a
           finished card sits in Today forever with nothing to do about it. */}
       {complete && actions && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-          <ChallengeAction tone="primary" label="Go again" onClick={() => actions.onStartOver(habit.id)} />
-          <ChallengeAction tone="quiet" label="Keep as habit" onClick={() => actions.onKeepAsHabit(habit.id)} />
+        <div style={{ display: 'flex', gap: 6, marginTop: compact ? 8 : 10 }}>
+          <ChallengeAction tone="primary" label="Go again" compact={compact} onClick={() => actions.onStartOver(habit.id)} />
+          <ChallengeAction tone="quiet" label="Keep as habit" compact={compact} onClick={() => actions.onKeepAsHabit(habit.id)} />
         </div>
       )}
 
@@ -4560,28 +4571,44 @@ function ChallengeCard({ habit, view, actions }: {
           Spending a skip saves the run but forfeits the badge, so finding that
           out at day 21 would be the worst version of this. */}
       {!complete && needsDecision && actions && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-          {canKeepGoing ? (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginTop: compact ? 8 : 10 }}>
+            {canKeepGoing ? (
+              <ChallengeAction
+                tone="primary"
+                label="Keep going"
+                compact={compact}
+                {...(compact ? {} : {
+                  hint: earnsBadge
+                    ? `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left · gives up the badge`
+                    : `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left`,
+                })}
+                onClick={() => actions.onKeepGoing(habit.id)}
+              />
+            ) : (
+              <div style={{ flex: 1, fontSize: 10, color: 'var(--color-text-faint)', alignSelf: 'center', lineHeight: 1.4 }}>
+                No skips left — this run has to start over.
+              </div>
+            )}
             <ChallengeAction
-              tone="primary"
-              label="Keep going"
-              hint={earnsBadge
-                ? `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left · gives up the badge`
-                : `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left`}
-              onClick={() => actions.onKeepGoing(habit.id)}
+              tone={canKeepGoing ? 'quiet' : 'primary'}
+              label="Start over"
+              compact={compact}
+              {...(!compact && canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
+              onClick={() => actions.onStartOver(habit.id)}
             />
-          ) : (
-            <div style={{ flex: 1, fontSize: 10, color: 'var(--color-text-faint)', alignSelf: 'center', lineHeight: 1.4 }}>
-              No skips left — this run has to start over.
+          </div>
+          {/* A hint under every label doubles the height of the row, which is
+              exactly what Today's copy of the card can't afford — but what a
+              skip costs is the reason the question is asked at all, so it
+              moves to one line under the buttons rather than disappearing. */}
+          {compact && canKeepGoing && (
+            <div style={{ fontSize: 9, color: 'var(--color-text-faint)', marginTop: 4, lineHeight: 1.4 }}>
+              Keeping going: {skipsLeft} skip{skipsLeft === 1 ? '' : 's'} left
+              {earnsBadge ? ' · gives up the badge' : ''}
             </div>
           )}
-          <ChallengeAction
-            tone={canKeepGoing ? 'quiet' : 'primary'}
-            label="Start over"
-            {...(canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
-            onClick={() => actions.onStartOver(habit.id)}
-          />
-        </div>
+        </>
       )}
     </div>
   );
@@ -4591,12 +4618,13 @@ function ChallengeCard({ habit, view, actions }: {
 // an end — so they get their own titled block rather than floating above the
 // Habits header unlabelled. Rendered in both the Habits tab and (when pinned)
 // Today, hence the shared component.
-function ChallengesSection({ habits, views, actions, showInToday, onToggleShowInToday }: {
+function ChallengesSection({ habits, views, actions, compact = false, showInToday, onToggleShowInToday }: {
   habits: HabitDef[];
   views: Map<string, ChallengeView>;
-  /** Omitted on Today, where the cards are a read-only summary — the decisions
-   *  live on the Habits tab so one stray tap can't end a 20-day run. */
   actions?: ChallengeActions;
+  /** Today renders the same decisions in a lighter card: a broken run you can
+   *  only read is a dead end, and Today is where you notice it. */
+  compact?: boolean;
   showInToday?: boolean;
   onToggleShowInToday?: () => void;
 }) {
@@ -4626,7 +4654,7 @@ function ChallengesSection({ habits, views, actions, showInToday, onToggleShowIn
       {habits.map(h => {
         const view = views.get(h.id);
         return view ? (
-          <ChallengeCard key={h.id} habit={h} view={view} {...(actions ? { actions } : {})} />
+          <ChallengeCard key={h.id} habit={h} view={view} compact={compact} {...(actions ? { actions } : {})} />
         ) : null;
       })}
     </div>

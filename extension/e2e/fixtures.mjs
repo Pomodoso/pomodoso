@@ -253,6 +253,18 @@ export const READ_CHALLENGE_STARTS = `new Promise((resolve) => {
   };
 })`;
 
+/** The skips each running challenge has spent — what "keep going" writes. */
+export const READ_CHALLENGE_SKIPS = `new Promise((resolve) => {
+  const req = indexedDB.open('pomodoso');
+  req.onerror = () => resolve('OPEN ERROR');
+  req.onsuccess = () => {
+    const q = req.result.transaction('habits', 'readonly').objectStore('habits').getAll();
+    q.onsuccess = () => resolve(
+      q.result.filter(h => h.challengeLengthDays).map(h => (h.challengeSkippedDays ?? []).length)
+    );
+  };
+})`;
+
 /** Creates a habit with the challenge switched on, through the form. */
 export async function createChallengeHabit(popup, name) {
   if (!(await popup.clickButton('/Add/'))) throw new Error('no Add button on Habits');

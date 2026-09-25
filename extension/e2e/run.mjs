@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { PopupClosedError, launch, openPopup, openTab, resetStorage, sleep } from './driver.mjs';
 import {
   EXPORT_VIA_UI,
+  READ_CHALLENGE_SKIPS,
   READ_CHALLENGE_STARTS,
   READ_ACHIEVEMENTS,
   READ_CHALLENGE_COMPLETION,
@@ -117,6 +118,22 @@ async function testChallengeDecision(browser) {
     await sleep(4000);
     await tab.js(`(${SEED_HABIT_HISTORY})(20, [3], 21)`);
   });
+  // Today first: the card is pinned there by default, and a broken run you can
+  // only read is a dead end on the tab where you actually notice it.
+  const inToday = await popup.js(`JSON.stringify({
+    buttons: [...document.querySelectorAll('button')].map(b => b.innerText.replace(/\\n/g, ' / '))
+      .filter(t => /Keep going|Start over/.test(t)),
+    text: document.body.innerText,
+  })`);
+  const today = JSON.parse(inToday);
+  check('challenge: Today offers the decision too',
+    today.buttons.some(t => /Keep going/.test(t)) && today.buttons.some(t => /Start over/.test(t)),
+    JSON.stringify(today.buttons));
+  // Today's buttons are label-only, so the cost moves to a line of its own
+  // rather than being dropped.
+  check('challenge: Today still states what a skip costs',
+    /gives up the badge/.test(today.text));
+
   await popup.clickButton("/^Habits$/");
   await sleep(2500);
 
@@ -127,6 +144,25 @@ async function testChallengeDecision(browser) {
   check('challenge: a missed day offers keep-going and start-over',
     /Keep going/.test(buttons) && /Start over/.test(buttons), buttons);
   check('challenge: the skip cost is stated on the button', /gives up the badge/.test(buttons));
+
+  // Spending the skip happens last, because it resolves the run: every check
+  // above needs the decision still pending. Back on Today, because pressing
+  // the button there is the thing this has to prove — rendering it is not
+  // the same as it working.
+  await popup.clickButton("/^Today$/");
+  await sleep(2000);
+  const skipsBefore = await popup.js(READ_CHALLENGE_SKIPS);
+  check('challenge: Today\'s keep-going button is pressable',
+    await popup.clickButton('/^Keep going/') === true);
+  await sleep(2500);
+
+  const skipsAfter = await popup.js(READ_CHALLENGE_SKIPS);
+  check('challenge: keeping going from Today spends a skip on the run',
+    Array.isArray(skipsAfter)
+      && skipsAfter.reduce((a, b) => a + b, 0) === skipsBefore.reduce((a, b) => a + b, 0) + 1,
+    `${JSON.stringify(skipsBefore)} -> ${JSON.stringify(skipsAfter)}`);
+  check("challenge: Today's card stops asking once the skip is spent",
+    await popup.js(`!/You missed/.test(document.body.innerText)`));
   await browser.send('Target.closeTarget', { targetId: popup.targetId });
 }
 

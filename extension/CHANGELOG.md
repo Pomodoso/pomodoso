@@ -2,6 +2,10 @@
 
 ## v1.3.9 (In progress)
 
+### Habits
+
+- **A broken challenge can be answered from Today** — When a run needed a decision, Today showed the card and the missed day but no way to act on it: you had to remember to go to the Habits tab. **Keep going** and **Start over** are now on Today's card too, in a lighter version that still says what spending a skip costs.
+
 
 ## v1.3.8
 
