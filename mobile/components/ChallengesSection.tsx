@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   challengeCanKeepGoing,
@@ -21,6 +21,21 @@ export interface ChallengeActions {
   onKeepAsHabit: (habitId: string) => void;
 }
 
+/**
+ * Confirms the decisions that throw work away.
+ *
+ * These are one tap on a card you scroll past with a thumb, and starting over
+ * is up to three weeks of run — an accidental brush shouldn't be able to spend
+ * it. Keeping going isn't here on purpose: it costs a skip, but it is the
+ * choice that *saves* the run, so a confirmation would only be in the way.
+ */
+function confirmDecision(title: string, message: string, confirmLabel: string, onConfirm: () => void): void {
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+  ]);
+}
+
 /** "Tuesday", or "Tuesday and Wednesday", or "3 days". */
 function missedDaysLabel(dates: string[]): string {
   const dayName = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' });
@@ -29,14 +44,25 @@ function missedDaysLabel(dates: string[]): string {
   return `${dates.length} days`;
 }
 
-function CardAction({ label, hint, tone, onPress }: {
+function CardAction({ label, hint, tone, compact, onPress }: {
   label: string;
   hint?: string;
   tone: 'primary' | 'quiet';
+  /** Home's copy of the card is a summary, so its buttons stay lighter than
+   *  the ones on the Habits tab. Same decisions, less weight on the screen. */
+  compact?: boolean;
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.action, tone === 'primary' && styles.actionPrimary]} onPress={onPress}>
+    <Pressable
+      style={[styles.action, compact && styles.actionCompact, tone === 'primary' && styles.actionPrimary]}
+      // A single-line compact button draws about 34pt tall, under the 44pt a
+      // thumb needs. The card can't afford the height, so the touchable area
+      // grows past the border instead of the button doing it. Vertical only:
+      // these sit side by side, and horizontal slop would have them overlap.
+      hitSlop={compact ? { top: 6, bottom: 6 } : undefined}
+      onPress={onPress}
+    >
       <Text style={[styles.actionText, tone === 'primary' && styles.actionTextPrimary]}>{label}</Text>
       {hint && (
         <Text style={[styles.actionHint, tone === 'primary' && styles.actionHintPrimary]}>{hint}</Text>
@@ -47,9 +73,10 @@ function CardAction({ label, hint, tone, onPress }: {
 
 interface ChallengesSectionProps {
   habits: HabitWithProgress[];
-  /** Omitted on Home, where the cards are a read-only summary — the decisions
-   *  live on the Habits tab so one stray tap can't end a 20-day run. */
   actions?: ChallengeActions;
+  /** Home renders the same decisions in a lighter card: a broken run you can
+   *  only read is a dead end, and Home is where you notice it. */
+  compact?: boolean;
   /** Renders the "Show in Today" pin. Omitted on Home, where the pin lives on
    *  the Habits tab (same arrangement as the habits and meetings sections). */
   showInToday?: boolean;
@@ -64,7 +91,7 @@ interface ChallengesSectionProps {
  * a finished 21-day run is a result, and hiding it the day after it completes
  * is exactly when you least want it gone.
  */
-export function ChallengesSection({ habits, actions, showInToday, onToggleShowInToday }: ChallengesSectionProps) {
+export function ChallengesSection({ habits, actions, compact = false, showInToday, onToggleShowInToday }: ChallengesSectionProps) {
   if (habits.length === 0) return null;
   const completed = habits.filter(h => h.challenge?.progress.complete).length;
 
@@ -99,7 +126,7 @@ export function ChallengesSection({ habits, actions, showInToday, onToggleShowIn
         const skipsLeft = challengeSkipsLeft(run.state);
         const earnsBadge = challengeEarnsBadge(run.state);
         return (
-          <View key={habit.id} style={[styles.card, complete && styles.cardComplete]}>
+          <View key={habit.id} style={[styles.card, compact && styles.cardCompact, complete && styles.cardComplete]}>
             <View style={styles.titleRow}>
               <Ionicons
                 name={habit.icon as ComponentProps<typeof Ionicons>['name']}
@@ -131,33 +158,65 @@ export function ChallengesSection({ habits, actions, showInToday, onToggleShowIn
             </Text>
 
             {complete && actions && (
-              <View style={styles.actionRow}>
-                <CardAction tone="primary" label="Go again" onPress={() => actions.onStartOver(habit.id)} />
-                <CardAction tone="quiet" label="Keep as habit" onPress={() => actions.onKeepAsHabit(habit.id)} />
+              <View style={[styles.actionRow, compact && styles.actionRowCompact]}>
+                <CardAction tone="primary" label="Go again" compact={compact} onPress={() => actions.onStartOver(habit.id)} />
+                <CardAction
+                  tone="quiet"
+                  label="Keep as habit"
+                  compact={compact}
+                  onPress={() => confirmDecision(
+                    'Keep as habit?',
+                    `This drops the challenge. ${habit.name} carries on as an ordinary habit with its streak.`,
+                    'Keep as habit',
+                    () => actions.onKeepAsHabit(habit.id),
+                  )}
+                />
               </View>
             )}
 
             {!complete && needsDecision && actions && (
-              <View style={styles.actionRow}>
-                {canKeepGoing ? (
+              <>
+                <View style={[styles.actionRow, compact && styles.actionRowCompact]}>
+                  {canKeepGoing ? (
+                    <CardAction
+                      tone="primary"
+                      label="Keep going"
+                      compact={compact}
+                      {...(compact ? {} : {
+                        hint: earnsBadge
+                          ? `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left · gives up the badge`
+                          : `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left`,
+                      })}
+                      onPress={() => actions.onKeepGoing(habit.id)}
+                    />
+                  ) : (
+                    <Text style={styles.noSkips}>No skips left — this run has to start over.</Text>
+                  )}
                   <CardAction
-                    tone="primary"
-                    label="Keep going"
-                    hint={earnsBadge
-                      ? `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left · gives up the badge`
-                      : `${skipsLeft} skip${skipsLeft === 1 ? '' : 's'} left`}
-                    onPress={() => actions.onKeepGoing(habit.id)}
+                    tone={canKeepGoing ? 'quiet' : 'primary'}
+                    label="Start over"
+                    compact={compact}
+                    {...(!compact && canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
+                    onPress={() => confirmDecision(
+                      'Start over?',
+                      `This ends the current run at ${clamped} of ${length} days and starts again from day 1.`,
+                      'Start over',
+                      () => actions.onStartOver(habit.id),
+                    )}
                   />
-                ) : (
-                  <Text style={styles.noSkips}>No skips left — this run has to start over.</Text>
+                </View>
+                {/* A hint under every label doubles the height of the row, which
+                    is exactly what Home's copy of the card can't afford — but
+                    what a skip costs is the reason the question is asked at all,
+                    so it moves to one line under the buttons rather than
+                    disappearing. */}
+                {compact && canKeepGoing && (
+                  <Text style={styles.costLine}>
+                    Keeping going: {skipsLeft} skip{skipsLeft === 1 ? '' : 's'} left
+                    {earnsBadge ? ' · gives up the badge' : ''}
+                  </Text>
                 )}
-                <CardAction
-                  tone={canKeepGoing ? 'quiet' : 'primary'}
-                  label="Start over"
-                  {...(canKeepGoing && earnsBadge ? { hint: 'keeps the badge in play' } : {})}
-                  onPress={() => actions.onStartOver(habit.id)}
-                />
-              </View>
+              </>
             )}
           </View>
         );
@@ -203,6 +262,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
+  cardCompact: { padding: 12 },
   cardComplete: { backgroundColor: colors.successSoft, borderColor: colors.success },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   title: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
@@ -212,14 +272,19 @@ const styles = StyleSheet.create({
   progressFillComplete: { backgroundColor: colors.success },
   meta: { fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 6 },
   actionRow: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  actionRowCompact: { marginTop: 8 },
   action: {
     flex: 1, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8,
     borderWidth: 1, borderColor: colors.border, alignItems: 'center',
   },
+  // Compact means one line of label instead of two, not a smaller tap target —
+  // so the padding goes up as the text comes out. This is a finger, not a cursor.
+  actionCompact: { paddingVertical: 10, paddingHorizontal: 7 },
   actionPrimary: { borderColor: colors.accent, backgroundColor: colors.accent },
   actionText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
   actionTextPrimary: { color: '#fff' },
   actionHint: { fontSize: 9, color: colors.textTertiary, marginTop: 1, textAlign: 'center' },
   actionHintPrimary: { color: '#fff', opacity: 0.85 },
   noSkips: { flex: 1, fontSize: 10, color: colors.textTertiary, alignSelf: 'center', lineHeight: 14 },
+  costLine: { fontSize: 10, color: colors.textTertiary, marginTop: 4, lineHeight: 14 },
 });

@@ -370,7 +370,10 @@ export function useHabits() {
   function startChallengeOver(id: string): void {
     const habit = merged.find(h => h.id === id);
     if (!habit?.challenge) return;
-    writeChallenge(id, challengeStartOver(habit.challenge.state, today));
+    // The date is read now rather than taken from the render that drew the
+    // button: a confirmation can sit open across midnight, and a replacement
+    // run that starts yesterday has a missed day before you could have done it.
+    writeChallenge(id, challengeStartOver(habit.challenge.state, todayStr()));
   }
 
   /** Drops the challenge framing; the habit carries on with its ordinary streak. */
