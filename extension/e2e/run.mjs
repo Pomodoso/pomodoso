@@ -258,8 +258,38 @@ async function testChallengeDecisionFromRow(browser) {
     `${JSON.stringify(skipsBefore)} -> ${JSON.stringify(skipsAfter)}`);
   check('challenge: the row stops flagging once the skip is spent',
     await popup.js(`!/Challenge paused/.test(document.body.innerText)`));
-  check('challenge: answering the miss unlocks the tick',
-    await popup.js(`[...document.querySelectorAll('button')].some(b => b.innerText.trim() === '✓' && !b.disabled)`));
+  // The challenge habit's own tick, not any tick on the page: the template has
+  // other boolean habits whose ticks were never locked.
+  const challengeName = await popup.js(`new Promise((resolve) => {
+    const req = indexedDB.open('pomodoso');
+    req.onsuccess = () => {
+      req.result.transaction(['habits'], 'readonly').objectStore('habits').getAll().onsuccess = (ev) => {
+        const h = ev.target.result.find(x => x.challengeLengthDays);
+        resolve(h ? h.name : null);
+      };
+    };
+  })`);
+  const clickChallengeTick = name => `(() => {
+    const ticks = [...document.querySelectorAll('button')].filter(b => b.innerText.trim() === '✓');
+    // A tick's row is its widest ancestor that holds no other tick.
+    const rowOf = b => {
+      let el = b;
+      while (el.parentElement && ticks.filter(t => el.parentElement.contains(t)).length === 1) el = el.parentElement;
+      return el;
+    };
+    const tick = ticks.find(b => rowOf(b).innerText.includes(${JSON.stringify(name)}));
+    if (!tick) return 'no tick';
+    if (tick.disabled) return 'disabled';
+    tick.click();
+    return 'clicked';
+  })()`;
+  const doneBeforeUnlock = await popup.js(READ_TODAY_DONE);
+  const unlockClick = await popup.js(clickChallengeTick(String(challengeName)));
+  await sleep(2000);
+  const doneAfterUnlock = await popup.js(READ_TODAY_DONE);
+  check('challenge: answering the miss unlocks the challenge habit\'s own tick',
+    unlockClick === 'clicked' && doneAfterUnlock === !doneBeforeUnlock,
+    `${challengeName}: ${unlockClick}, ${doneBeforeUnlock} -> ${doneAfterUnlock}`);
   await browser.send('Target.closeTarget', { targetId: popup.targetId });
 }
 
