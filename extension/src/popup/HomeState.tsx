@@ -629,7 +629,19 @@ export function HomeState({
     if (r.done != null) habitDone[r.habitId] = r.done;
   }
 
+  // A run waiting on a missed day is locked until it's answered: logging today
+  // on top of an unanswered miss would let the run keep advancing as if the
+  // gap weren't there. Guarded here so every surface that ticks inherits it.
+  const pausedHabitIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [habitId, view] of challengeViews) {
+      if (challengeNeedsDecision(view.progress)) ids.add(habitId);
+    }
+    return ids;
+  }, [challengeViews]);
+
   const handleHabitCounterChange = useCallback(async (id: string, delta: number) => {
+    if (pausedHabitIds.has(id)) return;
     const habit = habits.find(h => h.id === id);
     const goal = habit?.goal;
     const existing = await db.habitHistory.get([id, today]);
@@ -646,9 +658,10 @@ export function HomeState({
     });
     await recordCompletionIfFinished(id);
     triggerSync();
-  }, [habits, today, recordCompletionIfFinished]);
+  }, [habits, today, recordCompletionIfFinished, pausedHabitIds]);
 
   const handleHabitToggle = useCallback(async (id: string) => {
+    if (pausedHabitIds.has(id)) return;
     const existing = await db.habitHistory.get([id, today]);
     const nowDone = !(existing?.done ?? false);
     await db.habitHistory.put({
@@ -661,7 +674,7 @@ export function HomeState({
     });
     await recordCompletionIfFinished(id);
     triggerSync();
-  }, [today, recordCompletionIfFinished]);
+  }, [today, recordCompletionIfFinished, pausedHabitIds]);
 
   const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
   const [dismissedTicketId, setDismissedTicketId] = useState<string | null>(null);
@@ -2090,9 +2103,8 @@ function TodayHabits({
           const isDone = habit.kind === 'boolean' ? checked : count >= (habit.goal ?? 1);
           // A run waiting on a decision can't complete, so it is worth saying
           // here and not only on the challenge card — the card can be unpinned
-          // from Today, the habit row can't. Ticking still works: the tick is
-          // habit history, which feeds the ordinary streak and the reports, and
-          // an unanswered challenge has no business breaking those.
+          // from Today, the habit row can't. The tick is locked until the miss
+          // is answered (HomeState's handlers enforce it; this just shows it).
           const run = challengeViews.get(habit.id);
           const paused = run ? challengeNeedsDecision(run.progress) : false;
           const skipsLeft = run ? challengeSkipsLeft(run.state) : 0;
@@ -2160,8 +2172,9 @@ function TodayHabits({
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <button
+                      disabled={paused}
                       onClick={() => onCounterChange(habit.id, -(habit.timeUnit ? (habit.unitAmount || 60) : 1))}
-                      style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >−</button>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, minWidth: habit.timeUnit ? 52 : 28, textAlign: 'center' }}>
                       {habit.timeUnit
@@ -2169,8 +2182,9 @@ function TodayHabits({
                         : <>{count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span></>}
                     </span>
                     <button
+                      disabled={paused}
                       onClick={() => onCounterChange(habit.id, habit.timeUnit ? (habit.unitAmount || 60) : 1)}
-                      style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >+</button>
                   </div>
                   {!habit.timeUnit && habit.unit && habit.unitAmount && (
@@ -2187,9 +2201,11 @@ function TodayHabits({
                     </span>
                   )}
                   <button
+                    disabled={paused}
+                    title={paused ? 'Answer the challenge first' : undefined}
                     onClick={() => onToggle(habit.id)}
                     style={{
-                      width: 24, height: 24, borderRadius: 5, cursor: 'pointer',
+                      width: 24, height: 24, borderRadius: 5, ...lockedStyle(paused),
                       border: checked ? '1.5px solid var(--color-success)' : '1.5px solid var(--color-border-strong)',
                       background: checked ? 'var(--color-success)' : 'var(--color-bg)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2206,6 +2222,12 @@ function TodayHabits({
       </div>
     </div>
   );
+}
+
+// Habit controls while a challenge run is paused: still visible, so the row
+// keeps its shape and today's value, but plainly not pressable.
+function lockedStyle(locked: boolean): React.CSSProperties {
+  return locked ? { cursor: 'not-allowed', opacity: 0.4 } : { cursor: 'pointer' };
 }
 
 // Habit rows carry their own row chrome (separator border, done-state tint), so
@@ -4936,10 +4958,12 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
                 const isDone = habit.kind === 'boolean'
                   ? (habitDone[habit.id] ?? false)
                   : (habitCounters[habit.id] ?? 0) >= (habit.goal ?? 1);
+                const run = challengeViews.get(habit.id);
                 return (
                   <SortableHabitCard key={habit.id} id={habit.id}>
                     <HabitRow
                       habit={habit}
+                      paused={run ? challengeNeedsDecision(run.progress) : false}
                       count={habitCounters[habit.id] ?? 0}
                       checked={habitDone[habit.id] ?? false}
                       isDone={isDone}
@@ -5006,8 +5030,11 @@ function SortableHabitCard({ id, children }: { id: string; children: React.React
   );
 }
 
-function HabitRow({ habit, count, checked, isDone, readOnly, streakLabel, onCounterChange, onToggle, onEdit, onDelete }: {
+function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, streakLabel, onCounterChange, onToggle, onEdit, onDelete }: {
   habit: HabitDef;
+  /** A challenge run waiting on a missed day: flagged, and the tick is locked
+   *  until the Challenges card above is answered. */
+  paused?: boolean;
   count: number;
   checked: boolean;
   isDone: boolean;
@@ -5025,7 +5052,9 @@ function HabitRow({ habit, count, checked, isDone, readOnly, streakLabel, onCoun
       position: 'relative',
       display: 'grid', gridTemplateColumns: '32px 1fr auto', gap: 12,
       alignItems: 'center', padding: '10px 12px',
-      background: !readOnly && isDone ? 'var(--color-success-bg)' : 'var(--color-surface)',
+      background: !readOnly && isDone
+        ? 'var(--color-success-bg)'
+        : paused ? 'var(--color-warning-bg)' : 'var(--color-surface)',
       border: `1px solid ${!readOnly && isDone ? 'var(--color-success-bg)' : 'var(--color-border)'}`,
       borderRadius: 'var(--radius-md)',
       opacity: readOnly ? 0.6 : 1,
@@ -5088,18 +5117,23 @@ function HabitRow({ habit, count, checked, isDone, readOnly, streakLabel, onCoun
             </span>
           )}
         </div>
+        {paused && (
+          <div style={{ fontSize: 10, color: 'var(--color-warning)', fontWeight: 600, marginTop: 2 }}>
+            ⚠ Challenge paused
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {readOnly ? null : habit.kind === 'counter' ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <button onClick={() => onCounterChange(-(habit.timeUnit ? (habit.unitAmount || 60) : 1))} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>−</button>
+              <button disabled={paused} onClick={() => onCounterChange(-(habit.timeUnit ? (habit.unitAmount || 60) : 1))} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>−</button>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14, minWidth: habit.timeUnit ? 60 : 32, textAlign: 'center' }}>
                 {habit.timeUnit
                   ? <>{fmtHabitTime(count)}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{fmtHabitTime(habit.goal ?? 0)}</span></>
                   : <>{count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span></>}
               </div>
-              <button onClick={() => onCounterChange(habit.timeUnit ? (habit.unitAmount || 60) : 1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>+</button>
+              <button disabled={paused} onClick={() => onCounterChange(habit.timeUnit ? (habit.unitAmount || 60) : 1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>+</button>
             </div>
             {!habit.timeUnit && habit.unit && habit.unitAmount && (
               <span style={{ fontSize: 10, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
@@ -5114,11 +5148,11 @@ function HabitRow({ habit, count, checked, isDone, readOnly, streakLabel, onCoun
                 {habit.unitAmount}{habit.unit}
               </span>
             )}
-            <button onClick={onToggle} style={{
+            <button disabled={paused} title={paused ? 'Answer the challenge first' : undefined} onClick={onToggle} style={{
               width: 26, height: 26, borderRadius: 5,
               border: checked ? '1.5px solid var(--color-success)' : '1.5px solid var(--color-border-strong)',
               background: checked ? 'var(--color-success)' : 'var(--color-bg)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              ...lockedStyle(paused), display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 14, color: checked ? '#fff' : 'transparent',
             }}>✓</button>
           </div>

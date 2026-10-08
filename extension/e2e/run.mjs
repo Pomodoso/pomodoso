@@ -140,27 +140,22 @@ async function testChallengeDecision(browser) {
   check('challenge: the habit row says the run is paused',
     await popup.js(`/Challenge paused/.test(document.body.innerText)`));
 
-  // And the tick still works. The tick is habit history — it feeds the ordinary
-  // streak and the reports — so an unanswered challenge must not block it.
-  // Both directions, because the fixture leaves today already done: one click
-  // would only prove a paused habit can be *un*-ticked, which is not the claim.
+  // And the tick is locked until the miss is answered: logging on top of an
+  // unanswered gap would let the run advance as if it weren't there.
   const clickTick = `(() => {
     const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '✓');
-    if (!b) return false;
+    if (!b) return null;
+    const disabled = b.disabled;
     b.click();
-    return true;
+    return disabled;
   })()`;
   const doneBefore = await popup.js(READ_TODAY_DONE);
-  const clicked1 = await popup.js(clickTick);
-  await sleep(2000);
-  const doneMid = await popup.js(READ_TODAY_DONE);
-  const clicked2 = await popup.js(clickTick);
+  const tickDisabled = await popup.js(clickTick);
   await sleep(2000);
   const doneAfter = await popup.js(READ_TODAY_DONE);
-  check('challenge: a paused habit can still be logged done and undone',
-    clicked1 === true && clicked2 === true
-      && doneMid === !doneBefore && doneAfter === doneBefore && doneAfter === true,
-    `${doneBefore} -> ${doneMid} -> ${doneAfter}`);
+  check('challenge: a paused habit cannot be ticked from Today',
+    tickDisabled === true && doneAfter === doneBefore,
+    `disabled=${tickDisabled} ${doneBefore} -> ${doneAfter}`);
 
   await popup.clickButton("/^Habits$/");
   await sleep(2500);
@@ -172,6 +167,25 @@ async function testChallengeDecision(browser) {
   check('challenge: a missed day offers keep-going and start-over',
     /Keep going/.test(buttons) && /Start over/.test(buttons), buttons);
   check('challenge: the skip cost is stated on the button', /gives up the badge/.test(buttons));
+  check('challenge: the Habits tab flags the paused habit too',
+    await popup.js(`/Challenge paused/.test(document.body.innerText)`));
+  const habitsTabLock = await popup.js(`(() => {
+      const ticks = [...document.querySelectorAll('button')].filter(b => b.innerText.trim() === '✓');
+      // A tick's row is its widest ancestor that holds no other tick.
+      const rowOf = b => {
+        let el = b;
+        while (el.parentElement && ticks.filter(t => el.parentElement.contains(t)).length === 1) el = el.parentElement;
+        return el;
+      };
+      const paused = ticks.filter(b => /Challenge paused/.test(rowOf(b).innerText));
+      // Only the paused habit's tick: the template may have no other boolean
+      // habit to compare against. The enabled side is checked once the miss is
+      // answered, below.
+      return paused.length > 0 && paused.every(b => b.disabled)
+        || JSON.stringify(ticks.map(b => [b.disabled, rowOf(b).innerText.slice(0, 60)]));
+    })()`);
+  check('challenge: a paused habit cannot be ticked from the Habits tab',
+    habitsTabLock === true, String(habitsTabLock));
 
   // Spending the skip happens last, because it resolves the run: every check
   // above needs the decision still pending. Back on Today, because pressing
@@ -244,6 +258,38 @@ async function testChallengeDecisionFromRow(browser) {
     `${JSON.stringify(skipsBefore)} -> ${JSON.stringify(skipsAfter)}`);
   check('challenge: the row stops flagging once the skip is spent',
     await popup.js(`!/Challenge paused/.test(document.body.innerText)`));
+  // The challenge habit's own tick, not any tick on the page: the template has
+  // other boolean habits whose ticks were never locked.
+  const challengeName = await popup.js(`new Promise((resolve) => {
+    const req = indexedDB.open('pomodoso');
+    req.onsuccess = () => {
+      req.result.transaction(['habits'], 'readonly').objectStore('habits').getAll().onsuccess = (ev) => {
+        const h = ev.target.result.find(x => x.challengeLengthDays);
+        resolve(h ? h.name : null);
+      };
+    };
+  })`);
+  const clickChallengeTick = name => `(() => {
+    const ticks = [...document.querySelectorAll('button')].filter(b => b.innerText.trim() === '✓');
+    // A tick's row is its widest ancestor that holds no other tick.
+    const rowOf = b => {
+      let el = b;
+      while (el.parentElement && ticks.filter(t => el.parentElement.contains(t)).length === 1) el = el.parentElement;
+      return el;
+    };
+    const tick = ticks.find(b => rowOf(b).innerText.includes(${JSON.stringify(name)}));
+    if (!tick) return 'no tick';
+    if (tick.disabled) return 'disabled';
+    tick.click();
+    return 'clicked';
+  })()`;
+  const doneBeforeUnlock = await popup.js(READ_TODAY_DONE);
+  const unlockClick = await popup.js(clickChallengeTick(String(challengeName)));
+  await sleep(2000);
+  const doneAfterUnlock = await popup.js(READ_TODAY_DONE);
+  check('challenge: answering the miss unlocks the challenge habit\'s own tick',
+    unlockClick === 'clicked' && doneAfterUnlock === !doneBeforeUnlock,
+    `${challengeName}: ${unlockClick}, ${doneBeforeUnlock} -> ${doneAfterUnlock}`);
   await browser.send('Target.closeTarget', { targetId: popup.targetId });
 }
 
