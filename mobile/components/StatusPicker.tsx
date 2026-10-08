@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { TaskStatusOption } from '@pomodoso/types';
 
@@ -27,15 +27,19 @@ export function StatusPicker({ visible, taskTitle, options, current, onPick, onC
           )}
           <Text style={styles.prompt}>Set status</Text>
 
-          {options.map(opt => (
-            <Pressable key={opt.statusId ?? opt.base} style={styles.option} onPress={() => onPick(opt)}>
-              <View style={[styles.dot, { backgroundColor: STATUS_DOT_COLOR[opt.base] }]} />
-              <Text style={styles.optionLabel}>{opt.label}</Text>
-              {current?.base === opt.base && current.statusId === opt.statusId && (
-                <Ionicons name="checkmark" size={17} color={colors.accent} />
-              )}
-            </Pressable>
-          ))}
+          {/* Bounded and scrollable: custom statuses make the list open-ended,
+              and an unbounded sheet pushes choices off the screen. */}
+          <ScrollView style={styles.list} bounces={false}>
+            {options.map(opt => (
+              <Pressable key={opt.statusId ?? opt.base} style={styles.option} onPress={() => onPick(opt)}>
+                <View style={[styles.dot, { backgroundColor: STATUS_DOT_COLOR[opt.base] }]} />
+                <Text style={styles.optionLabel}>{opt.label}</Text>
+                {current?.base === opt.base && current.statusId === opt.statusId && (
+                  <Ionicons name="checkmark" size={17} color={colors.accent} />
+                )}
+              </Pressable>
+            ))}
+          </ScrollView>
 
           <Pressable style={styles.cancel} onPress={onCancel}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -55,6 +59,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
+  list: { maxHeight: 420 },
   title: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 4 },
   prompt: {
     fontSize: 12,

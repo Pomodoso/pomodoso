@@ -186,6 +186,8 @@ export function useTasks() {
         ticketRef: null,
         meta: 'Not started',
         status: 'todo',
+        // Stands in for Todo when the user has hidden it.
+        statusId: statusIdForSystemChange('todo', null, settingsValue.taskStatuses),
         projectId,
         isPriority: false,
         isToday: intoToday,
@@ -236,7 +238,9 @@ export function useTasks() {
     // the recurring or one-off path handled it above, but only for 'done' —
     // 'cancelled' never gets a sound in the extension either.
     if (status === 'done') playSound('task-done', settingsValue.soundSettings);
-    autoSortAfterStatus(id, status);
+    // Only when the built-in status moves: switching between two custom
+    // statuses on the same base must not undo a manual order.
+    if (current?.status !== status) autoSortAfterStatus(id, status);
     triggerSync();
   }
 

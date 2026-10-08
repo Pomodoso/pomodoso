@@ -7,6 +7,7 @@ import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 import { ReportModal } from '../../components/ReportModal.tsx';
+import type { TaskStatusConfig } from '@pomodoso/types';
 import { customStatusLabel, useTaskStatuses } from '../../lib/useTaskStatuses.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -222,8 +223,7 @@ function WorkspaceBadge({ task }: { task: TodayTask }) {
   );
 }
 
-function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; index: number; showWorkspace: boolean; onOpen: (id: string) => void }) {
-  const statusConfig = useTaskStatuses();
+function TaskRow({ task, index, showWorkspace, statusConfig, onOpen }: { task: TodayTask; index: number; showWorkspace: boolean; statusConfig: TaskStatusConfig; onOpen: (id: string) => void }) {
   return (
     <div className="pomo-priority-item" key={task.id} onClick={() => onOpen(task.id)} style={{ cursor: 'pointer' }}>
       <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
@@ -271,6 +271,8 @@ function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; inde
 
 function TodayTasksCard({ priorities, tasks, showWorkspace, onOpen }: { priorities: TodayTask[]; tasks: TodayTask[]; showWorkspace: boolean; onOpen: (id: string) => void }) {
   const allTasks = [...priorities, ...tasks];
+  // Once per card, not per row: every row needs the same definitions.
+  const statusConfig = useTaskStatuses();
   const doneCount = allTasks.filter(t => t.status === 'done').length;
   // Recurring tasks are grouped at the end (done ones sink to the bottom of the
   // group); regular priorities/tasks keep their sections above.
@@ -304,19 +306,19 @@ function TodayTasksCard({ priorities, tasks, showWorkspace, onOpen }: { prioriti
       </div>
       <div className="pomo-priority-list">
         {regularPriorities.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} statusConfig={statusConfig} onOpen={onOpen} />
         ))}
         {regularPriorities.length > 0 && regularTasks.length > 0 && (
           <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
         )}
         {regularTasks.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} statusConfig={statusConfig} onOpen={onOpen} />
         ))}
         {recurringTasks.length > 0 && (regularPriorities.length > 0 || regularTasks.length > 0) && (
           <div style={{ height: 1, background: 'var(--border)', margin: '8px 0' }} />
         )}
         {recurringTasks.map((task, i) => (
-          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} onOpen={onOpen} />
+          <TaskRow key={task.id} task={task} index={i} showWorkspace={showWorkspace} statusConfig={statusConfig} onOpen={onOpen} />
         ))}
       </div>
     </div>

@@ -687,7 +687,9 @@ function AppContent() {
     // leaves Priorities by being completed — only its place within them moves.
     // Applied to whichever workspace's order actually holds the task, so it
     // works the same from the Today list, the task detail, or "all".
-    if (updates.status !== undefined && autoSortByStatus) {
+    // Only when the built-in status moves: switching between two custom
+    // statuses on the same base (In review → QA) must not undo a manual order.
+    if (updates.status !== undefined && updates.status !== allTasks[id]?.status && autoSortByStatus) {
       const status = updates.status;
       await db.transaction('rw', [db.taskOrders], async () => {
         for (const order of await db.taskOrders.toArray()) {
@@ -989,13 +991,15 @@ function AppContent() {
       projectId: null,
       workspaceId: activeWsId === 'all' ? null : activeWsId,
       status: 'todo',
+      // Stands in for Todo when the user has hidden it.
+      statusId: statusIdForSystemChange('todo', null, taskStatusConfig),
       links: [{ url: ticket.external_url, label: ticket.external_id || ticket.title }],
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
     triggerSync();
     setSelectedTask(newTask);
-  }, [allTasks, activeWsId]);
+  }, [allTasks, activeWsId, taskStatusConfig]);
 
   const createFollowup = useCallback(async (parentId: string) => {
     const parent = allTasks[parentId];
@@ -1006,13 +1010,15 @@ function AppContent() {
       projectId: parent?.projectId ?? null,
       workspaceId: parent?.workspaceId ?? null,
       status: 'todo',
+      // Stands in for Todo when the user has hidden it.
+      statusId: statusIdForSystemChange('todo', null, taskStatusConfig),
       parentId,
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
     triggerSync();
     setSelectedTask(newTask);
-  }, [allTasks]);
+  }, [allTasks, taskStatusConfig]);
 
   const createTask = useCallback(async (title: string) => {
     const newTask: TaskRow = {
@@ -1022,12 +1028,14 @@ function AppContent() {
       projectId: null,
       workspaceId: activeWsId === 'all' ? null : activeWsId,
       status: 'todo',
+      // Stands in for Todo when the user has hidden it.
+      statusId: statusIdForSystemChange('todo', null, taskStatusConfig),
       updatedAt: now(),
     };
     await db.tasks.put(newTask);
     triggerSync();
     setSelectedTask(newTask);
-  }, [activeWsId]);
+  }, [activeWsId, taskStatusConfig]);
 
   const TITLE_MAX = 128;
 
@@ -1040,6 +1048,8 @@ function AppContent() {
       projectId: null,
       workspaceId: activeWsId === 'all' ? null : activeWsId,
       status: 'todo',
+      // Stands in for Todo when the user has hidden it.
+      statusId: statusIdForSystemChange('todo', null, taskStatusConfig),
       updatedAt: now(),
       ...(truncated ? { description: text } : {}),
     };
@@ -1047,7 +1057,7 @@ function AppContent() {
     triggerSync();
     setSelectedTask(newTask);
     clearSelection();
-  }, [activeWsId, clearSelection]);
+  }, [activeWsId, clearSelection, taskStatusConfig]);
 
   const addTextToNotes = useCallback(async (task: TaskRow, text: string) => {
     const existing = allTasks[task.id];
