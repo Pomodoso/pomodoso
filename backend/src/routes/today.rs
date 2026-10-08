@@ -40,6 +40,9 @@ pub struct TodayTask {
     pub id: Uuid,
     pub title: String,
     pub status: String,
+    /// A user-defined status shown in place of `status` (extra.statusId). The
+    /// client resolves it against the user's `task_statuses` setting.
+    pub status_id: Option<String>,
     pub is_priority: bool,
     pub completed_at: Option<DateTime<Utc>>,
     pub project_id: Option<Uuid>,
@@ -274,6 +277,7 @@ pub async fn get_today(
     struct TaskInfo {
         title: String,
         status: String,
+        status_id: Option<String>,
         completed_at: Option<DateTime<Utc>>,
         /// Whether completed_at falls on the requested date, in the caller's
         /// timezone. Postgres decides, since it is what parses the IANA name.
@@ -307,6 +311,7 @@ pub async fn get_today(
             TaskInfo {
                 title: row.title,
                 status: row.status,
+                status_id: status_id_of(&row.extra),
                 completed_at: row.completed_at,
                 resolved_on_date: row.resolved_on_date,
                 ticket_id: row.ticket_id,
@@ -332,6 +337,7 @@ pub async fn get_today(
                     id: *id,
                     title: t.title.clone(),
                     status: t.status.clone(),
+                    status_id: t.status_id.clone(),
                     is_priority,
                     completed_at: t.completed_at,
                     project_id: t.project_id,
@@ -420,6 +426,13 @@ pub async fn get_today(
                 "done".to_owned()
             } else {
                 t.status.clone()
+            },
+            // A recurring occurrence is reported as done while the row itself
+            // sits at todo, so its status id describes the wrong status.
+            status_id: if t.recurring {
+                None
+            } else {
+                t.status_id.clone()
             },
             is_priority: false,
             completed_at: t.completed_at,
@@ -807,6 +820,7 @@ pub struct TaskListItem {
     pub id: Uuid,
     pub title: String,
     pub status: String,
+    pub status_id: Option<String>,
     pub ticket_id: Option<String>,
     pub completed_at: Option<DateTime<Utc>>,
     pub project_name: Option<String>,
@@ -899,6 +913,7 @@ pub async fn get_tasks(
             id: row.id,
             title: row.title,
             status: row.status.clone(),
+            status_id: status_id_of(&row.extra),
             ticket_id: row.ticket_id,
             completed_at: row.completed_at,
             project_name: row.project_name,
@@ -948,6 +963,7 @@ pub struct TaskDetail {
     pub id: Uuid,
     pub title: String,
     pub status: String,
+    pub status_id: Option<String>,
     pub notes: String,
     pub ticket_id: Option<String>,
     pub is_priority: bool,
@@ -1045,6 +1061,7 @@ pub async fn get_task_detail(
         id: row.id,
         title: row.title,
         status: row.status,
+        status_id: status_id_of(&row.extra),
         notes: row.notes,
         ticket_id: row.ticket_id,
         is_priority: row.is_priority,
@@ -1064,6 +1081,32 @@ pub async fn get_task_detail(
         total_seconds: totals.seconds,
         sessions,
     }))
+}
+
+/// The custom status a task carries in `extra.statusId`, if any.
+fn status_id_of(extra: &serde_json::Value) -> Option<String> {
+    extra
+        .get("statusId")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+}
+
+/// The user's task status definitions (the synced `task_statuses` setting), or
+/// null when they've never customised them. Returned raw: the web resolves a
+/// task's status with the same shared code the extension and mobile use, so
+/// the rules aren't duplicated here.
+pub async fn get_task_statuses(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>> {
+    let value = sqlx::query_scalar!(
+        r#"SELECT value FROM user_setting
+           WHERE user_id = $1 AND key = 'task_statuses' AND deleted_at IS NULL"#,
+        auth.id,
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(Json(value.unwrap_or(serde_json::Value::Null)))
 }
 
 // ─── Active timer beacon ──────────────────────────────────────────────────────

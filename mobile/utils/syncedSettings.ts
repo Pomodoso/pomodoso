@@ -46,6 +46,7 @@ const WIRE_MEMBERS: Record<WireKey, string[] | null> = {
   auto_sort_by_status: ['auto_sort_by_status'],
   week_start: ['week_start'],
   work_days: ['work_days'],
+  task_statuses: ['task_statuses'],
 };
 
 /** The local keys for a wire key this client carries. */

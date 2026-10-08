@@ -1,4 +1,6 @@
-import type { SoundSettings } from '@pomodoso/types';
+import type { SoundSettings, TaskStatusConfig } from '@pomodoso/types';
+import { DEFAULT_TASK_STATUS_CONFIG, parseTaskStatusConfig } from '@pomodoso/types';
+import { eq } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useRef } from 'react';
 
@@ -34,6 +36,8 @@ export interface AppSettings {
   showHabitsInToday: boolean;
   showChallengesInToday: boolean;
   showMeetingsInToday: boolean;
+  // User-defined task statuses (see @pomodoso/types task-status.ts). Synced.
+  taskStatuses: TaskStatusConfig;
 }
 
 // Matches @pomodoso/types' DEFAULT_SOUND_SETTINGS exactly (kept as a literal
@@ -71,6 +75,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHabitsInToday: true,
   showChallengesInToday: true,
   showMeetingsInToday: true,
+  taskStatuses: DEFAULT_TASK_STATUS_CONFIG,
 };
 
 const KEYS: Record<keyof AppSettings, string> = {
@@ -87,7 +92,24 @@ const KEYS: Record<keyof AppSettings, string> = {
   showHabitsInToday: 'show_habits_in_today',
   showChallengesInToday: 'show_challenges_in_today',
   showMeetingsInToday: 'show_meetings_in_today',
+  taskStatuses: 'task_statuses',
 };
+
+/**
+ * The stored task statuses, read now rather than from the last render. Edits
+ * on the Task statuses screen land back to back (a rename commits on blur, and
+ * the tap that causes the blur is itself an edit); building each from the
+ * rendered value let the second overwrite the first. Writes here are
+ * synchronous, so this read always sees the previous edit.
+ */
+export function readTaskStatuses(): TaskStatusConfig {
+  const raw = db.select().from(settings).where(eq(settings.key, KEYS.taskStatuses)).all()[0]?.value;
+  try {
+    return parseTaskStatusConfig(raw === undefined ? undefined : JSON.parse(raw));
+  } catch {
+    return DEFAULT_TASK_STATUS_CONFIG;
+  }
+}
 
 export function useSettings() {
   const { data: rows } = useLiveQuery(db.select().from(settings));
@@ -129,6 +151,9 @@ export function useSettings() {
     showHabitsInToday: get('showHabitsInToday'),
     showChallengesInToday: get('showChallengesInToday'),
     showMeetingsInToday: get('showMeetingsInToday'),
+    // Parsed, not cast: it arrives from other devices, and a malformed entry
+    // must cost that entry rather than every status picker.
+    taskStatuses: parseTaskStatusConfig(get('taskStatuses')),
   };
 
   function update<K extends keyof AppSettings>(field: K, next: AppSettings[K]): void {

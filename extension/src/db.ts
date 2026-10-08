@@ -60,6 +60,9 @@ export interface TaskRow extends SyncMeta {
   parentId?: string | null;
   recurrence?: RecurrenceRule;    // rule that makes this task repeat
   completedDates?: string[];      // YYYY-MM-DD list of days this recurring task was completed
+  // A user-defined status shown in place of `status`, which it maps to (see
+  // @pomodoso/types task-status.ts). null/absent = the default label.
+  statusId?: string | null;
 }
 
 export interface TaskOrderRow {

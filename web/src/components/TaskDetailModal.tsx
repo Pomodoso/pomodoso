@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
+import { customStatusLabel, useTaskStatuses } from '../lib/useTaskStatuses.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // Mirrors backend/src/routes/today.rs's TaskDetail.
@@ -26,6 +27,7 @@ interface TaskDetail {
   id: string;
   title: string;
   status: string;
+  status_id: string | null;
   notes: string;
   ticket_id: string | null;
   is_priority: boolean;
@@ -109,6 +111,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   const [task, setTask] = useState<TaskDetail | null>(null);
+  const statusConfig = useTaskStatuses();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,7 +158,7 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
                   border: `1px solid ${STATUS_COLORS[task.status] ?? 'var(--border)'}`,
                   borderRadius: 4, padding: '2px 8px',
                 }}>
-                  {STATUS_LABELS[task.status] ?? task.status}
+                  {customStatusLabel(task.status, task.status_id, statusConfig) ?? STATUS_LABELS[task.status] ?? task.status}
                 </span>
                 {task.is_priority && (
                   <span style={{ fontSize: 11, color: 'var(--text-sec)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px' }}>

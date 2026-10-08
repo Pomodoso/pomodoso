@@ -6,14 +6,8 @@ import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEnt
 import { db, localDate, type RecurrenceRule, type TaskRow } from '../db';
 import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'todo', label: 'Todo' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-  { value: 'delayed', label: 'Delayed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+import { resolveTaskStatus, taskStatusOptions } from '@pomodoso/types';
+import { useTaskStatusConfig } from './useTaskStatusConfig';
 
 const STATUS_ACTIVE_COLORS: Record<TaskStatus, { bg: string; color: string; border: string }> = {
   todo:        { bg: 'rgba(74,111,165,0.1)',  color: 'var(--color-info)',    border: 'var(--color-info)' },
@@ -142,9 +136,13 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
   const [description, setDescription] = useState(task.description ?? '');
   const [ticketId, setTicketId] = useState(task.ticketId ?? '');
   const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [statusId, setStatusId] = useState<string | null>(task.statusId ?? null);
+  const statusConfig = useTaskStatusConfig();
   // Keep the local status in sync with the task — e.g. completing a recurring task
   // resets it to todo, and the detail must reflect that instead of staying "Done".
   useEffect(() => { setStatus(task.status); }, [task.status]);
+  useEffect(() => { setStatusId(task.statusId ?? null); }, [task.statusId]);
+  const currentStatus = resolveTaskStatus(status, statusId, statusConfig);
   const [projectId, setProjectId] = useState<string | null>(task.projectId);
   const [noteEntries, setNoteEntries] = useState<NoteEntry[]>(() => {
     if (task.noteEntries && task.noteEntries.length > 0) return task.noteEntries;
@@ -833,18 +831,19 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
       <div style={{ padding: '12px 14px 0' }}>
         <FieldLabel>Status</FieldLabel>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {STATUS_OPTIONS.map(opt => {
-            const isSelected = status === opt.value;
-            const colors = STATUS_ACTIVE_COLORS[opt.value];
+          {taskStatusOptions(statusConfig).map(opt => {
+            const isSelected = currentStatus.base === opt.base && currentStatus.statusId === opt.statusId;
+            const colors = STATUS_ACTIVE_COLORS[opt.base];
             return (
               <button
-                key={opt.value}
+                key={opt.statusId ?? opt.base}
                 onClick={() => {
-                  setStatus(opt.value);
-                  onUpdateTask?.({ status: opt.value });
+                  setStatus(opt.base);
+                  setStatusId(opt.statusId);
+                  onUpdateTask?.({ status: opt.base, statusId: opt.statusId });
                 }}
                 style={{
-                  flex: 1, padding: '5px 0', fontSize: 10, fontWeight: isSelected ? 700 : 500,
+                  flex: '1 0 auto', padding: '5px 6px', fontSize: 10, fontWeight: isSelected ? 700 : 500,
                   borderRadius: 'var(--radius-sm)', cursor: 'pointer',
                   border: `1px solid ${isSelected ? colors.border : 'var(--color-border)'}`,
                   background: isSelected ? colors.bg : 'transparent',

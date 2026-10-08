@@ -1,19 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { STATUS_DOT_COLOR, STATUS_OPTIONS } from '@/constants/taskStatus';
+import type { TaskStatusOption } from '@pomodoso/types';
+
+import { STATUS_DOT_COLOR } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
-import type { TaskStatus } from '@/db/schema';
 
 interface StatusPickerProps {
   visible: boolean;
   taskTitle: string | null;
-  currentStatus: TaskStatus | null;
-  onPick: (status: TaskStatus) => void;
+  options: TaskStatusOption[];
+  current: TaskStatusOption | null;
+  onPick: (option: TaskStatusOption) => void;
   onCancel: () => void;
 }
 
-export function StatusPicker({ visible, taskTitle, currentStatus, onPick, onCancel }: StatusPickerProps) {
+export function StatusPicker({ visible, taskTitle, options, current, onPick, onCancel }: StatusPickerProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel}>
@@ -25,13 +27,19 @@ export function StatusPicker({ visible, taskTitle, currentStatus, onPick, onCanc
           )}
           <Text style={styles.prompt}>Set status</Text>
 
-          {STATUS_OPTIONS.map(opt => (
-            <Pressable key={opt.value} style={styles.option} onPress={() => onPick(opt.value)}>
-              <View style={[styles.dot, { backgroundColor: STATUS_DOT_COLOR[opt.value] }]} />
-              <Text style={styles.optionLabel}>{opt.label}</Text>
-              {currentStatus === opt.value && <Ionicons name="checkmark" size={17} color={colors.accent} />}
-            </Pressable>
-          ))}
+          {/* Bounded and scrollable: custom statuses make the list open-ended,
+              and an unbounded sheet pushes choices off the screen. */}
+          <ScrollView style={styles.list} bounces={false}>
+            {options.map(opt => (
+              <Pressable key={opt.statusId ?? opt.base} style={styles.option} onPress={() => onPick(opt)}>
+                <View style={[styles.dot, { backgroundColor: STATUS_DOT_COLOR[opt.base] }]} />
+                <Text style={styles.optionLabel}>{opt.label}</Text>
+                {current?.base === opt.base && current.statusId === opt.statusId && (
+                  <Ionicons name="checkmark" size={17} color={colors.accent} />
+                )}
+              </Pressable>
+            ))}
+          </ScrollView>
 
           <Pressable style={styles.cancel} onPress={onCancel}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -51,6 +59,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
+  list: { maxHeight: 420 },
   title: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 4 },
   prompt: {
     fontSize: 12,

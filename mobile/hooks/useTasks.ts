@@ -1,5 +1,5 @@
 import type { RecurrenceRule } from '@pomodoso/types';
-import { applyStatusPlacement } from '@pomodoso/types';
+import { applyStatusPlacement, statusIdForSystemChange } from '@pomodoso/types';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect } from 'react';
@@ -186,6 +186,8 @@ export function useTasks() {
         ticketRef: null,
         meta: 'Not started',
         status: 'todo',
+        // Stands in for Todo when the user has hidden it.
+        statusId: statusIdForSystemChange('todo', null, settingsValue.taskStatuses),
         projectId,
         isPriority: false,
         isToday: intoToday,
@@ -210,8 +212,15 @@ export function useTasks() {
   // resets status/isToday/isPriority to a clean slate — otherwise isToday
   // stays true forever and the materialization effect (which skips any task
   // already isToday) would never re-evaluate it for its next occurrence.
-  function setTaskStatus(id: string, status: TaskStatus): void {
+  //
+  // statusId is the custom status picked alongside `status` (null = the
+  // default). Omitted means the app is moving the task, not the user: a custom
+  // status that still fits is kept, and a hidden default gets a stand-in.
+  function setTaskStatus(id: string, status: TaskStatus, statusId?: string | null): void {
     const current = (tasks ?? []).find(t => t.id === id);
+    const nextStatusId = statusId !== undefined
+      ? statusId
+      : statusIdForSystemChange(status, current?.statusId, settingsValue.taskStatuses);
     if ((status === 'done' || status === 'cancelled') && current?.recurrence) {
       resolveRecurringOccurrence(id);
     } else {
@@ -221,7 +230,7 @@ export function useTasks() {
       // should not leave it dated as finished.
       const resolvedNow = isResolvedStatus(status);
       db.update(task)
-        .set({ status, updatedAt: nowIso, completedAt: resolvedNow ? (current?.completedAt ?? nowIso) : null })
+        .set({ status, statusId: nextStatusId, updatedAt: nowIso, completedAt: resolvedNow ? (current?.completedAt ?? nowIso) : null })
         .where(eq(task.id, id))
         .run();
     }
@@ -229,7 +238,9 @@ export function useTasks() {
     // the recurring or one-off path handled it above, but only for 'done' —
     // 'cancelled' never gets a sound in the extension either.
     if (status === 'done') playSound('task-done', settingsValue.soundSettings);
-    autoSortAfterStatus(id, status);
+    // Only when the built-in status moves: switching between two custom
+    // statuses on the same base must not undo a manual order.
+    if (current?.status !== status) autoSortAfterStatus(id, status);
     triggerSync();
   }
 
@@ -266,6 +277,7 @@ export function useTasks() {
     db.update(task)
       .set({
         status: 'todo',
+        statusId: statusIdForSystemChange('todo', current.statusId, settingsValue.taskStatuses),
         isPriority: false,
         isToday: false,
         completedDates: JSON.stringify([...completed]),

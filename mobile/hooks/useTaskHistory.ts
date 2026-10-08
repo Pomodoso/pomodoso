@@ -23,6 +23,7 @@ export interface HistoryTaskRow {
   title: string;
   ticketRef: string | null;
   status: TaskStatus;
+  statusId: string | null;
   projectId: string | null;
 }
 
@@ -101,7 +102,7 @@ export function useTaskHistory() {
     minutesByTaskAndDay.set(`${t.id}:${effectiveDate}`, minutesOnDay);
 
     const bucket = dayGroups.get(effectiveDate) ?? [];
-    bucket.push({ id: t.id, title: t.title, ticketRef: t.ticketRef, status: t.status, projectId: t.projectId });
+    bucket.push({ id: t.id, title: t.title, ticketRef: t.ticketRef, status: t.status, statusId: t.statusId, projectId: t.projectId });
     dayGroups.set(effectiveDate, bucket);
   }
 

@@ -148,6 +148,10 @@ async fn main() -> anyhow::Result<()> {
             get(routes::today::get_task_detail).route_layer(auth.clone()),
         )
         .route(
+            "/task-statuses",
+            get(routes::today::get_task_statuses).route_layer(auth.clone()),
+        )
+        .route(
             "/history",
             get(routes::history::get_history).route_layer(auth.clone()),
         )
