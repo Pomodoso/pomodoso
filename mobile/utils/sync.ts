@@ -174,6 +174,7 @@ function taskExtra(t: typeof task.$inferSelect): Record<string, unknown> {
   writeExtra(extra, 'noteEntries', parseJsonArray(t.noteEntries));
   writeExtra(extra, 'recurrence', t.recurrence ? (JSON.parse(t.recurrence) as unknown) : null);
   writeExtra(extra, 'completedDates', parseJsonArray(t.completedDates));
+  writeExtra(extra, 'statusId', t.statusId);
   // No preferredMode column on mobile — deliberately not written, so the
   // extension's value survives rather than being blanked.
   return extra;
@@ -602,6 +603,7 @@ function applyEntity(entity: SyncEntity): void {
       const noteEntries = 'noteEntries' in extra ? JSON.stringify(extra.noteEntries) : (existing?.noteEntries ?? '[]');
       const recurrence = 'recurrence' in extra ? JSON.stringify(extra.recurrence) : (existing?.recurrence ?? null);
       const completedDates = 'completedDates' in extra ? JSON.stringify(extra.completedDates) : (existing?.completedDates ?? '[]');
+      const statusId = 'statusId' in extra ? (extra.statusId as string | null) : (existing?.statusId ?? null);
       db.insert(task)
         .values({
           id,
@@ -614,6 +616,7 @@ function applyEntity(entity: SyncEntity): void {
           completedAt: (data.completed_at as string | null) ?? existing?.completedAt ?? null,
           meta: existing?.meta ?? null,
           status: (data.status as typeof task.$inferSelect.status) ?? 'todo',
+          statusId,
           projectId: (data.project_id as string | null) ?? null,
           isPriority: existing?.isPriority ?? false,
           isToday: existing?.isToday ?? false,
@@ -639,6 +642,7 @@ function applyEntity(entity: SyncEntity): void {
           // backend's COALESCE enforces on the way up.
           completedAt: (data.completed_at as string | null) ?? existing?.completedAt ?? null,
             status: (data.status as typeof task.$inferSelect.status) ?? 'todo',
+            statusId,
             projectId: (data.project_id as string | null) ?? null,
             recurrence,
             completedDates,

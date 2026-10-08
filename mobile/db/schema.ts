@@ -195,6 +195,9 @@ export const task = sqliteTable('task', {
   status: text('status', { enum: ['todo', 'in_progress', 'done', 'delayed', 'cancelled'] })
     .notNull()
     .default('todo'),
+  // A user-defined status shown in place of `status`, which it maps to (see
+  // @pomodoso/types task-status.ts). null = the default label.
+  statusId: text('status_id'),
   projectId: text('project_id'),
   isPriority: integer('is_priority', { mode: 'boolean' }).notNull().default(false),
   // Mirrors extension's todayIds membership (db.ts TaskOrderRow) as a simple

@@ -387,6 +387,14 @@ function initDb(): void {
     /* column already present */
   }
 
+  // Same additive pattern. Null for every existing task, which reads as the
+  // default label for its status.
+  try {
+    expoDb.execSync('ALTER TABLE task ADD COLUMN status_id TEXT;');
+  } catch {
+    /* column already present */
+  }
+
   // Same additive pattern. A challenge used to be a pure view of the current
   // streak, so a missed day silently reset it and a finished run un-completed
   // itself the next time the streak broke. These three record the run itself.

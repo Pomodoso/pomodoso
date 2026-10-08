@@ -7,3 +7,4 @@ export * from './types/challenge';
 export * from './types/index';
 export * from './types/ordering';
 export * from './types/sync-wire';
+export * from './types/task-status';

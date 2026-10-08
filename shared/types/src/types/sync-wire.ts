@@ -246,6 +246,8 @@ export const SYNCED_SETTING_KEYS = [
   'auto_sort_by_status',
   'week_start',
   'work_days',
+  // A TaskStatusConfig (see task-status.ts).
+  'task_statuses',
 ] as const;
 
 export type SyncedSettingKey = (typeof SYNCED_SETTING_KEYS)[number];

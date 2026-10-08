@@ -6,6 +6,9 @@
 
 - **A paused challenge locks its habit until you answer it** — While a run waits on a missed day, the habit can't be ticked in Today or in the Habits tab (the Habits tab now flags it too). Answer with **Keep going** or **Start over** and it unlocks.
 
+### Tasks
+
+- **Your own task statuses** — Settings → Task statuses lets you hide the defaults you don't use and add your own. Each one behaves like the default it maps to: "In review" mapped to In progress counts as work in progress everywhere. Syncs across devices.
 
 ## v1.3.10
 

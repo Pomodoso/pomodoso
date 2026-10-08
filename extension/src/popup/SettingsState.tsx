@@ -15,6 +15,12 @@ import type { ExtensionResponse } from '@pomodoso/types';
 import { db } from '../db';
 import { exportDb, importDb } from '../backup';
 import type { AuthState } from './useAuth';
+import {
+  BASE_TASK_STATUSES, BASE_TASK_STATUS_LABELS, addCustomTaskStatus, canRemoveFromBase,
+  removeCustomTaskStatus, setBaseStatusHidden, updateCustomTaskStatus,
+  type BaseTaskStatus, type TaskStatusConfig,
+} from '@pomodoso/types';
+import { saveTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
 
 
 const PRESET_CATALOG = [
@@ -28,7 +34,7 @@ const PRESET_CATALOG = [
   { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
 ];
 
-type SettingsPage = 'main' | 'task-detection' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data' | 'account';
+type SettingsPage = 'main' | 'task-detection' | 'task-statuses' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data' | 'account';
 
 interface Workspace {
   id: string;
@@ -92,6 +98,10 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
     );
   }
 
+  if (page === 'task-statuses') {
+    return <TaskStatusesPage onBack={() => setPage('main')} />;
+  }
+
   if (page === 'timer-defaults') {
     return <TimerDefaultsPage timerSettings={timerSettings} onUpdateTimerSettings={onUpdateTimerSettings} onBack={() => setPage('main')} />;
   }
@@ -145,6 +155,12 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
               onClick={() => setPage('task-detection')}
             />
             <NavRow
+              icon="◐"
+              title="Task statuses"
+              description="Hide defaults or add your own"
+              onClick={() => setPage('task-statuses')}
+            />
+            <NavRow
               icon="⏱"
               title="Timer defaults"
               description="Pomodoro duration and modes"
@@ -181,6 +197,150 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
               onClick={() => setPage('data')}
             />
           </NavGroup>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Task statuses sub-page ────────────────────────────────────────────────────
+
+const BASE_STATUS_DOT: Record<BaseTaskStatus, string> = {
+  todo: 'var(--color-info)',
+  in_progress: 'var(--color-warning)',
+  done: 'var(--color-success)',
+  delayed: '#7B5DB4',
+  cancelled: 'var(--color-accent)',
+};
+
+function TaskStatusesPage({ onBack }: { onBack: () => void }) {
+  const config = useTaskStatusConfig();
+  const [newLabel, setNewLabel] = useState('');
+  const [newBase, setNewBase] = useState<BaseTaskStatus>('in_progress');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+
+  // Every edit helper returns null when it would leave a required status with
+  // nothing to land on; the controls that could cause that are disabled, so a
+  // null here is only ever a no-op.
+  const apply = (next: TaskStatusConfig | null) => { if (next) void saveTaskStatusConfig(next); };
+
+  const add = () => {
+    apply(addCustomTaskStatus(config, { id: crypto.randomUUID(), label: newLabel, base: newBase }));
+    setNewLabel('');
+  };
+
+  const commitEdit = () => {
+    if (editingId) apply(updateCustomTaskStatus(config, editingId, { label: editLabel }));
+    setEditingId(null);
+  };
+
+  const smallBtn: React.CSSProperties = {
+    fontSize: 11, padding: '2px 8px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+    border: '1px solid var(--color-border)', background: 'none', color: 'var(--color-text-muted)',
+  };
+  const lockedTitle = 'The app needs at least one status of this kind — add another one first.';
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <SubPageHeader title="Task statuses" onBack={onBack} />
+      <div className="scroll-area">
+        <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--color-text-faint)', lineHeight: 1.5 }}>
+            Your own statuses behave like the default they map to — "In review" mapped to
+            In progress counts as work in progress everywhere.
+          </div>
+
+          <NavGroup>
+            {BASE_TASK_STATUSES.map((base, i) => {
+              const hidden = config.hidden.includes(base);
+              const canHide = canRemoveFromBase(config, base);
+              const customs = config.custom.filter(c => c.base === base);
+              return (
+                <div key={base} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)', padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: BASE_STATUS_DOT[base], opacity: hidden ? 0.35 : 1 }} />
+                    <span style={{
+                      flex: 1, fontSize: 13, fontWeight: 500,
+                      color: hidden ? 'var(--color-text-faint)' : 'var(--color-text)',
+                      textDecoration: hidden ? 'line-through' : 'none',
+                    }}>
+                      {BASE_TASK_STATUS_LABELS[base]}
+                    </span>
+                    <button
+                      disabled={!hidden && !canHide}
+                      title={!hidden && !canHide ? lockedTitle : undefined}
+                      onClick={() => apply(setBaseStatusHidden(config, base, !hidden))}
+                      style={{ ...smallBtn, opacity: !hidden && !canHide ? 0.4 : 1, cursor: !hidden && !canHide ? 'not-allowed' : 'pointer' }}
+                    >
+                      {hidden ? 'Show' : 'Hide'}
+                    </button>
+                  </div>
+                  {customs.map(c => (
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingLeft: 16 }}>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>↳</span>
+                      {editingId === c.id ? (
+                        <input
+                          autoFocus
+                          value={editLabel}
+                          onChange={e => setEditLabel(e.target.value)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingId(null); }}
+                          style={{ flex: 1, fontSize: 12, padding: '3px 6px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none' }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setEditingId(c.id); setEditLabel(c.label); }}
+                          title="Rename"
+                          style={{ flex: 1, textAlign: 'left', fontSize: 13, background: 'none', border: 'none', padding: 0, cursor: 'text', color: 'var(--color-text)' }}
+                        >
+                          {c.label}
+                        </button>
+                      )}
+                      <button
+                        disabled={!canHide}
+                        title={!canHide ? lockedTitle : 'Remove — tasks using it go back to ' + BASE_TASK_STATUS_LABELS[base]}
+                        onClick={() => apply(removeCustomTaskStatus(config, c.id))}
+                        style={{ ...smallBtn, opacity: canHide ? 1 : 0.4, cursor: canHide ? 'pointer' : 'not-allowed' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </NavGroup>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 6 }}>Add a status</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={newLabel}
+                onChange={e => setNewLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') add(); }}
+                placeholder="e.g. In review"
+                style={{ flex: 1, minWidth: 0, padding: '6px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--color-text)', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button
+                onClick={add}
+                disabled={!newLabel.trim()}
+                style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-accent)', color: '#fff', cursor: newLabel.trim() ? 'pointer' : 'not-allowed', opacity: newLabel.trim() ? 1 : 0.5 }}
+              >
+                Add
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>Behaves like</span>
+              <select
+                value={newBase}
+                onChange={e => setNewBase(e.target.value as BaseTaskStatus)}
+                style={{ padding: '3px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer' }}
+              >
+                {BASE_TASK_STATUSES.map(b => <option key={b} value={b}>{BASE_TASK_STATUS_LABELS[b]}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </div>

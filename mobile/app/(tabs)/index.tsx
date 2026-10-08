@@ -258,7 +258,7 @@ export default function HomeScreen() {
               projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
               onPress={() => router.push(`/task/${t.id}`)}
               onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-              onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+              onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
             />
           )}
           promote={{
@@ -284,7 +284,7 @@ export default function HomeScreen() {
                   projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                   onPress={() => router.push(`/task/${t.id}`)}
                   onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                  onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                  onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                 />
               )}
               promote={{

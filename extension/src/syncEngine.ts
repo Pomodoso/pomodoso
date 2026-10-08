@@ -428,6 +428,7 @@ function taskExtra(t: TaskRow): Record<string, unknown> {
   writeExtra(extra, 'preferredMode', t.preferredMode);
   writeExtra(extra, 'recurrence', t.recurrence);
   writeExtra(extra, 'completedDates', t.completedDates);
+  writeExtra(extra, 'statusId', t.statusId);
   return extra;
 }
 
@@ -548,6 +549,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
       const preferredMode = readExtra(extra, 'preferredMode', existing?.preferredMode);
       const recurrence = readExtra(extra, 'recurrence', existing?.recurrence);
       const completedDates = readExtra(extra, 'completedDates', existing?.completedDates);
+      const statusId = readExtra(extra, 'statusId', existing?.statusId);
       const row: TaskRow = {
         ...(existing ?? {}),
         id,
@@ -564,6 +566,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(preferredMode !== undefined ? { preferredMode } : {}),
         ...(recurrence !== undefined ? { recurrence } : {}),
         ...(completedDates !== undefined ? { completedDates } : {}),
+        ...(statusId !== undefined ? { statusId } : {}),
         updatedAt: updated_at, syncedAt,
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };

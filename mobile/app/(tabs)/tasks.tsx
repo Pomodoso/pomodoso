@@ -127,7 +127,7 @@ export default function TasksScreen() {
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
                     onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />
                 )}
                 promote={{
@@ -155,7 +155,7 @@ export default function TasksScreen() {
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
                     onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
-                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />
                 )}
                 promote={{
@@ -184,7 +184,7 @@ export default function TasksScreen() {
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
                     onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
-                    onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                    onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />
                 )}
                 promote={{
@@ -256,7 +256,7 @@ export default function TasksScreen() {
                       status={t.status}
                       projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                       onPress={() => router.push(`/task/${t.id}`)}
-                      onStatusPress={() => requestStatus(t.id, t.title, t.status)}
+                      onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                     />
                   ))}
                 </View>

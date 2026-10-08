@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { resolveTaskStatus } from '@pomodoso/types';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -9,7 +10,7 @@ import { NotesEditor } from '@/components/NotesEditor';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { RecurrenceFormModal } from '@/components/RecurrenceFormModal';
 import { StatusPicker } from '@/components/StatusPicker';
-import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR, STATUS_LABEL } from '@/constants/taskStatus';
+import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR } from '@/constants/taskStatus';
 import { colors, fontMono } from '@/constants/theme';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
@@ -233,9 +234,9 @@ export default function TaskDetailScreen() {
         )}
 
         <Text style={styles.sectionLabel}>Status</Text>
-        <Pressable style={styles.row} onPress={() => requestStatus(task.id, task.title, task.status)}>
+        <Pressable style={styles.row} onPress={() => requestStatus(task.id, task.title, task.status, task.statusId)}>
           <View style={[styles.dot, { backgroundColor: STATUS_DOT_COLOR[task.status] }]} />
-          <Text style={styles.rowText}>{STATUS_LABEL[task.status]}</Text>
+          <Text style={styles.rowText}>{resolveTaskStatus(task.status, task.statusId, settings.taskStatuses).label}</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </Pressable>
 

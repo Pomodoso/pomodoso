@@ -1,4 +1,5 @@
-import type { SoundSettings } from '@pomodoso/types';
+import type { SoundSettings, TaskStatusConfig } from '@pomodoso/types';
+import { DEFAULT_TASK_STATUS_CONFIG, parseTaskStatusConfig } from '@pomodoso/types';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useRef } from 'react';
 
@@ -34,6 +35,8 @@ export interface AppSettings {
   showHabitsInToday: boolean;
   showChallengesInToday: boolean;
   showMeetingsInToday: boolean;
+  // User-defined task statuses (see @pomodoso/types task-status.ts). Synced.
+  taskStatuses: TaskStatusConfig;
 }
 
 // Matches @pomodoso/types' DEFAULT_SOUND_SETTINGS exactly (kept as a literal
@@ -71,6 +74,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHabitsInToday: true,
   showChallengesInToday: true,
   showMeetingsInToday: true,
+  taskStatuses: DEFAULT_TASK_STATUS_CONFIG,
 };
 
 const KEYS: Record<keyof AppSettings, string> = {
@@ -87,6 +91,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   showHabitsInToday: 'show_habits_in_today',
   showChallengesInToday: 'show_challenges_in_today',
   showMeetingsInToday: 'show_meetings_in_today',
+  taskStatuses: 'task_statuses',
 };
 
 export function useSettings() {
@@ -129,6 +134,9 @@ export function useSettings() {
     showHabitsInToday: get('showHabitsInToday'),
     showChallengesInToday: get('showChallengesInToday'),
     showMeetingsInToday: get('showMeetingsInToday'),
+    // Parsed, not cast: it arrives from other devices, and a malformed entry
+    // must cost that entry rather than every status picker.
+    taskStatuses: parseTaskStatusConfig(get('taskStatuses')),
   };
 
   function update<K extends keyof AppSettings>(field: K, next: AppSettings[K]): void {

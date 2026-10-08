@@ -7,6 +7,7 @@ import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 import { ReportModal } from '../../components/ReportModal.tsx';
+import { customStatusLabel, useTaskStatuses } from '../../lib/useTaskStatuses.ts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,7 @@ interface TodayTask {
   id: string;
   title: string;
   status: string;
+  status_id: string | null;
   is_priority: boolean;
   completed_at: string | null;
   project_id: string | null;
@@ -221,6 +223,7 @@ function WorkspaceBadge({ task }: { task: TodayTask }) {
 }
 
 function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; index: number; showWorkspace: boolean; onOpen: (id: string) => void }) {
+  const statusConfig = useTaskStatuses();
   return (
     <div className="pomo-priority-item" key={task.id} onClick={() => onOpen(task.id)} style={{ cursor: 'pointer' }}>
       <div className={`pomo-priority-mark ${task.status === 'done' ? 'done' : ''}`}>
@@ -247,10 +250,13 @@ function TaskRow({ task, index, showWorkspace, onOpen }: { task: TodayTask; inde
         )}
       </div>
       {(() => {
+        const custom = customStatusLabel(task.status, task.status_id, statusConfig);
         const badge =
-          task.status === 'in_progress' ? { label: 'In progress', color: 'var(--accent)' }
-          : task.status === 'delayed' ? { label: 'Delayed', color: '#7B5DB4' }
-          : task.status === 'cancelled' ? { label: 'Cancelled', color: 'var(--text-tert)' }
+          custom && task.status === 'done' ? { label: custom, color: 'var(--text-tert)' }
+          : task.status === 'in_progress' ? { label: custom ?? 'In progress', color: 'var(--accent)' }
+          : task.status === 'delayed' ? { label: custom ?? 'Delayed', color: '#7B5DB4' }
+          : task.status === 'cancelled' ? { label: custom ?? 'Cancelled', color: 'var(--text-tert)' }
+          : custom ? { label: custom, color: 'var(--text-sec)' }
           : null;
         return badge && (
           <span style={{ fontSize: 10, color: badge.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>

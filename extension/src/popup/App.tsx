@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
-import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder, applyStatusPlacement } from '@pomodoso/types';
+import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder, applyStatusPlacement, statusIdForSystemChange } from '@pomodoso/types';
+import { TaskStatusConfigContext, useLiveTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
 import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
 import { useTimerState } from './useTimerState';
@@ -55,6 +56,14 @@ const INITIAL_RULES: DetectionRuleRow[] = [
 ];
 
 export function App() {
+  return (
+    <TaskStatusConfigContext.Provider value={useLiveTaskStatusConfig()}>
+      <AppContent />
+    </TaskStatusConfigContext.Provider>
+  );
+}
+
+function AppContent() {
   const auth = useAuth();
   const { timerState, detectedTicket, selectedText, clearSelection, loading: timerLoading, start, attachTask, detachTask, pausePomo, resumePomo, completePomo, startBreak, snooze, stop, clearPendingSegment, extendBreak, startNextPomo } = useTimerState();
 
@@ -150,6 +159,7 @@ export function App() {
   // 0=Mon…6=Sun convention (matches habit days). Defaults: week starts Monday, work days Mon–Fri.
   const weekStart: number   = (weekStartRow?.value as number | undefined) ?? 0;
   const workDays: number[]  = (workDaysRow?.value as number[] | undefined) ?? [0, 1, 2, 3, 4];
+  const taskStatusConfig = useTaskStatusConfig();
 
   // ── Local (device-only) state ──────────────────────────────────────────────
   const [activeWsId, setActiveWsId]             = useLocalStorage<string>('pom_active_ws', 'default');
@@ -638,10 +648,11 @@ export function App() {
     const rule = allTasks[taskId]?.recurrence;
     const occ = (rule ? activeOccurrence(rule, today) : null) ?? today;
     const completedDates = [...new Set([...(allTasks[taskId]?.completedDates ?? []), occ])];
-    await db.tasks.update(taskId, { completedDates, status: 'todo', updatedAt: now() });
+    const statusId = statusIdForSystemChange('todo', allTasks[taskId]?.statusId, taskStatusConfig);
+    await db.tasks.update(taskId, { completedDates, status: 'todo', statusId, updatedAt: now() });
     // Reset the open detail too: a recurring task is only "done for today", so its
     // status goes back to todo (otherwise the detail keeps showing it as Done).
-    setSelectedTask(prev => prev?.id === taskId ? { ...prev, completedDates, status: 'todo' } : prev);
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, completedDates, status: 'todo', statusId } : prev);
     // Remove from all workspace orders so it disappears from Today
     const orders = await db.taskOrders.toArray();
     for (const order of orders) {
@@ -653,13 +664,19 @@ export function App() {
       }
     }
     triggerSync();
-  }, [allTasks, timezone]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allTasks, timezone, taskStatusConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateTask = useCallback(async (id: string, updates: Partial<TaskRow>) => {
     // Recurring tasks use completedDates instead of status:'done' so they reappear tomorrow.
     if (updates.status === 'done' && allTasks[id]?.recurrence) {
       await markRecurringDoneToday(id);
       return;
+    }
+    // A status change that doesn't name a custom status came from the app (the
+    // timer, a quick check), not from a picker: keep a custom status that still
+    // fits, or stand in for a hidden default.
+    if (updates.status !== undefined && !('statusId' in updates)) {
+      updates = { ...updates, statusId: statusIdForSystemChange(updates.status, allTasks[id]?.statusId, taskStatusConfig) };
     }
     await db.tasks.update(id, { ...updates, updatedAt: now() });
     triggerSync();
@@ -712,7 +729,7 @@ export function App() {
         });
       });
     }
-  }, [allTasks, autoSortByStatus]);
+  }, [allTasks, autoSortByStatus, taskStatusConfig]);
 
   const deleteTask = useCallback(async (id: string) => {
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
@@ -763,14 +780,15 @@ export function App() {
     if (allTasks[taskId]?.recurrence) {
       await markRecurringDoneToday(taskId);
     } else {
-      await db.tasks.update(taskId, { status: 'done', updatedAt: now() });
-      setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+      const statusId = statusIdForSystemChange('done', allTasks[taskId]?.statusId, taskStatusConfig);
+      await db.tasks.update(taskId, { status: 'done', statusId, updatedAt: now() });
+      setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done', statusId } : prev);
     }
     playSound('task-done', soundSettings);
     await detachTask();
     await clearPendingSegment();
     triggerSync();
-  }, [timerState, detachTask, clearPendingSegment, soundSettings, allTasks, markRecurringDoneToday]);
+  }, [timerState, detachTask, clearPendingSegment, soundSettings, allTasks, markRecurringDoneToday, taskStatusConfig]);
 
   const handleDetachTask = useCallback(async () => {
     await detachTask();
@@ -792,15 +810,16 @@ export function App() {
         if (allTasks[taskId]?.recurrence) {
           await markRecurringDoneToday(taskId);
         } else {
-          await db.tasks.update(taskId, { status: 'done', updatedAt: now() });
-          setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done' } : prev);
+          const statusId = statusIdForSystemChange('done', allTasks[taskId]?.statusId, taskStatusConfig);
+          await db.tasks.update(taskId, { status: 'done', statusId, updatedAt: now() });
+          setSelectedTask(prev => prev?.id === taskId ? { ...prev, status: 'done', statusId } : prev);
         }
       }
     }
     await stop();
     void clearActiveTimer();
     triggerSync();
-  }, [timerState, stop, allTasks, markRecurringDoneToday]);
+  }, [timerState, stop, allTasks, markRecurringDoneToday, taskStatusConfig]);
 
   const handleStartTimer = useCallback(async (payload: TimerStartPayload) => {
     if (timerState.status === 'active' && timerState.mode === 'pomodoro' && payload.mode === 'pomodoro') {
@@ -1200,7 +1219,7 @@ export function App() {
         onExtendBreak={extendBreak}
         onStartNextPomo={startNextPomo}
         onCancelTimer={handleCancelTimer}
-        onUpdateTaskStatus={(taskId, status) => void updateTask(taskId, { status })}
+        onUpdateTaskStatus={(taskId, status, statusId) => void updateTask(taskId, statusId === undefined ? { status } : { status, statusId })}
         onAddToBacklog={(ticket) => void addToBacklog(ticket)}
         onLinkToTask={(ticket) => setLinkingTicket(ticket)}
         onOpenSettings={() => setShowSettings(true)}

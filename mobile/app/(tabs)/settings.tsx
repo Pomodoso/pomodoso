@@ -99,6 +99,7 @@ export default function SettingsScreen(): React.JSX.Element {
         </View>
 
         <View style={styles.group}>
+          <NavRow icon="ellipse-outline" title="Task statuses" description="Hide defaults or add your own" onPress={() => router.push('/settings/task-statuses')} />
           <NavRow icon="timer-outline" title="Timer defaults" description="Pomodoro duration and modes" onPress={() => router.push('/settings/timer-defaults')} />
           <NavRow icon="calendar-outline" title="Calendar" description="Google Calendar connection" onPress={() => router.push('/calendar')} />
           <NavRow icon="grid-outline" title="Workspace" description={isAll ? "All workspaces" : workspace.name} onPress={() => router.push('/workspaces')} />

@@ -294,6 +294,66 @@ async function testChallengeDecisionFromRow(browser) {
 }
 
 /**
+ * A custom status is offered in the picker, stored as its base status plus its
+ * id, and survives the app moving the task itself (starting the timer).
+ *
+ * The definition is seeded straight into the settings store: what's under
+ * test is how tasks use it, and the Settings page only writes this one value.
+ */
+async function testCustomTaskStatus(browser) {
+  let popup = await seedThenOpenPopup(browser, async tab => {
+    await seedTasks(tab, ['Review me']);
+    await tab.js(`new Promise((resolve) => {
+      const req = indexedDB.open('pomodoso');
+      req.onsuccess = () => {
+        const tx = req.result.transaction(['settings'], 'readwrite');
+        tx.objectStore('settings').put({ key: 'task_statuses', value: {
+          hidden: [], custom: [{ id: 'st-review', label: 'In review', base: 'in_progress' }],
+        } });
+        tx.oncomplete = () => resolve(true);
+      };
+    })`);
+  });
+  await sleep(1500);
+
+  const readTask = `new Promise((resolve) => {
+    const req = indexedDB.open('pomodoso');
+    req.onsuccess = () => {
+      req.result.transaction(['tasks'], 'readonly').objectStore('tasks').getAll().onsuccess = (ev) => {
+        const t = ev.target.result.find(x => x.title === 'Review me');
+        resolve(t ? JSON.stringify({ status: t.status, statusId: t.statusId ?? null }) : 'missing');
+      };
+    };
+  })`;
+
+  // seedTasks adds to Today, which is where the popup opens.
+  const opened = await popup.js(`(() => {
+    // The deepest match: dnd-kit's sortable wrapper is a role=button too, and
+    // a click on it never reaches the row's own handler.
+    const matches = [...document.querySelectorAll('[role="button"]')].filter(x => /Review me/.test(x.innerText));
+    const el = matches.find(x => !matches.some(y => y !== x && x.contains(y)));
+    if (!el) return false;
+    el.click();
+    return true;
+  })()`);
+  await sleep(1200);
+  check('status: the custom status is offered in the task detail',
+    opened === true && await popup.clickButton('/^In review$/') === true);
+  await sleep(1500);
+  const picked = await popup.js(readTask);
+  check('status: picking it stores its base status and its id',
+    picked === JSON.stringify({ status: 'in_progress', statusId: 'st-review' }), picked);
+
+  await popup.clickButton('/Start$/');
+  await sleep(2500);
+  const started = await popup.js(readTask);
+  check('status: starting the timer keeps a custom status that already fits',
+    started === JSON.stringify({ status: 'in_progress', statusId: 'st-review' }), started);
+  await popup.clickButton('/Cancel|Stop/');
+  await browser.send('Target.closeTarget', { targetId: popup.targetId });
+}
+
+/**
  * A run completed by history alone records its completion and awards the medal.
  *
  * The regression this exists for: completion used to be recomputed from the
@@ -464,6 +524,7 @@ try {
   await run(testReorder, browser);
   await run(testChallengeDecision, browser);
   await run(testChallengeDecisionFromRow, browser);
+  await run(testCustomTaskStatus, browser);
   await run(testCompletionAndAward, browser);
   await run(testChallengeStartIsPersisted, browser);
   await run(testBackupRoundTrip, browser);

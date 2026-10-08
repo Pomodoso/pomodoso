@@ -29,7 +29,7 @@ import {
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
-  habitStreakLabel, reorderSubset,
+  habitStreakLabel, reorderSubset, resolveTaskStatus, taskStatusOptions,
 } from '@pomodoso/types';
 import type { AchievementTier, ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
@@ -46,6 +46,7 @@ import {
   type MeetingTrackMode,
 } from '../db';
 import { triggerSync } from '../syncEngine';
+import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
 
 marked.use({ breaks: true });
@@ -80,7 +81,9 @@ interface HomeStateProps {
   onExtendBreak: () => Promise<void>;
   onStartNextPomo: () => Promise<void>;
   onCancelTimer: () => Promise<void>;
-  onUpdateTaskStatus: (taskId: string, status: TaskStatus) => void;
+  /** statusId: a custom status chosen in a picker, or null for the default.
+   *  Omitted when the app (not the user) is changing the status. */
+  onUpdateTaskStatus: (taskId: string, status: TaskStatus, statusId?: string | null) => void;
   linkedTasks: SelectedTask[];
   onSelectLinkedTask: (task: SelectedTask) => void;
   onAddToBacklog: (ticket: TicketRef) => void;
@@ -130,14 +133,6 @@ const STATUS_DOT_COLOR: Record<TaskStatus, string> = {
   delayed: 'var(--color-text-muted)',
   cancelled: 'var(--color-text-faint)',
 };
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'todo', label: 'Todo' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-  { value: 'delayed', label: 'Delayed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
 
 const STATUS_CHIP_COLORS: Record<TaskStatus, { bg: string; color: string; border: string }> = {
   todo:        { bg: 'var(--color-surface)',     color: 'var(--color-info)',    border: 'var(--color-info)' },
@@ -1433,7 +1428,7 @@ export function HomeState({
                           onPlay={() => handlePlayTask(task)}
                           onDone={() => void onDoneTask()}
                           onDetach={() => void onDetachTask()}
-                          onStatusChange={(status) => onUpdateTaskStatus(task.id, status)}
+                          onStatusChange={(status, statusId) => onUpdateTaskStatus(task.id, status, statusId)}
                         />
                       );
                     })}
@@ -1464,7 +1459,7 @@ export function HomeState({
                           onPlay={() => handlePlayTask(task)}
                           onDone={() => void onDoneTask()}
                           onDetach={() => void onDetachTask()}
-                          onStatusChange={(status) => onUpdateTaskStatus(task.id, status)}
+                          onStatusChange={(status, statusId) => onUpdateTaskStatus(task.id, status, statusId)}
                         />
                       );
                     })}
@@ -2351,8 +2346,10 @@ function TaskTooltip({
   const links = task.links?.length ?? 0;
   const isFollowup = !!task.parentId;
 
+  const customStatus = resolveTaskStatus(task.status, task.statusId, useTaskStatusConfig());
   const statusBadge: { label: string; color: string } | null =
-    task.status === 'in_progress' ? { label: 'WIP', color: 'var(--color-warning)' }
+    customStatus.statusId ? { label: customStatus.label, color: STATUS_CHIP_COLORS[task.status].color }
+    : task.status === 'in_progress' ? { label: 'WIP', color: 'var(--color-warning)' }
     : task.status === 'delayed'   ? { label: 'Delayed', color: '#7B5DB4' }
     : task.status === 'cancelled' ? { label: 'Cancelled', color: 'var(--color-text-muted)' }
     : null;
@@ -2585,11 +2582,13 @@ interface TaskRowProps {
   onPlay: () => void;
   onDone: () => void;
   onDetach: () => void;
-  onStatusChange: (status: TaskStatus) => void;
+  onStatusChange: (status: TaskStatus, statusId: string | null) => void;
 }
 
 function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunning, timerHasTask, focusSeconds, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
   const isDone = task.status === 'done';
+  const statusConfig = useTaskStatusConfig();
+  const current = resolveTaskStatus(task.status, task.statusId, statusConfig);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -2633,13 +2632,13 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
             display: 'flex', flexDirection: 'column', gap: 3, minWidth: 130,
           }}
         >
-          {STATUS_OPTIONS.map(opt => {
-            const isSelected = task.status === opt.value;
-            const colors = STATUS_CHIP_COLORS[opt.value];
+          {taskStatusOptions(statusConfig).map(opt => {
+            const isSelected = current.base === opt.base && current.statusId === opt.statusId;
+            const colors = STATUS_CHIP_COLORS[opt.base];
             return (
               <button
-                key={opt.value}
-                onClick={() => { onStatusChange(opt.value); setShowStatusPicker(false); }}
+                key={opt.statusId ?? opt.base}
+                onClick={() => { onStatusChange(opt.base, opt.statusId); setShowStatusPicker(false); }}
                 style={{
                   padding: '5px 10px', fontSize: 11, fontWeight: isSelected ? 700 : 500,
                   borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left',
@@ -2758,6 +2757,7 @@ function SortableBacklogRow(props: BacklogRowProps) {
 }
 
 function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: BacklogRowProps) {
+  const statusConfig = useTaskStatusConfig();
   const isAdded = isInPriorities || isInTasks;
   const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -2789,7 +2789,7 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 3, alignSelf: 'flex-start',
           background: STATUS_DOT_COLOR[task.status],
         }}
-        title={STATUS_LABELS[task.status]}
+        title={resolveTaskStatus(task.status, task.statusId, statusConfig).label}
       />
       <div
         onMouseEnter={() => {
