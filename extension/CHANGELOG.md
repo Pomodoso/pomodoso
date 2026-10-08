@@ -2,6 +2,10 @@
 
 ## v1.3.11 (In progress)
 
+### Habits
+
+- **A paused challenge locks its habit until you answer it** — While a run waits on a missed day, the habit can't be ticked in Today or in the Habits tab (the Habits tab now flags it too). Answer with **Keep going** or **Start over** and it unlocks.
+
 
 ## v1.3.10
 
