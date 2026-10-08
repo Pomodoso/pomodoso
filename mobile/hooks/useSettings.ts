@@ -1,5 +1,6 @@
 import type { SoundSettings, TaskStatusConfig } from '@pomodoso/types';
 import { DEFAULT_TASK_STATUS_CONFIG, parseTaskStatusConfig } from '@pomodoso/types';
+import { eq } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useRef } from 'react';
 
@@ -93,6 +94,22 @@ const KEYS: Record<keyof AppSettings, string> = {
   showMeetingsInToday: 'show_meetings_in_today',
   taskStatuses: 'task_statuses',
 };
+
+/**
+ * The stored task statuses, read now rather than from the last render. Edits
+ * on the Task statuses screen land back to back (a rename commits on blur, and
+ * the tap that causes the blur is itself an edit); building each from the
+ * rendered value let the second overwrite the first. Writes here are
+ * synchronous, so this read always sees the previous edit.
+ */
+export function readTaskStatuses(): TaskStatusConfig {
+  const raw = db.select().from(settings).where(eq(settings.key, KEYS.taskStatuses)).all()[0]?.value;
+  try {
+    return parseTaskStatusConfig(raw === undefined ? undefined : JSON.parse(raw));
+  } catch {
+    return DEFAULT_TASK_STATUS_CONFIG;
+  }
+}
 
 export function useSettings() {
   const { data: rows } = useLiveQuery(db.select().from(settings));

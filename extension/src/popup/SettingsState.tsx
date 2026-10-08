@@ -20,7 +20,7 @@ import {
   removeCustomTaskStatus, setBaseStatusHidden, updateCustomTaskStatus,
   type BaseTaskStatus, type TaskStatusConfig,
 } from '@pomodoso/types';
-import { saveTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
+import { updateTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
 
 
 const PRESET_CATALOG = [
@@ -220,18 +220,25 @@ function TaskStatusesPage({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
 
-  // Every edit helper returns null when it would leave a required status with
-  // nothing to land on; the controls that could cause that are disabled, so a
-  // null here is only ever a no-op.
-  const apply = (next: TaskStatusConfig | null) => { if (next) void saveTaskStatusConfig(next); };
+  // Each edit is applied to the latest saved config, never to `config` as
+  // rendered: renaming commits on blur, and the Hide/Remove click that causes
+  // the blur would otherwise overwrite the rename. The edit helpers return null
+  // when an edit would leave a required status with nothing to land on; the
+  // controls that could do that are disabled, so null is only ever a no-op.
+  const apply = (edit: (current: TaskStatusConfig) => TaskStatusConfig | null) => {
+    void updateTaskStatusConfig(edit);
+  };
 
   const add = () => {
-    apply(addCustomTaskStatus(config, { id: crypto.randomUUID(), label: newLabel, base: newBase }));
+    const status = { id: crypto.randomUUID(), label: newLabel, base: newBase };
+    apply(c => addCustomTaskStatus(c, status));
     setNewLabel('');
   };
 
   const commitEdit = () => {
-    if (editingId) apply(updateCustomTaskStatus(config, editingId, { label: editLabel }));
+    const id = editingId;
+    const label = editLabel;
+    if (id) apply(c => updateCustomTaskStatus(c, id, { label }));
     setEditingId(null);
   };
 
@@ -270,7 +277,7 @@ function TaskStatusesPage({ onBack }: { onBack: () => void }) {
                     <button
                       disabled={!hidden && !canHide}
                       title={!hidden && !canHide ? lockedTitle : undefined}
-                      onClick={() => apply(setBaseStatusHidden(config, base, !hidden))}
+                      onClick={() => apply(c => setBaseStatusHidden(c, base, !hidden))}
                       style={{ ...smallBtn, opacity: !hidden && !canHide ? 0.4 : 1, cursor: !hidden && !canHide ? 'not-allowed' : 'pointer' }}
                     >
                       {hidden ? 'Show' : 'Hide'}
@@ -300,7 +307,7 @@ function TaskStatusesPage({ onBack }: { onBack: () => void }) {
                       <button
                         disabled={!canHide}
                         title={!canHide ? lockedTitle : 'Remove — tasks using it go back to ' + BASE_TASK_STATUS_LABELS[base]}
-                        onClick={() => apply(removeCustomTaskStatus(config, c.id))}
+                        onClick={() => apply(cur => removeCustomTaskStatus(cur, c.id))}
                         style={{ ...smallBtn, opacity: canHide ? 1 : 0.4, cursor: canHide ? 'pointer' : 'not-allowed' }}
                       >
                         Remove

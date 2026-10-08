@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { STATUS_DOT_COLOR } from '@/constants/taskStatus';
 import { colors } from '@/constants/theme';
-import { useSettings } from '@/hooks/useSettings';
+import { readTaskStatuses, useSettings } from '@/hooks/useSettings';
 import { uid } from '@/utils/id';
 
 // Ports extension's SettingsState.tsx TaskStatusesPage. The rules — which
@@ -30,20 +30,26 @@ export default function TaskStatusesScreen(): React.JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
 
-  // The edit helpers return null when an edit would leave a required status
-  // with nothing to land on. The controls that could do that are disabled, so
-  // null is only ever a no-op here.
-  function apply(next: TaskStatusConfig | null): void {
+  // Each edit is applied to the stored value, never to `config` as rendered:
+  // a rename commits on blur, and the Hide/Remove tap that causes the blur
+  // would otherwise overwrite it. The edit helpers return null when an edit
+  // would leave a required status with nothing to land on; the controls that
+  // could do that are disabled, so null is only ever a no-op here.
+  function apply(edit: (current: TaskStatusConfig) => TaskStatusConfig | null): void {
+    const next = edit(readTaskStatuses());
     if (next) update('taskStatuses', next);
   }
 
   function add(): void {
-    apply(addCustomTaskStatus(config, { id: uid(), label: newLabel, base: newBase }));
+    const status = { id: uid(), label: newLabel, base: newBase };
+    apply(c => addCustomTaskStatus(c, status));
     setNewLabel('');
   }
 
   function commitEdit(): void {
-    if (editingId) apply(updateCustomTaskStatus(config, editingId, { label: editLabel }));
+    const id = editingId;
+    const label = editLabel;
+    if (id) apply(c => updateCustomTaskStatus(c, id, { label }));
     setEditingId(null);
   }
 
@@ -75,7 +81,7 @@ export default function TaskStatusesScreen(): React.JSX.Element {
                   <Text style={[styles.label, hidden && styles.labelHidden]}>{BASE_TASK_STATUS_LABELS[base]}</Text>
                   <Pressable
                     disabled={!hidden && !removable}
-                    onPress={() => apply(setBaseStatusHidden(config, base, !hidden))}
+                    onPress={() => apply(c => setBaseStatusHidden(c, base, !hidden))}
                     style={[styles.smallBtn, !hidden && !removable && styles.disabled]}
                   >
                     <Text style={styles.smallBtnText}>{hidden ? 'Show' : 'Hide'}</Text>
@@ -100,7 +106,7 @@ export default function TaskStatusesScreen(): React.JSX.Element {
                     )}
                     <Pressable
                       disabled={!removable}
-                      onPress={() => apply(removeCustomTaskStatus(config, c.id))}
+                      onPress={() => apply(cur => removeCustomTaskStatus(cur, c.id))}
                       style={[styles.smallBtn, !removable && styles.disabled]}
                     >
                       <Text style={styles.smallBtnText}>Remove</Text>
