@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Pomodoso",
-  "description": "Unified work tracking for developers — pomodoro, tickets, habits.",
+  "name": "Pomodoso – Pomodoro Focus Timer, Tasks, Habits & Work Log",
+  "short_name": "Pomodoso",
+  "description": "Turn anything you browse into a task and focus on it with a pomodoro timer. Daily habits and work reports included.",
   "version": "1.3.12",
   "permissions": [
     "storage",
