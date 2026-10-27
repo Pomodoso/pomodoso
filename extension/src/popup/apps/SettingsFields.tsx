@@ -55,11 +55,7 @@ export function SettingsFields({ manifest, values, disabled, onChange }: {
             ) : null}
             <span style={label}>{s.label}</span>
             {s.type === 'number' ? (
-              <input
-                type="number" style={input} disabled={disabled}
-                value={typeof v === 'number' ? v : ''} min={s.min} max={s.max}
-                onChange={(e) => onChange(s.key, e.target.value === '' ? undefined : Number(e.target.value))}
-              />
+              <NumberSetting value={typeof v === 'number' ? v : undefined} min={s.min} max={s.max} disabled={disabled} onChange={(n) => onChange(s.key, n)} />
             ) : s.type === 'text' ? (
               <input type="text" style={input} disabled={disabled} value={typeof v === 'string' ? v : ''} onChange={(e) => onChange(s.key, e.target.value)} />
             ) : s.type === 'select' ? (
@@ -74,6 +70,42 @@ export function SettingsFields({ manifest, values, disabled, onChange }: {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * A number setting saves only values inside its range; anything else stays
+ * in the box with a hint, so a typo can't flip a limit's meaning.
+ */
+function NumberSetting({ value, min, max, disabled, onChange }: {
+  value: number | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
+  disabled?: boolean | undefined;
+  onChange: (n: number | undefined) => void;
+}) {
+  const [draft, setDraft] = useState(value === undefined ? '' : String(value));
+  const n = draft.trim() === '' ? undefined : Number(draft);
+  const problem =
+    n === undefined ? undefined
+    : !Number.isFinite(n) ? 'Enter a number'
+    : min !== undefined && n < min ? `At least ${min}`
+    : max !== undefined && n > max ? `At most ${max}`
+    : undefined;
+  return (
+    <>
+      <input
+        type="number" step="any" style={{ ...input, borderColor: problem ? 'var(--color-accent)' : 'var(--color-border)' }} disabled={disabled}
+        value={draft} min={min} max={max}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const next = e.target.value.trim() === '' ? undefined : Number(e.target.value);
+          const ok = next === undefined || (Number.isFinite(next) && (min === undefined || next >= min) && (max === undefined || next <= max));
+          if (ok) onChange(next);
+        }}
+      />
+      {problem ? <span style={{ fontSize: 10, color: 'var(--color-accent)' }}>{problem}</span> : null}
+    </>
   );
 }
 

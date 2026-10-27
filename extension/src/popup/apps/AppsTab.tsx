@@ -343,7 +343,16 @@ function RestorePreview({ text, backup, readOnly, onBack, onInstalled }: {
   onInstalled: (id: string) => void;
 }) {
   const [issues, setIssues] = useState<PluginIssue[]>([]);
+  const [confirmed, setConfirmed] = useState(false);
   const m = backup.plugin.manifest;
+  // Restoring over the same install replaces its data with the file's; say so first.
+  const live = useLiveQuery(async () => {
+    const p = await db.plugins.get(backup.plugin.id);
+    if (!p || p.deletedAt) return null;
+    const n = await db.pluginRecords.where('pluginId').equals(p.id).filter((r) => !r.deletedAt).count();
+    return { name: p.manifest.name, entries: n };
+  }, [backup.plugin.id]);
+  const needsConfirm = live != null && !confirmed;
   return (
     <>
       <Header title="Restore app" onBack={onBack} />
@@ -356,18 +365,27 @@ function RestorePreview({ text, backup, readOnly, onBack, onInstalled }: {
           </div>
         </div>
       </div>
+      {live ? (
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11, lineHeight: 1.5, color: 'var(--color-text)', padding: '8px 10px', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)' }}>
+          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          <span>
+            {live.name} is installed with {live.entries} {live.entries === 1 ? 'entry' : 'entries'}. Restoring replaces them with this file&apos;s;
+            entries added since the export are removed.
+          </span>
+        </label>
+      ) : null}
       {issues.length > 0 ? <IssueList issues={issues} /> : null}
       <button
         type="button"
-        disabled={readOnly}
+        disabled={readOnly || needsConfirm || live === undefined}
         onClick={async () => {
           const r = await importPlugin(text);
           if (r.ok) onInstalled(r.plugin.id);
           else setIssues(r.issues);
         }}
-        style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}
+        style={{ ...btn('primary'), opacity: readOnly || needsConfirm ? 0.5 : 1 }}
       >
-        Restore
+        {live ? 'Replace data' : 'Restore'}
       </button>
     </>
   );
