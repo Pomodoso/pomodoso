@@ -210,48 +210,24 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
   }
 }
 
+/**
+ * Tags as one comma-separated text box. Every keystroke reports the parsed
+ * list, so whatever is typed is saved on submit — no pending half-tag.
+ */
 function TagsInput({ value, disabled, onChange }: { value: string[]; disabled?: boolean | undefined; onChange: (v: string[]) => void }) {
-  const [draft, setDraft] = useState('');
-  const add = (parts: string[]) => {
-    const tags = [...new Set(parts.map((t) => t.trim().toLowerCase()))].filter((t) => t && !value.includes(t));
-    if (tags.length > 0) onChange([...value, ...tags]);
-  };
-  const commit = () => {
-    add([draft]);
-    setDraft('');
-  };
+  const [text, setText] = useState(value.join(', '));
   return (
-    <div style={{ ...inputStyle, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-      {value.map((t) => (
-        <span key={t} style={{ ...chipStyle(true), padding: '1px 6px' }}>
-          {t}
-          {!disabled ? (
-            <button type="button" aria-label={`Remove ${t}`} onClick={() => onChange(value.filter((x) => x !== t))} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', padding: '0 0 0 4px' }}>
-              ×
-            </button>
-          ) : null}
-        </span>
-      ))}
-      <input
-        value={draft}
-        disabled={disabled}
-        placeholder={value.length === 0 ? 'Add tags, comma separated' : ''}
-        onChange={(e) => {
-          // Typing or pasting a comma turns everything before it into tags.
-          const parts = e.target.value.split(',');
-          if (parts.length > 1) add(parts.slice(0, -1));
-          setDraft(parts[parts.length - 1] ?? '');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && draft.trim()) {
-            e.preventDefault();
-            commit();
-          }
-        }}
-        onBlur={commit}
-        style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 80, font: 'inherit', fontSize: 12, color: 'var(--color-text)' }}
-      />
-    </div>
+    <input
+      type="text"
+      value={text}
+      disabled={disabled}
+      placeholder="Comma separated, e.g. rust, async"
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange([...new Set(e.target.value.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]);
+      }}
+      style={inputStyle}
+    />
   );
 }
 

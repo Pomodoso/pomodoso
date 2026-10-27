@@ -13,6 +13,8 @@ import {
   initialRecordData,
   missingFields,
   optionsSettingKey,
+  showsOnToday,
+  SHOW_ON_TODAY_KEY,
 } from './view.ts';
 
 function parsed(data: unknown): PluginManifest {
@@ -32,6 +34,7 @@ const ctx = { today: '2026-10-21', now: '2026-10-21T15:00:00Z', timeZone: 'UTC',
 test('keys read as sentences', () => {
   assert.equal(humanize('after_meal'), 'After meal');
   assert.equal(humanize('to_read'), 'To read');
+  assert.equal(humanize('image_url'), 'Image URL');
 });
 
 test('a user_editable select reads the user options from settings, else the file', () => {
@@ -148,4 +151,12 @@ test('only_if_empty counts a field default as a value', () => {
   const old: PluginRecord = { id: 't', collection: 'task', created_at: '2026-10-01T12:00:00Z', data: { title: 'A' } };
   const out = applyRules(m, old, { ...old, data: { title: 'A', urgent: true } }, rulesCtx);
   assert.equal(out.priority, undefined);
+});
+
+test('Today shows only when the file has a widget and the user turned it on', () => {
+  const pixels = example('year-in-pixels');
+  assert.equal(showsOnToday(pixels, {}), false);
+  assert.equal(showsOnToday(pixels, { [SHOW_ON_TODAY_KEY]: true }), true);
+  const { today: _, ...noToday } = pixels;
+  assert.equal(showsOnToday(noToday, { [SHOW_ON_TODAY_KEY]: true }), false);
 });
