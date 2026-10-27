@@ -33,7 +33,8 @@ const GLYPHS: Record<string, string> = {
 };
 
 export function PluginIcon({ icon, name, size = 28 }: { icon?: string | undefined; name: string; size?: number }) {
-  const glyph = icon ? GLYPHS[icon] : undefined;
+  // Own keys only: `icon: __proto__` must fall back to the initial, not reach Object.prototype.
+  const glyph = icon && Object.hasOwn(GLYPHS, icon) ? GLYPHS[icon] : undefined;
   return (
     <span
       aria-hidden

@@ -92,8 +92,13 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
   });
 }
 
-export async function updatePluginSettings(pluginId: string, settings: Record<string, unknown>): Promise<void> {
-  await db.plugins.update(pluginId, { settings, updatedAt: now(), syncedAt: undefined });
+/** Sets one setting, merged over the stored ones in a transaction, so overlapping changes all land. */
+export async function updatePluginSetting(pluginId: string, key: string, value: unknown): Promise<void> {
+  await db.transaction('rw', db.plugins, async () => {
+    const plugin = await db.plugins.get(pluginId);
+    if (!plugin || plugin.deletedAt) return;
+    await db.plugins.update(pluginId, { settings: { ...plugin.settings, [key]: value }, updatedAt: now(), syncedAt: undefined });
+  });
 }
 
 // ─── Records ─────────────────────────────────────────────────────────────────

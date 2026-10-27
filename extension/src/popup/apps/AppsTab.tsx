@@ -6,7 +6,6 @@ import {
   parsePluginExport,
   parsePluginFile,
   type PluginExport,
-  SHOW_ON_TODAY_KEY,
   type PluginIssue,
   type PluginManifest,
   type PluginRecord,
@@ -23,7 +22,7 @@ import {
   installPlugin,
   setDaily,
   uninstallPlugin,
-  updatePluginSettings,
+  updatePluginSetting,
   updateRecord,
 } from '../../plugins';
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
@@ -67,6 +66,7 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn }: Apps
       {screen.kind === 'add' ? (
         <AddApp
           timezone={timezone}
+          readOnly={readOnly}
           onCancel={() => setScreen({ kind: 'list' })}
           onInstalled={(id) => setScreen({ kind: 'app', id })}
         />
@@ -218,7 +218,7 @@ function AppRow({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow; ti
 
 // ─── Add / preview ───────────────────────────────────────────────────────────
 
-function AddApp({ timezone, onCancel, onInstalled }: { timezone: string; onCancel: () => void; onInstalled: (id: string) => void }) {
+function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: string; readOnly: boolean; onCancel: () => void; onInstalled: (id: string) => void }) {
   const [text, setText] = useState('');
   const [manifest, setManifest] = useState<PluginManifest | null>(null);
   const [backup, setBackup] = useState<PluginExport | null>(null);
@@ -244,10 +244,10 @@ function AddApp({ timezone, onCancel, onInstalled }: { timezone: string; onCance
   };
 
   if (backup) {
-    return <RestorePreview text={text} backup={backup} onBack={() => setBackup(null)} onInstalled={onInstalled} />;
+    return <RestorePreview text={text} backup={backup} readOnly={readOnly} onBack={() => setBackup(null)} onInstalled={onInstalled} />;
   }
   if (manifest) {
-    return <InstallPreview text={text} manifest={manifest} timezone={timezone} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
+    return <InstallPreview text={text} manifest={manifest} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
   }
 
   return (
@@ -277,15 +277,16 @@ function AddApp({ timezone, onCancel, onInstalled }: { timezone: string; onCance
   );
 }
 
-function InstallPreview({ text, manifest, timezone, onBack, onInstalled }: {
+function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalled }: {
   text: string;
   manifest: PluginManifest;
   timezone: string;
+  /** Signing out while the preview is open disables the write. */
+  readOnly: boolean;
   onBack: () => void;
   onInstalled: (id: string) => void;
 }) {
   const [settings, setSettings] = useState<Record<string, unknown>>(() => defaultSettings(manifest));
-  const [showOnToday, setShowOnToday] = useState(manifest.today?.default_on ?? false);
   const [issues, setIssues] = useState<PluginIssue[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -308,7 +309,6 @@ function InstallPreview({ text, manifest, timezone, onBack, onInstalled }: {
         <div style={sectionTitle}>What it adds</div>
         <div>• {manifest.views.length === 1 ? 'A screen' : `${manifest.views.length} screens`} in Apps</div>
         <div>• Stores: {manifest.collections.map((c) => c.key.replace(/_/g, ' ')).join(', ')} — only in this browser{' '}(and your account, with sync)</div>
-        {manifest.today ? <div>• A widget for Today: “{manifest.today.widget.label}”</div> : null}
         {prompts.map((q) => <div key={q}>• Asks: “{q}”</div>)}
         {reports > 0 ? <div>• Adds a line to your reports</div> : null}
         <div style={{ color: 'var(--color-text-faint)', marginTop: 4 }}>Apps only see their own data. They can't read your tasks or run code.</div>
@@ -321,24 +321,17 @@ function InstallPreview({ text, manifest, timezone, onBack, onInstalled }: {
         </div>
       ) : null}
 
-      {manifest.today ? (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
-          <input type="checkbox" checked={showOnToday} onChange={(e) => setShowOnToday(e.target.checked)} />
-          Show on Today
-        </label>
-      ) : null}
-
       {issues.length > 0 ? <IssueList issues={issues} /> : null}
       <button
-        type="button" disabled={busy}
+        type="button" disabled={busy || readOnly}
         onClick={async () => {
           setBusy(true);
-          const r = await installPlugin(text, timezone, { settings, showOnToday });
+          const r = await installPlugin(text, timezone, { settings });
           setBusy(false);
           if (r.ok) onInstalled(r.plugin.id);
           else setIssues(r.issues);
         }}
-        style={btn('primary')}
+        style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}
       >
         Install
       </button>
@@ -346,9 +339,10 @@ function InstallPreview({ text, manifest, timezone, onBack, onInstalled }: {
   );
 }
 
-function RestorePreview({ text, backup, onBack, onInstalled }: {
+function RestorePreview({ text, backup, readOnly, onBack, onInstalled }: {
   text: string;
   backup: PluginExport;
+  readOnly: boolean;
   onBack: () => void;
   onInstalled: (id: string) => void;
 }) {
@@ -369,12 +363,13 @@ function RestorePreview({ text, backup, onBack, onInstalled }: {
       {issues.length > 0 ? <IssueList issues={issues} /> : null}
       <button
         type="button"
+        disabled={readOnly}
         onClick={async () => {
           const r = await importPlugin(text);
           if (r.ok) onInstalled(r.plugin.id);
           else setIssues(r.issues);
         }}
-        style={btn('primary')}
+        style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}
       >
         Restore
       </button>
@@ -444,6 +439,7 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
             evaluator,
             today: localDate(timezone),
             now: new Date().toISOString(),
+            timeZone: timezone,
             weekStart,
             readOnly,
             actions,
@@ -459,7 +455,8 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
 function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly: boolean; onBack: () => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const m = plugin.manifest;
-  const save = (key: string, value: unknown) => void updatePluginSettings(plugin.id, { ...plugin.settings, [key]: value });
+  // One key at a time, merged over the stored settings: two quick changes can't undo each other.
+  const save = (key: string, value: unknown) => void updatePluginSetting(plugin.id, key, value);
   const exportIt = async () => downloadText(await exportPlugin(plugin.id), `${m.id}-${new Date().toISOString().slice(0, 10)}.pomodoso.yaml`);
 
   return (
@@ -467,12 +464,6 @@ function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly
       <Header title={`${m.name} settings`} onBack={onBack} />
       <SettingsFields manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       <EditableOptions manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
-      {m.today ? (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
-          <input type="checkbox" disabled={readOnly} checked={plugin.settings[SHOW_ON_TODAY_KEY] === true} onChange={(e) => save(SHOW_ON_TODAY_KEY, e.target.checked)} />
-          Show on Today
-        </label>
-      ) : null}
 
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={sectionTitle}>Data</div>
@@ -480,7 +471,7 @@ function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly
           Export saves this app with all its data in one file. Restore it from Apps → Add an app, here or on another device.
         </div>
         <button type="button" onClick={() => void exportIt()} style={btn('secondary')}>Export app and data</button>
-        {confirmUninstall ? (
+        {confirmUninstall && !readOnly ? (
           <div style={{ padding: '8px 10px', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', fontSize: 11, color: 'var(--color-text)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             Uninstall {m.name}? Its data is deleted too. Export first if you want to keep it.
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

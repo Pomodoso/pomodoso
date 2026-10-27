@@ -22,10 +22,17 @@ const input: React.CSSProperties = {
 
 const label: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)' };
 
-/** The settings a plugin starts with: each declared setting's default. */
+/**
+ * The settings a plugin starts with: each declared setting's default. A
+ * select without one starts on its first option, which is what its dropdown
+ * shows, so what the user sees is what gets saved.
+ */
 export function defaultSettings(manifest: PluginManifest): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const s of manifest.settings ?? []) if (s.default !== undefined) out[s.key] = s.default;
+  for (const s of manifest.settings ?? []) {
+    if (s.default !== undefined) out[s.key] = s.default;
+    else if (s.type === 'select' && s.options?.[0] !== undefined) out[s.key] = normalizeOption(s.options[0]).value;
+  }
   return out;
 }
 
@@ -57,6 +64,7 @@ export function SettingsFields({ manifest, values, disabled, onChange }: {
               <input type="text" style={input} disabled={disabled} value={typeof v === 'string' ? v : ''} onChange={(e) => onChange(s.key, e.target.value)} />
             ) : s.type === 'select' ? (
               <select style={input} disabled={disabled} value={typeof v === 'string' ? v : ''} onChange={(e) => onChange(s.key, e.target.value)}>
+                {typeof v !== 'string' ? <option value="" disabled>Choose…</option> : null}
                 {(s.options ?? []).map(normalizeOption).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
