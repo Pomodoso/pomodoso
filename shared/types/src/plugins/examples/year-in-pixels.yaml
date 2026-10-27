@@ -1,0 +1,41 @@
+schema_version: 1
+id: year-in-pixels
+name: Year in Pixels
+version: 1.0.0
+icon: grid
+description: Color every day by how it went. You choose the states and their colors.
+license: MIT
+
+collections:
+  - key: day_state
+    kind: daily
+    fields:
+      - key: state
+        type: select
+        user_editable: true
+        options:
+          - { value: great, label: Great, color: "#2D8A7A" }
+          - { value: productive, label: Productive, color: "#8FB08F" }
+          - { value: normal, label: Normal, color: "#E8D9A8" }
+          - { value: unproductive, label: Not productive, color: "#D98C7A" }
+      - { key: note, type: text, optional: true }
+
+computed:
+  logged_this_year: { count: day_state, range: this_year }
+
+views:
+  - id: main
+    blocks:
+      - { type: day-picker, collection: day_state, field: state }
+      - { type: year-grid, collection: day_state, color_by: state, legend: true }
+      - { type: breakdown, collection: day_state, field: state, range: this_year }
+      - { type: stat, label: Days logged this year, value: $logged_this_year }
+
+today:
+  default_on: false
+  widget: { type: select-today, label: How was today?, collection: day_state, field: state }
+
+hooks:
+  - on: day_end
+    ask: How was today?
+    pick: { collection: day_state, field: state }

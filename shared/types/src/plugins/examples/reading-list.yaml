@@ -1,0 +1,45 @@
+schema_version: 1
+id: reading-list
+name: Reading list
+version: 1.0.0
+icon: bookmark
+description: Articles, videos and papers to get to later, organized with tags.
+license: MIT
+
+collections:
+  - key: link
+    kind: item
+    title_field: title
+    fields:
+      - { key: url, type: url }
+      - { key: title, type: text }
+      - { key: kind, type: select, options: [article, video, paper, other], default: article }
+      - { key: tags, type: tags, optional: true }
+      - { key: status, type: select, options: [to_read, done], default: to_read }
+
+computed:
+  to_read: { count: link, where: { status: to_read } }
+
+views:
+  - id: main
+    blocks:
+      - type: add-button
+        label: Save current tab
+        adds: link
+        prefill: { url: $tab.url, title: $tab.title }
+      - { type: tag-filter, collection: link, field: tags }
+      - type: list
+        collection: link
+        filter: { status: to_read }
+        primary: title
+        secondary: [kind, tags]
+        open: url
+        sort: { field: created_at, order: desc }
+        swipe: { label: Done, set: { status: done } }
+  - id: done
+    label: Done
+    blocks:
+      - { type: list, collection: link, filter: { status: done }, primary: title, open: url }
+
+today:
+  widget: { type: count-badge, label: To read, value: $to_read }

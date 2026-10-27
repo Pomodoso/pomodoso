@@ -1,0 +1,47 @@
+schema_version: 1
+id: movieshelf
+name: Movieshelf
+version: 1.0.0
+icon: film
+description: Movies to watch and the ones you've seen.
+license: MIT
+
+collections:
+  - key: movie
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: director, type: text, optional: true }
+      - { key: status, type: select, options: [watchlist, watched], default: watchlist }
+      - { key: rating, type: rating, optional: true }
+      - { key: tags, type: tags, optional: true }
+      - { key: cover, type: image_url, optional: true }
+      - { key: watched_on, type: date, optional: true }
+
+computed:
+  watched_this_year: { count: movie, where: { status: watched }, range: this_year, by: watched_on }
+
+views:
+  - id: main
+    blocks:
+      - { type: add-button, label: Add a movie, adds: movie }
+      - { type: tag-filter, collection: movie, field: tags }
+      - type: board
+        collection: movie
+        group_by: status
+        card: { title: title, subtitle: director, image: cover, badge: rating }
+  - id: stats
+    label: Stats
+    blocks:
+      - { type: stat, label: Watched this year, value: $watched_this_year }
+      - type: chart
+        label: Movies per month
+        kind: bar
+        series: { count: movie, where: { status: watched }, by: watched_on, group: month, range: 12mo }
+
+rules:
+  - collection: movie
+    when: { status: watched }
+    set: { watched_on: $today_date }
+    only_if_empty: true
