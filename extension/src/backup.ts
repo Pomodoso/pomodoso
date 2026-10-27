@@ -50,7 +50,10 @@ function refreshSyncMeta<T extends { syncedAt?: string; updatedAt?: string }>(ro
 }
 
 export async function exportDb(): Promise<string> {
-  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, plugins, pluginRecords, allSettings] = await Promise.all([
+  // One read transaction: the backup is a consistent snapshot, so a plugin
+  // uninstalled mid-export can't come out live with its records deleted.
+  const tables = [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.achievements, db.plugins, db.pluginRecords, db.settings];
+  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, plugins, pluginRecords, allSettings] = await db.transaction('r', tables, () => Promise.all([
     db.tasks.toArray(),
     db.taskOrders.toArray(),
     db.projects.toArray(),
@@ -63,7 +66,7 @@ export async function exportDb(): Promise<string> {
     db.plugins.toArray(),
     db.pluginRecords.toArray(),
     db.settings.toArray(),
-  ]);
+  ]));
 
   const settings = allSettings.filter(s => !isExcludedSetting(s.key));
 
