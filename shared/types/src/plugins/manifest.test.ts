@@ -249,6 +249,15 @@ test('references inside filter lists and optional labels are checked', () => {
   assertIssue(issues, 'views[0].blocks[2].label', 'unknown reference "$nada"');
 });
 
+test('settings and computed values cannot take a built-in reference name', () => {
+  const m = base();
+  m.settings = [{ key: 'now', type: 'number', label: 'Now', default: 1 }];
+  m.computed = { today_date: { count: 'glass' } };
+  const issues = issuesFor(m);
+  assertIssue(issues, 'settings[0].key', 'built-in reference ($now)');
+  assertIssue(issues, 'computed.today_date', 'built-in reference ($today_date)');
+});
+
 test('a prompt hook takes yes or pick, not both', () => {
   const m = base();
   m.hooks = [{ on: 'pomodoro_end', ask: 'Water?', yes: { add: 'glass' }, pick: { collection: 'mood', field: 'state' } }];

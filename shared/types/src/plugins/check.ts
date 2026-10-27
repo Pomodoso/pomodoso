@@ -130,6 +130,14 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
   for (const k of computedKeys) {
     if (settingKeys.has(k)) add(['computed', k], `"${k}" is both a setting and a computed value; rename one`);
   }
+  // $now and $today_date are built in; a declared name would shadow them.
+  const builtins = new Set<string>(BUILTIN_REFS);
+  m.settings?.forEach((s, i) => {
+    if (builtins.has(s.key)) add(['settings', i, 'key'], `"${s.key}" is a built-in reference ($${s.key}); pick another key`);
+  });
+  for (const k of computedKeys) {
+    if (builtins.has(k)) add(['computed', k], `"${k}" is a built-in reference ($${k}); pick another key`);
+  }
 
   const viewIds = new Set<string>();
   m.views.forEach((v, i) => {

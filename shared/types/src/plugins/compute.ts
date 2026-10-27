@@ -99,8 +99,15 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
     return r.created_at;
   }
 
+  /** Built-in date fields of a collection kind; any other key is a declared field (an item may declare `day`). */
+  const BUILTIN_DATES: Record<CollectionKind, readonly string[]> = {
+    event: ['occurred_at', 'created_at', 'updated_at'],
+    item: ['created_at', 'updated_at'],
+    daily: ['day', 'created_at', 'updated_at'],
+  };
+
   function dayOf(r: PluginRecord, c: PluginCollection, by?: string): string | undefined {
-    if (by !== undefined && by !== 'occurred_at' && by !== 'created_at' && by !== 'updated_at' && by !== 'day') {
+    if (by !== undefined && !BUILTIN_DATES[c.kind].includes(by)) {
       const v = fieldValue(r, c, by);
       return typeof v === 'string' && v.length >= 10 ? v.slice(0, 10) : undefined;
     }
@@ -117,10 +124,12 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
 
   /** A field's value on a record; records written before a field existed read its default. */
   function fieldValue(r: PluginRecord, c: PluginCollection, key: string): unknown {
-    if (key === 'occurred_at') return r.occurred_at ?? undefined;
-    if (key === 'created_at') return r.created_at;
-    if (key === 'updated_at') return r.updated_at;
-    if (key === 'day') return r.day ?? undefined;
+    if (BUILTIN_DATES[c.kind].includes(key)) {
+      if (key === 'occurred_at') return r.occurred_at ?? undefined;
+      if (key === 'created_at') return r.created_at;
+      if (key === 'updated_at') return r.updated_at;
+      return r.day ?? undefined;
+    }
     const v = r.data[key];
     if (v !== undefined) return v;
     return c.fields.find((f) => f.key === key)?.default;

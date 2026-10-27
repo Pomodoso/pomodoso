@@ -316,3 +316,13 @@ test('min and max handle histories longer than the argument limit', () => {
   assert.equal(ev.computed('most'), 199_999);
   assert.equal(ev.computed('least'), 0);
 });
+
+test('an item may declare a field named day: it is read from the data, not the built-in', () => {
+  const m = manifest({
+    collections: [{ key: 'trip', kind: 'item', fields: [{ key: 'day', type: 'date' }] }],
+    computed: { this_month: { count: 'trip', range: 'this_month', by: 'day' }, on_day: { count: 'trip', where: { day: '2026-10-03' } } },
+  });
+  const ev = createEvaluator(m, { ...CTX, records: [rec('trip', { data: { day: '2026-10-03' } }), rec('trip', { data: { day: '2025-01-01' } })] });
+  assert.equal(ev.computed('this_month'), 1);
+  assert.equal(ev.computed('on_day'), 1);
+});
