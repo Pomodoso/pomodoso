@@ -6,59 +6,78 @@ const W = 320;
 const H = 90;
 const PAD_BOTTOM = 14;
 
-function shortLabel(start: string, n: number): string {
-  // Day buckets read as the day of month, month buckets as the month.
+/** A bucket's axis label, the same kind for the whole series: day number, or month for monthly buckets. */
+function shortLabel(start: string, group: 'day' | 'week' | 'month'): string {
   const d = new Date(`${start}T00:00:00Z`);
-  if (n > 16) return '';
-  return d.toLocaleDateString('en', start.endsWith('-01') && n <= 12 ? { month: 'short', timeZone: 'UTC' } : { day: 'numeric', timeZone: 'UTC' });
+  return d.toLocaleDateString('en', group === 'month' ? { month: 'short', timeZone: 'UTC' } : { day: 'numeric', timeZone: 'UTC' });
 }
 
-/** A bar or line chart of a grouped series, with an optional horizontal reference (a limit or goal). */
-export function SeriesChart({ kind, series, reference }: { kind: 'bar' | 'line'; series: SeriesPoint[]; reference?: number | null | undefined }) {
-  const values = series.map((p) => p.value ?? 0);
-  const top = Math.max(1, ...values, reference ?? 0);
+/**
+ * A bar or line chart of a grouped series, with an optional horizontal
+ * reference (a limit or goal). Values may be negative: bars grow from the
+ * zero line. Missing values (null) leave a gap instead of reading as zero.
+ */
+export function SeriesChart({ kind, group, series, reference }: {
+  kind: 'bar' | 'line';
+  group: 'day' | 'week' | 'month';
+  series: SeriesPoint[];
+  reference?: number | null | undefined;
+}) {
+  const values = series.flatMap((p) => (p.value === null ? [] : [p.value]));
+  const bounds = reference != null ? [...values, reference] : values;
+  const top = Math.max(1, ...bounds);
+  const bottom = Math.min(0, ...bounds);
   const plotH = H - PAD_BOTTOM;
   const slot = series.length > 0 ? W / series.length : W;
-  const y = (v: number) => plotH - (v / top) * (plotH - 4);
+  const y = (v: number) => plotH - ((v - bottom) / (top - bottom)) * (plotH - 4);
+  const zero = y(0);
+
+  // Line segments between gaps.
+  const segments: [number, number][][] = [[]];
+  series.forEach((p, i) => {
+    if (p.value === null) segments.push([]);
+    else segments[segments.length - 1]!.push([i * slot + slot / 2, y(p.value)]);
+  });
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${kind} chart`} style={{ display: 'block' }}>
       {kind === 'bar'
         ? series.map((p, i) => {
-            const v = p.value ?? 0;
+            if (p.value === null) return null;
+            const v = p.value;
             const over = reference != null && v > reference;
             return (
               <rect
                 key={p.start}
                 x={i * slot + slot * 0.15}
                 width={slot * 0.7}
-                y={y(v)}
-                height={Math.max(v > 0 ? 1.5 : 0, plotH - y(v))}
+                y={Math.min(y(v), zero)}
+                height={Math.max(v !== 0 ? 1.5 : 0, Math.abs(zero - y(v)))}
                 rx={1.5}
                 fill={over ? 'var(--color-accent)' : 'var(--color-text-muted)'}
                 opacity={over ? 1 : 0.55}
               >
-                <title>{`${p.start}: ${p.value ?? '—'}`}</title>
+                <title>{`${p.start}: ${v}`}</title>
               </rect>
             );
           })
-        : (
-          <polyline
-            fill="none"
-            stroke={NEUTRAL_FILL}
-            strokeWidth={1.75}
-            strokeLinejoin="round"
-            points={series.map((p, i) => `${i * slot + slot / 2},${y(p.value ?? 0)}`).join(' ')}
-          />
-        )}
+        : segments
+            .filter((pts) => pts.length > 0)
+            .map((pts, k) =>
+              pts.length === 1 ? (
+                <circle key={k} cx={pts[0]![0]} cy={pts[0]![1]} r={1.75} fill={NEUTRAL_FILL} />
+              ) : (
+                <polyline key={k} fill="none" stroke={NEUTRAL_FILL} strokeWidth={1.75} strokeLinejoin="round" points={pts.map(([x, py]) => `${x},${py}`).join(' ')} />
+              ),
+            )}
       {reference != null ? (
         <line x1={0} x2={W} y1={y(reference)} y2={y(reference)} stroke="var(--color-text-faint)" strokeDasharray="3 3" strokeWidth={1} />
       ) : null}
-      <line x1={0} x2={W} y1={plotH} y2={plotH} stroke="var(--color-border)" strokeWidth={1} />
+      <line x1={0} x2={W} y1={zero} y2={zero} stroke="var(--color-border)" strokeWidth={1} />
       {series.map((p, i) =>
         i % Math.ceil(series.length / 8) === 0 ? (
           <text key={p.start} x={i * slot + slot / 2} y={H - 2} textAnchor="middle" fontSize={8} fill="var(--color-text-faint)">
-            {shortLabel(p.start, series.length) || p.start.slice(5)}
+            {shortLabel(p.start, group)}
           </text>
         ) : null,
       )}

@@ -110,6 +110,7 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="number"
+            step="any"
             value={num ?? ''}
             min={f.min}
             max={f.max}
@@ -128,7 +129,22 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
     case 'rating': {
       const min = f.min ?? 1;
       const max = f.max ?? 5;
-      const steps = Array.from({ length: Math.max(0, Math.min(10, max - min + 1)) }, (_, i) => min + i);
+      // Up to ten buttons; a wider range gets a number input so no value is out of reach.
+      if (max - min + 1 > 10 || !Number.isInteger(min) || !Number.isInteger(max)) {
+        return (
+          <input
+            type="number"
+            step={Number.isInteger(min) ? 1 : 'any'}
+            value={num ?? ''}
+            min={min}
+            max={max}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+            style={inputStyle}
+          />
+        );
+      }
+      const steps = Array.from({ length: Math.max(0, max - min + 1) }, (_, i) => min + i);
       return (
         <div style={{ display: 'flex', gap: 4 }}>
           {steps.map((n) => {

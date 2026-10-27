@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import {
   addDays,
   fieldLabel,
+  localDayOf,
   fieldOptions,
   formatStat,
   initialRecordData,
@@ -37,6 +38,8 @@ export interface PluginEnv {
   today: string;
   /** ISO timestamp, for "time ago". */
   now: string;
+  /** IANA timezone, to put events on their local day (same as the evaluator's). */
+  timeZone: string;
   weekStart: number;
   /** Signed out: everything shows, nothing writes. */
   readOnly: boolean;
@@ -58,6 +61,8 @@ interface BlockCtx extends PluginEnv {
   /** `$ref` strings resolve; anything else is a literal. */
   resolve(v: unknown): unknown;
   stat(v: PluginValue, format?: Parameters<typeof formatStat>[1]): string;
+  /** A label with its `{$ref}` templates filled in. */
+  text(label: string): string;
   tagFilters: Record<string, TagFilter>;
   setTagFilter(collection: string, f: TagFilter): void;
   /** Live records of a collection after the view's tag filter. */
@@ -76,13 +81,15 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
     collection: (key) => collections.get(key),
     resolve: (v) => (typeof v === 'string' && v.startsWith('$') ? env.evaluator.value(v) : v),
     stat: (v, format) => formatStat(v, format, env.now),
+    text: (label) => env.evaluator.template(label, (v) => formatStat(v, undefined, env.now)),
     tagFilters,
     setTagFilter: (c, f) => setTagFilters((s) => ({ ...s, [c]: f })),
     filtered: (c, where) => {
       const rows = env.evaluator.records(c, where);
       const f = tagFilters[c];
       if (!f?.tag) return rows;
-      return rows.filter((r) => Array.isArray(r.data[f.field]) && (r.data[f.field] as unknown[]).includes(f.tag));
+      const c2 = collections.get(c);
+      return rows.filter((r) => valuesOf(c2 ? recordValue(c2, r, f.field) : r.data[f.field]).includes(f.tag!));
     },
     edit: (e) => {
       if (!env.readOnly) setEditing(e);
@@ -97,6 +104,29 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
       {editing ? <EditSheet editing={editing} ctx={ctx} onClose={() => setEditing(null)} /> : null}
     </div>
   );
+}
+
+/** A record's field, or the field's default when the record predates it (as the evaluator reads it). */
+function recordValue(c: PluginCollection, r: PluginRecord, key: string): unknown {
+  if (key === 'created_at') return r.created_at;
+  if (key === 'occurred_at') return r.occurred_at ?? undefined;
+  if (key === 'day') return r.day ?? undefined;
+  const v = r.data[key];
+  return v !== undefined ? v : c.fields.find((f) => f.key === key)?.default;
+}
+
+/** A tag-like value as a list: tags and multiselects are lists, a select is one string. */
+function valuesOf(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
+  return typeof v === 'string' && v !== '' ? [v] : [];
+}
+
+/**
+ * A full-form save of a daily record: fields left empty go as null, so the
+ * merge in setDay clears them instead of keeping the old value.
+ */
+function fullDay(c: PluginCollection, data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(c.fields.map((f) => [f.key, data[f.key] ?? null]));
 }
 
 function resolveMap(ctx: BlockCtx, map: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -118,10 +148,10 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
         <button
           type="button"
           disabled={ctx.readOnly}
-          onClick={() => (b.details === 'form' ? ctx.edit({ mode: 'new', collection: c, initial, title: b.label }) : ctx.actions.add(c.key, initial))}
+          onClick={() => (b.details === 'form' ? ctx.edit({ mode: 'new', collection: c, initial, title: ctx.text(b.label) }) : ctx.actions.add(c.key, initial))}
           style={{ ...buttonStyle('primary'), padding: '12px', fontSize: 14, opacity: ctx.readOnly ? 0.5 : 1 }}
         >
-          + {b.label}
+          + {ctx.text(b.label)}
         </button>
       );
     }
@@ -133,10 +163,10 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
         <button
           type="button"
           disabled={ctx.readOnly}
-          onClick={() => ctx.edit({ mode: 'new', collection: c, initial: initialRecordData(c, resolveMap(ctx, b.prefill)), title: b.label })}
+          onClick={() => ctx.edit({ mode: 'new', collection: c, initial: initialRecordData(c, resolveMap(ctx, b.prefill)), title: ctx.text(b.label) })}
           style={{ ...buttonStyle('secondary'), opacity: ctx.readOnly ? 0.5 : 1 }}
         >
-          + {b.label}
+          + {ctx.text(b.label)}
         </button>
       );
     }
@@ -147,7 +177,7 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
     case 'stat':
       return (
         <div style={cardStyle}>
-          <div style={labelStyle}>{b.label}</div>
+          <div style={labelStyle}>{ctx.text(b.label)}</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', marginTop: 2 }}>{ctx.stat(ctx.evaluator.value(b.value), b.format)}</div>
         </div>
       );
@@ -157,7 +187,7 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${b.items.length}, 1fr)`, gap: 6 }}>
           {b.items.map((it, i) => (
             <div key={i} style={{ ...cardStyle, padding: '8px 10px' }}>
-              <div style={{ ...labelStyle, fontSize: 10 }}>{it.label}</div>
+              <div style={{ ...labelStyle, fontSize: 10 }}>{ctx.text(it.label)}</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text)', marginTop: 2 }}>{ctx.stat(ctx.evaluator.value(it.value), it.format)}</div>
             </div>
           ))}
@@ -167,14 +197,14 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
     case 'progress': {
       const v = num(ctx.evaluator.value(b.value)) ?? 0;
       const max = num(ctx.evaluator.value(b.max));
-      const pct = max && max > 0 ? Math.min(100, (v / max) * 100) : v > 0 ? 100 : 0;
+      const pct = max && max > 0 ? Math.max(0, Math.min(100, (v / max) * 100)) : v > 0 ? 100 : 0;
       const over = max !== undefined && v > max;
       const reached = max !== undefined && v >= max;
       const color = b.invert ? (over ? 'var(--color-accent)' : 'var(--color-success)') : reached ? 'var(--color-success)' : 'var(--color-accent)';
       return (
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={labelStyle}>{b.label ?? (b.invert ? 'Today' : 'Progress')}</span>
+            <span style={labelStyle}>{b.label !== undefined ? ctx.text(b.label) : b.invert ? 'Today' : 'Progress'}</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: over && b.invert ? 'var(--color-accent)' : 'var(--color-text)' }}>
               {ctx.stat(v)} <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>/ {max === undefined ? '—' : ctx.stat(max)}</span>
             </span>
@@ -191,8 +221,13 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const reference = b.reference === undefined ? undefined : num(ctx.evaluator.value(b.reference));
       return (
         <div style={cardStyle}>
-          {b.label ? <div style={{ ...labelStyle, marginBottom: 6 }}>{b.label}</div> : null}
-          <SeriesChart kind={b.kind} series={Array.isArray(series) ? (series as SeriesPoint[]) : []} reference={reference} />
+          {b.label ? <div style={{ ...labelStyle, marginBottom: 6 }}>{ctx.text(b.label)}</div> : null}
+          <SeriesChart
+            kind={b.kind}
+            group={'group' in b.series && b.series.group ? b.series.group : 'day'}
+            series={Array.isArray(series) ? (series as SeriesPoint[]) : []}
+            reference={reference}
+          />
         </div>
       );
     }
@@ -201,11 +236,10 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       return <ListBlock block={b} ctx={ctx} />;
 
     case 'tag-filter': {
+      const c = ctx.collection(b.collection);
+      if (!c) return null;
       const all = new Set<string>();
-      for (const r of ctx.evaluator.records(b.collection)) {
-        const v = r.data[b.field];
-        if (Array.isArray(v)) for (const t of v) if (typeof t === 'string') all.add(t);
-      }
+      for (const r of ctx.evaluator.records(b.collection)) for (const t of valuesOf(recordValue(c, r, b.field))) all.add(t);
       if (all.size === 0) return null;
       const current = ctx.tagFilters[b.collection]?.tag ?? null;
       const pick = (tag: string | null) => ctx.setTagFilter(b.collection, { field: b.field, tag });
@@ -230,7 +264,13 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const field = b.color_by ? c.fields.find((f) => f.key === b.color_by) : undefined;
       const options = field ? fieldOptions(c.key, field, ctx.settings) : [];
       const colors = new Map(options.map((o) => [o.value, o.color]));
-      const byDay = new Map(ctx.evaluator.records(c.key).map((r) => [r.day ?? '', r]));
+      // Daily records carry their day; events land on the local day they happened.
+      const dayOfRecord = (r: PluginRecord) => (c.kind === 'daily' ? r.day : r.occurred_at ? localDayOf(r.occurred_at, ctx.timeZone) : undefined);
+      const byDay = new Map<string, PluginRecord>();
+      for (const r of ctx.evaluator.records(c.key)) {
+        const d = dayOfRecord(r);
+        if (d) byDay.set(d, r);
+      }
       const year = Number(ctx.today.slice(0, 4));
       return (
         <div style={cardStyle}>
@@ -243,11 +283,11 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
               const r = byDay.get(day);
               if (!r) return undefined;
               if (!b.color_by) return 'var(--color-accent)';
-              return colors.get(String(r.data[b.color_by])) ?? 'var(--color-accent)';
+              return colors.get(String(recordValue(c, r, b.color_by))) ?? 'var(--color-accent)';
             }}
             onPick={
               c.kind === 'daily' && !ctx.readOnly
-                ? (day) => ctx.edit({ mode: 'day', collection: c, day, initial: byDay.get(day)?.data ?? initialRecordData(c) })
+                ? (day) => ctx.edit({ mode: 'day', collection: c, day, initial: initialRecordData(c, byDay.get(day)?.data) })
                 : undefined
             }
           />
@@ -267,7 +307,12 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const c = ctx.collection(b.collection);
       const field = c?.fields.find((f) => f.key === b.field);
       if (!c || !field) return null;
-      const rows = fieldOptions(c.key, field, ctx.settings).map((option) => ({
+      // Tags declare no options: the bars are the tags the records use.
+      const options =
+        field.type === 'tags'
+          ? [...new Set(ctx.evaluator.records(c.key).flatMap((r) => valuesOf(recordValue(c, r, field.key))))].sort().map((t) => ({ value: t, label: t }))
+          : fieldOptions(c.key, field, ctx.settings);
+      const rows = options.map((option) => ({
         option,
         count: num(ctx.evaluator.value({ count: c.key, where: { [field.key]: option.value }, ...(b.range ? { range: b.range } : {}) })) ?? 0,
       }));
@@ -299,17 +344,19 @@ function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockC
   const [saved, setSaved] = useState(false);
   const c = ctx.collection(collectionKey);
   if (!c) return null;
+  // A daily form edits today's record, so it starts from what's saved.
+  const todays = c.kind === 'daily' ? ctx.evaluator.records(c.key).find((r) => r.day === ctx.today) : undefined;
   return (
     <div style={cardStyle}>
       <RecordForm
-        key={round}
+        key={`${round}:${todays?.id ?? ''}`}
         collection={c}
         settings={ctx.settings}
-        initial={initialRecordData(c)}
+        initial={initialRecordData(c, todays?.data)}
         submitLabel={saved ? 'Saved ✓' : 'Save'}
         disabled={ctx.readOnly}
         onSubmit={(data) => {
-          if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, data);
+          if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
           else ctx.actions.add(c.key, data);
           setRound((n) => n + 1);
           setSaved(true);
@@ -323,7 +370,7 @@ function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockC
 /** A record's field as short text: option labels for selects, joined tags, formatted numbers. */
 function displayValue(ctx: BlockCtx, c: PluginCollection, key: string, r: PluginRecord): string {
   const f = c.fields.find((x) => x.key === key);
-  const v = r.data[key] ?? (key === 'created_at' ? r.created_at : undefined);
+  const v = recordValue(c, r, key);
   if (v === undefined || v === null || v === '') return '';
   if (f && (f.type === 'select' || f.type === 'multiselect')) {
     const labels = new Map(fieldOptions(c.key, f, ctx.settings).map((o) => [o.value, o.label]));
@@ -336,11 +383,11 @@ function displayValue(ctx: BlockCtx, c: PluginCollection, key: string, r: Plugin
   return ctx.stat(v as PluginValue);
 }
 
-function sortRecords(rows: PluginRecord[], sort: { field: string; order?: 'asc' | 'desc' | undefined } | undefined): PluginRecord[] {
+function sortRecords(c: PluginCollection, rows: PluginRecord[], sort: { field: string; order?: 'asc' | 'desc' | undefined } | undefined): PluginRecord[] {
   const field = sort?.field ?? 'created_at';
   const dir = (sort?.order ?? (sort ? 'asc' : 'desc')) === 'asc' ? 1 : -1;
   const key = (r: PluginRecord): string | number => {
-    const v = field === 'created_at' ? r.created_at : field === 'occurred_at' ? (r.occurred_at ?? '') : field === 'day' ? (r.day ?? '') : r.data[field];
+    const v = recordValue(c, r, field);
     return typeof v === 'number' ? v : typeof v === 'string' ? v.toLowerCase() : '';
   };
   return [...rows].sort((a, b) => {
@@ -353,12 +400,12 @@ function sortRecords(rows: PluginRecord[], sort: { field: string; order?: 'asc' 
 function ListBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'list' }>; ctx: BlockCtx }) {
   const c = ctx.collection(b.collection);
   if (!c) return null;
-  const rows = sortRecords(ctx.filtered(c.key, b.filter), b.sort);
+  const rows = sortRecords(c, ctx.filtered(c.key, b.filter), b.sort);
   if (rows.length === 0) return <Empty>Nothing here yet.</Empty>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' }}>
       {rows.map((r, i) => {
-        const url = b.open ? r.data[b.open] : undefined;
+        const url = b.open ? recordValue(c, r, b.open) : undefined;
         const primary = displayValue(ctx, c, b.primary, r) || 'Untitled';
         const secondary = (b.secondary ?? []).map((k) => displayValue(ctx, c, k, r)).filter(Boolean).join(' · ');
         return (
@@ -383,7 +430,7 @@ function ListBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'lis
             </div>
             {b.swipe && !ctx.readOnly ? (
               <button type="button" onClick={() => ctx.actions.update(r, { ...r.data, ...resolveMap(ctx, b.swipe!.set) })} style={{ ...chipStyle(false), flexShrink: 0 }}>
-                {b.swipe.label ?? 'Done'}
+                {b.swipe.label !== undefined ? ctx.text(b.swipe.label) : 'Done'}
               </button>
             ) : null}
             {!ctx.readOnly ? <EditButton onClick={() => ctx.edit({ mode: 'edit', collection: c, record: r })} /> : null}
@@ -398,12 +445,12 @@ function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'bo
   const c = ctx.collection(b.collection);
   const groupField = c?.fields.find((f) => f.key === b.group_by);
   if (!c || !groupField) return null;
-  const rows = sortRecords(ctx.filtered(c.key), undefined);
+  const rows = sortRecords(c, ctx.filtered(c.key), undefined);
   const groups = fieldOptions(c.key, groupField, ctx.settings);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {groups.map((g) => {
-        const cards = rows.filter((r) => (r.data[groupField.key] ?? groupField.default) === g.value);
+        const cards = rows.filter((r) => recordValue(c, r, groupField.key) === g.value);
         return (
           <section key={g.value}>
             <div style={{ ...labelStyle, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
@@ -414,7 +461,7 @@ function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'bo
             {cards.length === 0 ? null : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {cards.map((r) => {
-                  const image = b.card.image ? r.data[b.card.image] : undefined;
+                  const image = b.card.image ? recordValue(c, r, b.card.image) : undefined;
                   const subtitle = b.card.subtitle ? displayValue(ctx, c, b.card.subtitle, r) : '';
                   const badge = b.card.badge ? displayValue(ctx, c, b.card.badge, r) : '';
                   return (
@@ -514,8 +561,8 @@ function EditSheet({ editing, ctx, onClose }: { editing: Editing; ctx: BlockCtx;
           }
           onSubmit={(data) => {
             if (editing.mode === 'edit') ctx.actions.update(editing.record, data);
-            else if (editing.mode === 'day') ctx.actions.setDay(c.key, editing.day, data);
-            else if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, data);
+            else if (editing.mode === 'day') ctx.actions.setDay(c.key, editing.day, fullDay(c, data));
+            else if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
             else ctx.actions.add(c.key, data);
             onClose();
           }}
