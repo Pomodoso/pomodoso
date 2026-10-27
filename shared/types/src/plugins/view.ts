@@ -6,8 +6,8 @@
 // labels, defaults and rule behavior.
 
 import type { StatFormat } from './catalog.ts';
-import { createEvaluator, type EvalContext, type PluginValue } from './compute.ts';
-import type { PluginCollection, PluginField, PluginManifest, SelectOption } from './manifest.ts';
+import { createEvaluator, type EvalContext, type PluginEvaluator, type PluginRecord, type PluginValue } from './compute.ts';
+import type { PluginCollection, PluginField, PluginManifest, SelectOption, Where } from './manifest.ts';
 
 export interface PluginOption {
   value: string;
@@ -66,38 +66,43 @@ function isEmpty(v: unknown): boolean {
   return v === undefined || v === null || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
 }
 
-/** Required fields still empty in `data`, in file order. */
+/**
+ * Required fields still empty in `data`, in file order. A field the record
+ * predates reads its default, as the evaluator does.
+ */
 export function missingFields(c: PluginCollection, data: Record<string, unknown>): PluginField[] {
-  return c.fields.filter((f) => !f.optional && isEmpty(data[f.key]));
+  return c.fields.filter((f) => !f.optional && isEmpty(data[f.key] === undefined ? f.default : data[f.key]));
 }
 
-type RuleContext = Omit<EvalContext, 'records'>;
-
 /**
- * Applies the manifest's `rules` to a record being written. A rule fires when
- * the record starts matching its `when` — on create, or when an edit makes it
- * match — so marking a book read stamps `finished_on` once, and editing the
- * book later doesn't move the date. `only_if_empty` leaves set fields alone.
+ * Applies the manifest's `rules` to a record being written and returns its
+ * data. A rule fires when the record starts matching its `when` — on create,
+ * or when an edit makes it match — so marking a book read stamps
+ * `finished_on` once, and editing the book later doesn't move the date.
+ * `only_if_empty` leaves set fields alone.
+ *
+ * `prev` and `next` are the real records, dates included; `ctx.records` holds
+ * the plugin's stored records, so `$references` in `set` see the whole
+ * collection with this write in place of the stored version.
  */
 export function applyRules(
   manifest: PluginManifest,
-  collection: string,
-  prev: Record<string, unknown> | undefined,
-  next: Record<string, unknown>,
-  ctx: RuleContext,
+  prev: PluginRecord | undefined,
+  next: PluginRecord,
+  ctx: EvalContext,
 ): Record<string, unknown> {
-  const rules = (manifest.rules ?? []).filter((r) => r.collection === collection);
-  if (rules.length === 0) return next;
+  const rules = (manifest.rules ?? []).filter((r) => r.collection === next.collection);
+  if (rules.length === 0) return next.data;
 
-  const ts = ctx.now;
-  const record = (data: Record<string, unknown>) => ({ id: 'r', collection, created_at: ts, occurred_at: ts, day: ctx.today, data });
-  const nextEval = createEvaluator(manifest, { ...ctx, records: [record(next)] });
-  const prevEval = prev ? createEvaluator(manifest, { ...ctx, records: [record(prev)] }) : undefined;
+  const others = ctx.records.filter((r) => r.id !== next.id);
+  const nextEval = createEvaluator(manifest, { ...ctx, records: [...others, next] });
+  const prevEval = prev ? createEvaluator(manifest, { ...ctx, records: [...others, prev] }) : undefined;
+  const matches = (ev: PluginEvaluator, id: string, when: Where) => ev.records(next.collection, when).some((r) => r.id === id);
 
-  const out = { ...next };
+  const out = { ...next.data };
   for (const rule of rules) {
-    if (nextEval.records(collection, rule.when).length === 0) continue;
-    if (prevEval && prevEval.records(collection, rule.when).length > 0) continue;
+    if (!matches(nextEval, next.id, rule.when)) continue;
+    if (prev && prevEval && matches(prevEval, prev.id, rule.when)) continue;
     for (const [key, v] of Object.entries(rule.set)) {
       if (rule.only_if_empty && !isEmpty(out[key])) continue;
       out[key] = typeof v === 'string' && v.startsWith('$') ? nextEval.value(v) : v;

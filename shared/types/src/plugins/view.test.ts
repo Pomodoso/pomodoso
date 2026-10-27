@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import type { PluginManifest } from './manifest.ts';
-import { parsePluginFile } from './parse.ts';
+import type { PluginRecord } from './compute.ts';
+import { parsePluginFile, validatePluginData } from './parse.ts';
 import {
   applyRules,
   fieldOptions,
@@ -13,6 +14,12 @@ import {
   missingFields,
   optionsSettingKey,
 } from './view.ts';
+
+function parsed(data: unknown): PluginManifest {
+  const r = validatePluginData(data);
+  if (!r.ok) assert.fail(JSON.stringify(r.issues));
+  return r.manifest;
+}
 
 function example(name: string): PluginManifest {
   const r = parsePluginFile(readFileSync(new URL(`./examples/${name}.yaml`, import.meta.url), 'utf8'));
@@ -54,27 +61,61 @@ test('a new record starts from defaults with set on top, and reports what is mis
   assert.deepEqual(missingFields(book, { ...data, title: 'Dune' }).map((f) => f.key), []);
 });
 
+const book = (id: string, data: Record<string, unknown>, created_at = '2026-10-01T12:00:00Z'): PluginRecord => ({ id, collection: 'book', created_at, data });
+const rulesCtx = { ...ctx, records: [] as PluginRecord[] };
+
 test('a rule stamps the date when a book becomes read, once', () => {
   const m = example('bookshelf');
-  const created = applyRules(m, 'book', undefined, { title: 'Dune', status: 'read' }, ctx);
+  const created = applyRules(m, undefined, book('a', { title: 'Dune', status: 'read' }), rulesCtx);
   assert.equal(created.finished_on, '2026-10-21');
 
-  const reading = { title: 'Dune', status: 'reading' };
-  assert.equal(applyRules(m, 'book', undefined, reading, ctx).finished_on, undefined);
+  const reading = book('a', { title: 'Dune', status: 'reading' });
+  assert.equal(applyRules(m, undefined, reading, rulesCtx).finished_on, undefined);
 
-  const marked = applyRules(m, 'book', reading, { ...reading, status: 'read' }, ctx);
-  assert.equal(marked.finished_on, '2026-10-21');
+  const marked = book('a', applyRules(m, reading, { ...reading, data: { ...reading.data, status: 'read' } }, rulesCtx));
+  assert.equal(marked.data.finished_on, '2026-10-21');
 
   // Already read: editing the rating later doesn't move the date.
-  const later = { ...ctx, today: '2026-11-02' };
-  const edited = applyRules(m, 'book', marked, { ...marked, rating: 5 }, later);
+  const later = { ...rulesCtx, today: '2026-11-02' };
+  const edited = applyRules(m, marked, { ...marked, data: { ...marked.data, rating: 5 } }, later);
   assert.equal(edited.finished_on, '2026-10-21');
 });
 
 test('only_if_empty keeps a date the user set', () => {
   const m = example('bookshelf');
-  const out = applyRules(m, 'book', { title: 'Dune', status: 'reading' }, { title: 'Dune', status: 'read', finished_on: '2026-09-30' }, ctx);
+  const out = applyRules(m, book('a', { title: 'Dune', status: 'reading' }), book('a', { title: 'Dune', status: 'read', finished_on: '2026-09-30' }), rulesCtx);
   assert.equal(out.finished_on, '2026-09-30');
+});
+
+test('rule references see the other records, and the record keeps its own dates', () => {
+  const m = parsed({
+    schema_version: 1,
+    id: 'queue',
+    name: 'Queue',
+    version: '1.0.0',
+    collections: [
+      { key: 'book', kind: 'item', fields: [{ key: 'title', type: 'text' }, { key: 'position', type: 'number', optional: true }] },
+      { key: 'mood', kind: 'daily', fields: [{ key: 'state', type: 'text' }, { key: 'today', type: 'boolean', optional: true }] },
+    ],
+    computed: { book_count: { count: 'book' } },
+    rules: [
+      { collection: 'book', when: { title: { exists: true } }, set: { position: '$book_count' } },
+      { collection: 'mood', when: { day: '$today_date' }, set: { today: true } },
+    ],
+    views: [{ id: 'main', blocks: [{ type: 'text', text: 'x' }] }],
+  });
+  const stored = [book('a', { title: 'A' }), book('b', { title: 'B' })];
+  assert.equal(applyRules(m, undefined, book('c', { title: 'C' }), { ...rulesCtx, records: stored }).position, 3);
+
+  const yesterday: PluginRecord = { id: 'd', collection: 'mood', day: '2026-10-20', created_at: '2026-10-21T12:00:00Z', data: { state: 'ok' } };
+  assert.equal(applyRules(m, undefined, yesterday, rulesCtx).today, undefined);
+  assert.equal(applyRules(m, undefined, { ...yesterday, day: '2026-10-21' }, rulesCtx).today, true);
+});
+
+test('a required field the record predates counts as filled by its default', () => {
+  const c = { key: 'book', kind: 'item' as const, fields: [{ key: 'title', type: 'text' as const }, { key: 'status', type: 'text' as const, default: 'want' }] };
+  assert.deepEqual(missingFields(c, { title: 'Dune' }).map((f) => f.key), []);
+  assert.deepEqual(missingFields(c, { title: 'Dune', status: '' }).map((f) => f.key), ['status']);
 });
 
 test('stats read naturally', () => {
