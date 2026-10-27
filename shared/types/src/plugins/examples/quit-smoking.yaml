@@ -1,0 +1,62 @@
+schema_version: 1
+id: quit-smoking
+name: Quit smoking
+version: 1.0.0
+icon: no-smoking
+description: A daily limit that drops every week. Log each one and watch the trend go down.
+license: MIT
+
+settings:
+  - { key: start_limit, type: number, label: Starting daily limit, default: 15, min: 0 }
+  - { key: weekly_reduction, type: number, label: Reduce every week by, default: 1, min: 0 }
+
+collections:
+  - key: cigarette
+    kind: event
+    fields:
+      - { key: craving, type: scale, label: "How strong was the craving?", min: 1, max: 5, optional: true }
+      - key: trigger
+        type: select
+        optional: true
+        options: [coffee, stress, after_meal, pomodoro_break, social]
+      - { key: note, type: text, optional: true }
+
+computed:
+  today: { count: cigarette, range: today }
+  limit: { taper: { from: $start_limit, down_by: $weekly_reduction, every: week, min: 0 } }
+  last: { last: cigarette }
+  under_limit: { streak: cigarette, at_most: $limit }
+  week: { count: cigarette, range: this_week }
+  last_week: { count: cigarette, range: last_week }
+  week_change: { delta: [$week, $last_week] }
+
+views:
+  - id: main
+    blocks:
+      - { type: counter-button, label: Smoked one, adds: cigarette }
+      - { type: progress, value: $today, max: $limit, invert: true }
+      - type: stat-row
+        items:
+          - { label: Since last, value: $last, format: time_ago }
+          - { label: Under limit, value: $under_limit, format: days }
+          - { label: vs last week, value: $week_change, format: percent }
+      - type: chart
+        label: Last 14 days
+        kind: bar
+        series: { count: cigarette, group: day, range: 14d }
+        reference: $limit
+  - id: log
+    label: Log with details
+    blocks:
+      - { type: form, collection: cigarette }
+
+today:
+  default_on: true
+  widget: { type: mini-counter, label: Cigarettes, value: $today, max: $limit, adds: cigarette }
+
+hooks:
+  - on: pomodoro_end
+    ask: Did you smoke during this break?
+    yes: { add: cigarette, set: { trigger: pomodoro_break } }
+  - on: weekly_report
+    line: "Cigarettes: {$week} this week ({$week_change} vs last week)"

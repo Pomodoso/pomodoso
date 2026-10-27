@@ -1,0 +1,47 @@
+schema_version: 1
+id: bookshelf
+name: Bookshelf
+version: 1.0.0
+icon: book
+description: Books you want to read, are reading and have read.
+license: MIT
+
+collections:
+  - key: book
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: author, type: text, optional: true }
+      - { key: status, type: select, options: [want, reading, read], default: want }
+      - { key: rating, type: rating, optional: true }
+      - { key: tags, type: tags, optional: true }
+      - { key: cover, type: image_url, optional: true }
+      - { key: finished_on, type: date, optional: true }
+
+computed:
+  read_this_year: { count: book, where: { status: read }, range: this_year, by: finished_on }
+
+views:
+  - id: main
+    blocks:
+      - { type: add-button, label: Add a book, adds: book }
+      - { type: tag-filter, collection: book, field: tags }
+      - type: board
+        collection: book
+        group_by: status
+        card: { title: title, subtitle: author, image: cover, badge: rating }
+  - id: stats
+    label: Stats
+    blocks:
+      - { type: stat, label: Read this year, value: $read_this_year }
+      - type: chart
+        label: Books per month
+        kind: bar
+        series: { count: book, where: { status: read }, by: finished_on, group: month, range: 12mo }
+
+rules:
+  - collection: book
+    when: { status: read }
+    set: { finished_on: $today_date }
+    only_if_empty: true
