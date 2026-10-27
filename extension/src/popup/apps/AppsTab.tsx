@@ -290,8 +290,6 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
   const [issues, setIssues] = useState<PluginIssue[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const prompts = (manifest.hooks ?? []).flatMap((h) => ('ask' in h ? [h.ask] : []));
-  const reports = (manifest.hooks ?? []).filter((h) => !('ask' in h)).length;
 
   return (
     <>
@@ -309,8 +307,6 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
         <div style={sectionTitle}>What it adds</div>
         <div>• {manifest.views.length === 1 ? 'A screen' : `${manifest.views.length} screens`} in Apps</div>
         <div>• Stores: {manifest.collections.map((c) => c.key.replace(/_/g, ' ')).join(', ')} — only in this browser{' '}(and your account, with sync)</div>
-        {prompts.map((q) => <div key={q}>• Asks: “{q}”</div>)}
-        {reports > 0 ? <div>• Adds a line to your reports</div> : null}
         <div style={{ color: 'var(--color-text-faint)', marginTop: 4 }}>Apps only see their own data. They can't read your tasks or run code.</div>
       </div>
 
@@ -397,10 +393,11 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
   const actions: PluginActions = useMemo(() => {
     const env = { timezone, weekStart };
     return {
-      add: (c, data) => void addRecord(plugin, c, data, env),
-      setDay: (c, day, data) => void setDaily(plugin, c, day, data, env),
-      update: (r: PluginRecord, data) => void updateRecord(plugin, r.id, data, env),
-      remove: (r: PluginRecord) => void deleteRecord(r.id),
+      // Writes return their promise so a form can reset once the record is stored.
+      add: (c, data) => addRecord(plugin, c, data, env),
+      setDay: (c, day, data) => setDaily(plugin, c, day, data, env),
+      update: (r: PluginRecord, data) => updateRecord(plugin, r.id, data, env),
+      remove: (r: PluginRecord) => deleteRecord(r.id),
       openUrl: (url) => {
         if (/^https?:\/\//i.test(url)) void chrome.tabs.create({ url });
       },
