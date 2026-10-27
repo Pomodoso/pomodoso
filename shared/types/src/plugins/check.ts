@@ -26,6 +26,7 @@ const BUILTIN_FIELDS: Record<CollectionKind, readonly string[]> = {
 const DATE_BUILTINS = new Set(['occurred_at', 'created_at', 'updated_at', 'day']);
 const NUMERIC_TYPES: readonly FieldType[] = ['number', 'scale', 'rating', 'duration'];
 const TEMPLATE_REF = /\{\$([^}]*)\}/g;
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function optionValue(o: SelectOption): string {
   return typeof o === 'string' ? o : o.value;
@@ -34,6 +35,37 @@ export function optionValue(o: SelectOption): string {
 /** Fields a quick action must fill itself, because the user won't see a form. */
 function requiredFields(c: PluginCollection): PluginField[] {
   return c.fields.filter((f) => !f.optional && f.default === undefined);
+}
+
+type Literal = string | number | boolean;
+
+/**
+ * Why a literal can't go in a value of this shape, or undefined when it fits.
+ * Fields and settings share it: both are a type plus optional options and
+ * bounds.
+ */
+function misfit(v: Literal, type: FieldType, options: readonly SelectOption[] | undefined, min?: number, max?: number): string | undefined {
+  switch (type) {
+    case 'number':
+    case 'scale':
+    case 'rating':
+    case 'duration':
+      if (typeof v !== 'number') return `expected a number, got ${JSON.stringify(v)}`;
+      if (min !== undefined && v < min) return `${v} is below the minimum ${min}`;
+      if (max !== undefined && v > max) return `${v} is above the maximum ${max}`;
+      return undefined;
+    case 'boolean':
+      return typeof v === 'boolean' ? undefined : `expected true or false, got ${JSON.stringify(v)}`;
+    case 'select':
+    case 'multiselect': {
+      const values = (options ?? []).map(optionValue);
+      return typeof v === 'string' && values.includes(v) ? undefined : unknownMessage('option', String(v), values);
+    }
+    case 'date':
+      return typeof v === 'string' && DAY_PATTERN.test(v) ? undefined : `expected a date like 2026-01-31, got ${JSON.stringify(v)}`;
+    default:
+      return typeof v === 'string' ? undefined : `expected text, got ${JSON.stringify(v)}`;
+  }
 }
 
 function operatorOf(e: ComputedExpr): (typeof COMPUTED_OPS)[number] {
@@ -63,9 +95,16 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         const values = f.options.map(optionValue);
         const dup = values.find((v, k) => values.indexOf(v) !== k);
         if (dup !== undefined) add([...at, 'options'], `duplicate option "${dup}"`);
-        const defaults = f.default === undefined ? [] : Array.isArray(f.default) ? f.default : [f.default];
-        for (const d of defaults) {
-          if (!values.includes(String(d))) add([...at, 'default'], unknownMessage('option', String(d), values));
+      }
+      if (f.default !== undefined) {
+        const list = f.type === 'multiselect' || f.type === 'tags';
+        if (list !== Array.isArray(f.default)) {
+          add([...at, 'default'], list ? `a ${f.type} default is a list` : `a ${f.type} default is a single value, not a list`);
+        } else {
+          for (const d of Array.isArray(f.default) ? f.default : [f.default]) {
+            const why = f.type === 'tags' ? undefined : misfit(d, f.type, f.options, f.min, f.max);
+            if (why) add([...at, 'default'], why);
+          }
         }
       }
     });
@@ -81,6 +120,10 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
   m.settings?.forEach((s, i) => {
     if (settingKeys.has(s.key)) add(['settings', i, 'key'], `duplicate setting "${s.key}"`);
     settingKeys.add(s.key);
+    if (s.default !== undefined) {
+      const why = misfit(s.default, s.type, s.options, s.min, s.max);
+      if (why) add(['settings', i, 'default'], why);
+    }
   });
 
   const computedKeys = new Set(Object.keys(m.computed ?? {}));
@@ -147,10 +190,14 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
     field(path, c, k, ['date'], '"by"');
   }
 
-  function valueMap(path: Path, c: PluginCollection | undefined, map: Record<string, unknown>, allowTab = false) {
+  function valueMap(path: Path, c: PluginCollection | undefined, map: Record<string, Literal>, allowTab = false) {
     for (const [k, v] of Object.entries(map)) {
-      field([...path, k], c, k);
+      const f = field([...path, k], c, k);
       if (typeof v === 'string' && v.startsWith('$')) ref([...path, k], v, allowTab);
+      else if (f) {
+        const why = f.type === 'tags' ? undefined : misfit(v, f.type, f.options, f.min, f.max);
+        if (why) add([...path, k], why);
+      }
     }
   }
 
@@ -162,6 +209,11 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       if (typeof cond === 'object') {
         for (const [op, v] of Object.entries(cond)) {
           if (typeof v === 'string' && v.startsWith('$')) ref([...at, op], v);
+          if (Array.isArray(v)) {
+            v.forEach((x, n) => {
+              if (typeof x === 'string' && x.startsWith('$')) ref([...at, op, n], x);
+            });
+          }
         }
       }
     }
@@ -221,9 +273,9 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
     }
   }
 
-  function quickAdd(path: Path, c: PluginCollection | undefined, set: Record<string, unknown> | undefined, usage: string) {
+  function quickAdd(path: Path, c: PluginCollection | undefined, set: Record<string, unknown> | undefined, usage: string, picked?: string) {
     if (!c) return;
-    const missing = requiredFields(c).filter((f) => !set || !(f.key in set));
+    const missing = requiredFields(c).filter((f) => f.key !== picked && (!set || !(f.key in set)));
     if (missing.length > 0) {
       add(path, `${usage} adds to "${c.key}" without a form, but ${missing.map((f) => `"${f.key}"`).join(', ')} is required; make it optional, give it a default, or set it here`);
     }
@@ -276,6 +328,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       case 'add-button': {
         const c = collection([...path, 'adds'], b.adds, ['item'], 'add-button');
         if (b.prefill) valueMap([...path, 'prefill'], c, b.prefill, true);
+        template([...path, 'label'], b.label);
         return;
       }
       case 'form':
@@ -294,6 +347,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       case 'progress':
         value([...path, 'value'], b.value);
         value([...path, 'max'], b.max);
+        if (b.label !== undefined) template([...path, 'label'], b.label);
         return;
       case 'chart': {
         const op = operatorOf(b.series);
@@ -303,6 +357,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         }
         computed([...path, 'series'], b.series);
         if (b.reference !== undefined) value([...path, 'reference'], b.reference);
+        if (b.label !== undefined) template([...path, 'label'], b.label);
         return;
       }
       case 'list': {
@@ -312,7 +367,10 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         if (b.open !== undefined) field([...path, 'open'], c, b.open, ['url'], '"open"');
         if (b.sort && !(c && BUILTIN_FIELDS[c.kind].includes(b.sort.field))) field([...path, 'sort', 'field'], c, b.sort.field);
         if (b.filter) where([...path, 'filter'], c, b.filter);
-        if (b.swipe) valueMap([...path, 'swipe', 'set'], c, b.swipe.set);
+        if (b.swipe) {
+          valueMap([...path, 'swipe', 'set'], c, b.swipe.set);
+          if (b.swipe.label !== undefined) template([...path, 'swipe', 'label'], b.swipe.label);
+        }
         return;
       }
       case 'tag-filter': {
@@ -337,6 +395,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       case 'day-picker': {
         const c = collection([...path, 'collection'], b.collection, ['daily'], 'day-picker');
         field([...path, 'field'], c, b.field, ['select'], 'day-picker');
+        quickAdd(path, c, undefined, 'day-picker', b.field);
         return;
       }
       case 'breakdown': {
@@ -367,6 +426,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       case 'select-today': {
         const c = collection([...path, 'collection'], w.collection, ['daily'], 'select-today');
         field([...path, 'field'], c, w.field, ['select'], 'select-today');
+        quickAdd(path, c, undefined, 'select-today', w.field);
         break;
       }
       case 'count-badge':
@@ -393,6 +453,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
     if (h.pick) {
       const c = collection([...path, 'pick', 'collection'], h.pick.collection, ['daily'], 'pick');
       field([...path, 'pick', 'field'], c, h.pick.field, ['select'], 'pick');
+      quickAdd([...path, 'pick'], c, undefined, 'pick', h.pick.field);
     }
   });
 

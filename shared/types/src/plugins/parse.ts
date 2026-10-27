@@ -143,7 +143,8 @@ function describeIssue(i: ZodIssue, data: unknown): PluginIssue[] {
  */
 function describeUnion(i: Extract<ZodIssue, { code: 'invalid_union' }>, data: unknown, actual: unknown): PluginIssue[] {
   const path = pathKey(i.path);
-  const branches = i.errors;
+  // Branch issues carry paths relative to the union; anchor them to the file.
+  const branches = i.errors.map((b) => b.map((x) => ({ ...x, path: [...i.path, ...x.path] }) as ZodIssue));
 
   if (actual !== null && typeof actual === 'object' && !Array.isArray(actual)) {
     const keys = Object.keys(actual);
@@ -156,9 +157,12 @@ function describeUnion(i: Extract<ZodIssue, { code: 'invalid_union' }>, data: un
       const hint = guess !== undefined ? `; did you mean "${guess}"?` : '';
       return [{ path, message: `a computed value needs exactly one operator${hint} available: ${COMPUTED_OPS.join(', ')}` }];
     }
+    if (op !== undefined) {
+      const issues = operatorBranch(branches, op, path);
+      if (issues) return describeIssues(issues, data);
+    }
 
-    // Otherwise (an operator branch, or a hook): the branch with the fewest
-    // issues is the closest match.
+    // Otherwise (a hook): the branch with the fewest issues is the closest match.
     const best = [...branches].sort((a, b) => a.length - b.length)[0];
     if (best && best.length > 0) return describeIssues(best, data);
   }
@@ -167,4 +171,24 @@ function describeUnion(i: Extract<ZodIssue, { code: 'invalid_union' }>, data: un
     return [{ path, message: `expected a number, a $reference or a computed value, got "${actual}" (references start with $)` }];
   }
   return [{ path, message: i.message }];
+}
+
+/**
+ * The issues of the branch for `op`. Every other operator's branch rejects
+ * `op` as an unknown key, and the number and $reference branches reject the
+ * whole value; a value reference nests the computed union, so unwrap it.
+ */
+function operatorBranch(branches: ZodIssue[][], op: string, path: string): ZodIssue[] | undefined {
+  for (const b of branches) {
+    const nested = b.length === 1 && b[0]!.code === 'invalid_union' && pathKey(b[0]!.path) === path ? b[0] : undefined;
+    if (nested?.code === 'invalid_union') {
+      const inner = operatorBranch(nested.errors.map((x) => x.map((y) => ({ ...y, path: [...nested.path, ...y.path] }) as ZodIssue)), op, path);
+      if (inner) return inner;
+      continue;
+    }
+    const rejectsOp = b.some((x) => x.code === 'unrecognized_keys' && x.keys.includes(op));
+    const rejectsWhole = b.some((x) => x.code === 'invalid_type' && pathKey(x.path) === path);
+    if (!rejectsOp && !rejectsWhole) return b;
+  }
+  return undefined;
 }

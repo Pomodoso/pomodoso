@@ -103,6 +103,17 @@ test('a bad key inside a known operator is reported on that operator only', () =
   assert.equal(issues.length, 1);
 });
 
+test('errors in a known operator name that operator, also nested in a value', () => {
+  const m = base();
+  m.computed = { today: { count: 'glass', range: 'nope', by: 5, group: 'hour' } };
+  let issues = issuesFor(m);
+  assert.deepEqual(issues.map((i) => i.path).sort(), ['computed.today.by', 'computed.today.group', 'computed.today.range']);
+
+  m.computed = { today: { delta: [{ count: 'glass', range: 'nope', group: 'hour' }, 1] } };
+  issues = issuesFor(m);
+  assert.deepEqual(issues.map((i) => i.path).sort(), ['computed.today.delta[0].group', 'computed.today.delta[0].range']);
+});
+
 test('a bare word where a value goes points out that references start with $', () => {
   const issues = blockIssues({ type: 'stat', label: 'Today', value: 'today' });
   assertIssue(issues, 'views[0].blocks[0].value', 'references start with $');
@@ -164,6 +175,78 @@ test('a select default must be one of its options', () => {
   const m = base();
   m.collections = [{ key: 'glass', kind: 'event', fields: [{ key: 'size', type: 'select', options: ['s', 'l'], default: 'm' }] }];
   assertIssue(issuesFor(m), 'collections[0].fields[0].default', 'unknown option "m"');
+});
+
+test('literal values must fit the field they set', () => {
+  const m = base();
+  m.collections = [
+    {
+      key: 'glass',
+      kind: 'event',
+      fields: [
+        { key: 'ml', type: 'number', min: 0, max: 1000 },
+        { key: 'size', type: 'select', options: ['s', 'l'], optional: true },
+      ],
+    },
+  ];
+  m.views = [{ id: 'main', blocks: [{ type: 'counter-button', label: 'Drank', adds: 'glass', set: { ml: 'oops', size: 'm' } }] }];
+  let issues = issuesFor(m);
+  assertIssue(issues, 'views[0].blocks[0].set.ml', 'expected a number');
+  assertIssue(issues, 'views[0].blocks[0].set.size', 'unknown option "m"');
+
+  m.views = [{ id: 'main', blocks: [{ type: 'counter-button', label: 'Drank', adds: 'glass', set: { ml: 5000 } }] }];
+  assertIssue(issuesFor(m), 'views[0].blocks[0].set.ml', 'above the maximum 1000');
+});
+
+test('defaults must fit their field or setting', () => {
+  const m = base();
+  m.settings = [
+    { key: 'goal', type: 'number', label: 'Goal', default: 'eight' },
+    { key: 'unit', type: 'select', label: 'Unit', options: ['ml', 'oz'], default: 'cups' },
+  ];
+  m.collections = [{ key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', default: 'lots' }, { key: 'tags', type: 'tags', default: 'x' }] }];
+  const issues = issuesFor(m);
+  assertIssue(issues, 'settings[0].default', 'expected a number');
+  assertIssue(issues, 'settings[1].default', 'unknown option "cups"');
+  assertIssue(issues, 'collections[0].fields[0].default', 'expected a number');
+  assertIssue(issues, 'collections[0].fields[1].default', 'is a list');
+});
+
+test('picking a daily value must be able to fill the other required fields', () => {
+  const m = base();
+  m.collections = [
+    { key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', optional: true }] },
+    { key: 'mood', kind: 'daily', fields: [{ key: 'state', type: 'select', options: ['good', 'bad'] }, { key: 'note', type: 'text' }] },
+  ];
+  m.views = [{ id: 'main', blocks: [{ type: 'day-picker', collection: 'mood', field: 'state' }] }];
+  m.today = { widget: { type: 'select-today', label: 'Mood', collection: 'mood', field: 'state' } };
+  m.hooks = [{ on: 'day_end', ask: 'Mood?', pick: { collection: 'mood', field: 'state' } }];
+  const issues = issuesFor(m);
+  assertIssue(issues, 'views[0].blocks[0]', '"note" is required');
+  assertIssue(issues, 'today.widget', '"note" is required');
+  assertIssue(issues, 'hooks[0].pick', '"note" is required');
+});
+
+test('references inside filter lists and optional labels are checked', () => {
+  const m = base();
+  m.collections = [
+    { key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', optional: true }] },
+    { key: 'book', kind: 'item', fields: [{ key: 'title', type: 'text' }, { key: 'status', type: 'text', optional: true }] },
+  ];
+  m.views = [
+    {
+      id: 'main',
+      blocks: [
+        { type: 'list', collection: 'book', primary: 'title', filter: { status: { in: ['$missing'] } } },
+        { type: 'add-button', label: 'Save {$nope}', adds: 'book' },
+        { type: 'progress', label: 'Of {$nada}', value: '$today', max: '$goal' },
+      ],
+    },
+  ];
+  const issues = issuesFor(m);
+  assertIssue(issues, 'views[0].blocks[0].filter.status.in[0]', 'unknown reference "$missing"');
+  assertIssue(issues, 'views[0].blocks[1].label', 'unknown reference "$nope"');
+  assertIssue(issues, 'views[0].blocks[2].label', 'unknown reference "$nada"');
 });
 
 test('a prompt hook takes yes or pick, not both', () => {
