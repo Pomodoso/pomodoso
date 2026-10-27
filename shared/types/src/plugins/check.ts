@@ -465,5 +465,34 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
     }
   });
 
+  // ─── Migrate ───────────────────────────────────────────────────────────────
+  // Steps name the NEW collections and fields; the old side can only be
+  // checked against the previous version (diff.ts).
+
+  m.migrate?.steps.forEach((step, i) => {
+    const path: Path = ['migrate', 'steps', i];
+    if ('rename_collection' in step) {
+      collection([...path, 'rename_collection', 'to'], step.rename_collection.to);
+    } else if ('rename_field' in step) {
+      const c = collection([...path, 'rename_field', 'collection'], step.rename_field.collection);
+      field([...path, 'rename_field', 'to'], c, step.rename_field.to);
+    } else if ('map_values' in step) {
+      const { collection: ck, field: fk, map } = step.map_values;
+      const c = collection([...path, 'map_values', 'collection'], ck);
+      const f = field([...path, 'map_values', 'field'], c, fk, ['select', 'multiselect'], 'map_values');
+      const values = f?.options?.map(optionValue) ?? [];
+      if (f) {
+        for (const [from, to] of Object.entries(map)) {
+          if (!values.includes(to)) add([...path, 'map_values', 'map', from], unknownMessage('option', to, values));
+        }
+      }
+    } else {
+      const c = collection([...path, 'drop_field', 'collection'], step.drop_field.collection);
+      if (c?.fields.some((f) => f.key === step.drop_field.field)) {
+        add([...path, 'drop_field', 'field'], `"${step.drop_field.field}" still exists in "${c.key}"; drop_field is for fields this version removes`);
+      }
+    }
+  });
+
   return issues;
 }

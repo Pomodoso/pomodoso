@@ -377,6 +377,25 @@ export const ruleSchema = z.strictObject({
 });
 export type PluginRule = z.infer<typeof ruleSchema>;
 
+// ─── Migrations ──────────────────────────────────────────────────────────────
+// How a breaking update carries existing records over. Steps run in order;
+// collection names are the NEW ones (after any rename_collection).
+
+export const migrateStepSchema = z.union([
+  z.strictObject({ rename_collection: z.strictObject({ from: key, to: key }) }),
+  z.strictObject({ rename_field: z.strictObject({ collection: key, from: key, to: key }) }),
+  z.strictObject({ map_values: z.strictObject({ collection: key, field: key, map: z.record(key, key) }) }),
+  z.strictObject({ drop_field: z.strictObject({ collection: key, field: key }) }),
+]);
+export type MigrateStep = z.infer<typeof migrateStepSchema>;
+
+export const migrateSchema = z.strictObject({
+  /** Major version this migration upgrades from, written `1.x`. */
+  from: z.string().regex(/^(0|[1-9]\d*)\.x$/, 'must name the previous major version like 1.x'),
+  steps: z.array(migrateStepSchema).min(1).max(30),
+});
+export type PluginMigrate = z.infer<typeof migrateSchema>;
+
 // ─── The file ────────────────────────────────────────────────────────────────
 
 export const manifestSchema = z.strictObject({
@@ -395,5 +414,6 @@ export const manifestSchema = z.strictObject({
   today: todaySchema.optional(),
   hooks: z.array(hookSchema).max(10).optional(),
   rules: z.array(ruleSchema).max(20).optional(),
+  migrate: migrateSchema.optional(),
 });
 export type PluginManifest = z.infer<typeof manifestSchema>;
