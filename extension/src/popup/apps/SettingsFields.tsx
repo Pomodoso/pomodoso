@@ -149,18 +149,25 @@ export function EditableOptions({ manifest, values, disabled, onChange }: {
   );
 }
 
-function OptionList({ title, options, disabled, onChange }: {
+function OptionList({ title, options: stored, disabled, onChange }: {
   title: string;
   options: PluginOption[];
   disabled?: boolean | undefined;
   onChange: (next: PluginOption[]) => void;
 }) {
+  // Edits build on this local list, not on the stored one: fast keystrokes
+  // land before the live query refreshes, and each must include the last.
+  const [options, setOptions] = useState(stored);
   const [draft, setDraft] = useState('');
-  const patch = (i: number, p: Partial<PluginOption>) => onChange(options.map((o, k) => (k === i ? { ...o, ...p } : o)));
+  const commit = (next: PluginOption[]) => {
+    setOptions(next);
+    onChange(next);
+  };
+  const patch = (i: number, p: Partial<PluginOption>) => commit(options.map((o, k) => (k === i ? { ...o, ...p } : o)));
   const add = () => {
     const text = draft.trim();
     if (!text) return;
-    onChange([...options, { value: keyFromLabel(text, options.map((o) => o.value)), label: text, color: '#9B9890' }]);
+    commit([...options, { value: keyFromLabel(text, options.map((o) => o.value)), label: text, color: '#9B9890' }]);
     setDraft('');
   };
   return (
@@ -182,7 +189,7 @@ function OptionList({ title, options, disabled, onChange }: {
             />
             <button
               type="button" disabled={disabled || options.length <= 1} aria-label={`Remove ${o.label}`}
-              onClick={() => onChange(options.filter((_, k) => k !== i))}
+              onClick={() => commit(options.filter((_, k) => k !== i))}
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-faint)', fontSize: 14, opacity: options.length <= 1 ? 0.3 : 1 }}
             >
               ×
