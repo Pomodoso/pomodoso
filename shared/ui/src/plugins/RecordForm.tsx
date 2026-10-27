@@ -16,19 +16,23 @@ interface RecordFormProps {
   initial: Record<string, unknown>;
   submitLabel: string;
   disabled?: boolean | undefined;
-  onSubmit: (data: Record<string, unknown>) => void;
+  /** May return a promise; Save stays disabled until it settles. */
+  onSubmit: (data: Record<string, unknown>) => void | Promise<unknown>;
   onCancel?: (() => void) | undefined;
   onDelete?: (() => void) | undefined;
 }
 
 /** One input per field of a collection. Submitting is blocked until required fields are filled. */
 export function RecordForm({ collection, settings, initial, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
-  // A checkbox has no "unanswered" look: an unset boolean starts as the false it shows.
+  // A checkbox has no "unanswered" look: an unset boolean starts as its
+  // default (a record may predate it), else as the false it shows.
   const [data, setData] = useState<Record<string, unknown>>(() => {
     const out = { ...initial };
-    for (const f of collection.fields) if (f.type === 'boolean' && out[f.key] === undefined) out[f.key] = false;
+    for (const f of collection.fields) if (f.type === 'boolean' && out[f.key] === undefined) out[f.key] = f.default ?? false;
     return out;
   });
+  // Blocks a second submit while the first write is in flight (it would add a duplicate).
+  const [pending, setPending] = useState(false);
   const missing = missingFields(collection, data);
   const set = (key: string, v: unknown) => setData((d) => ({ ...d, [key]: v }));
 
@@ -36,7 +40,12 @@ export function RecordForm({ collection, settings, initial, submitLabel, disable
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (missing.length === 0 && !disabled) onSubmit(clean(data));
+        if (missing.length > 0 || disabled || pending) return;
+        const result = onSubmit(clean(data));
+        if (result instanceof Promise) {
+          setPending(true);
+          void result.finally(() => setPending(false));
+        }
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
     >
@@ -60,7 +69,7 @@ export function RecordForm({ collection, settings, initial, submitLabel, disable
             Cancel
           </button>
         ) : null}
-        <button type="submit" disabled={disabled || missing.length > 0} style={buttonStyle('primary')}>
+        <button type="submit" disabled={disabled || pending || missing.length > 0} style={buttonStyle('primary')}>
           {submitLabel}
         </button>
       </div>

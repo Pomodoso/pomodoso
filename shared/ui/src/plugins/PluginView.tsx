@@ -111,6 +111,7 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
 /** A record's field, or the field's default when the record predates it (as the evaluator reads it). */
 function recordValue(c: PluginCollection, r: PluginRecord, key: string): unknown {
   if (key === 'created_at') return r.created_at;
+  if (key === 'updated_at') return r.updated_at;
   // Built in only for the kind that owns them: an item may declare its own `day`.
   if (key === 'occurred_at' && c.kind === 'event') return r.occurred_at ?? undefined;
   if (key === 'day' && c.kind === 'daily') return r.day ?? undefined;
