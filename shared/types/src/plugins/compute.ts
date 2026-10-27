@@ -101,7 +101,7 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
 
   function dayOf(r: PluginRecord, c: PluginCollection, by?: string): string | undefined {
     if (by !== undefined && by !== 'occurred_at' && by !== 'created_at' && by !== 'updated_at' && by !== 'day') {
-      const v = r.data[by];
+      const v = fieldValue(r, c, by);
       return typeof v === 'string' && v.length >= 10 ? v.slice(0, 10) : undefined;
     }
     if (by === undefined) {
@@ -233,7 +233,8 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
     if (op === 'sum') return nums.reduce((a, b) => a + b, 0);
     if (nums.length === 0) return null;
     if (op === 'avg') return nums.reduce((a, b) => a + b, 0) / nums.length;
-    return op === 'min' ? Math.min(...nums) : Math.max(...nums);
+    // A loop, not Math.min(...nums): spreading a long history can exceed the argument limit.
+    return nums.reduce((a, b) => (op === 'min' ? Math.min(a, b) : Math.max(a, b)));
   }
 
   function evaluate(e: ComputedExpr, asOf: string): PluginValue {
@@ -253,11 +254,13 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
           const buckets = new Map<string, PluginRecord[]>();
           for (const r of rows) {
             const start = periodStart(dayOf(r, c, x.by)!, x.group, ctx.weekStart);
-            buckets.set(start, [...(buckets.get(start) ?? []), r]);
+            const bucket = buckets.get(start);
+            if (bucket) bucket.push(r);
+            else buckets.set(start, [r]);
           }
           const first = periodStart(range.start ?? earliestDay(collection, x.by) ?? asOf, x.group, ctx.weekStart);
           const series: SeriesPoint[] = [];
-          for (let s = first; s <= asOf; s = nextPeriod(s, x.group)) {
+          for (let s = first; s <= range.end; s = nextPeriod(s, x.group)) {
             series.push({ start: s, value: aggregate(op, buckets.get(s) ?? [], c, x.field) });
           }
           return series;
@@ -272,8 +275,13 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
         const x = e as { where?: Where; field?: string } & Record<string, unknown>;
         const { c, rows } = select(x[op] as string, x.where, { end: asOf }, undefined, asOf);
         if (!c || rows.length === 0) return null;
-        const sorted = [...rows].sort((a, b) => (anchor(a, c.kind) < anchor(b, c.kind) ? -1 : 1));
-        const r = op === 'last' ? sorted[sorted.length - 1]! : sorted[0]!;
+        // Days compare as text; timestamps as instants, since offsets may differ.
+        const time = (r: PluginRecord) => (c.kind === 'daily' ? 0 : Date.parse(anchor(r, c.kind)));
+        const before = (a: PluginRecord, b: PluginRecord) =>
+          c.kind === 'daily' ? anchor(a, c.kind) < anchor(b, c.kind) : time(a) < time(b);
+        let r = rows[0]!;
+        // Ties go to the later-stored record for `last`, the earlier one for `first`.
+        for (const x of rows) if (op === 'last' ? !before(x, r) : before(x, r)) r = x;
         if (x.field === undefined) return anchor(r, c.kind);
         const v = fieldValue(r, c, x.field);
         return v === undefined ? null : (v as PluginValue);

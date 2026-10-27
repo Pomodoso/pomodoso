@@ -268,3 +268,51 @@ test('$tab and $today_date resolve from the context', () => {
   assert.equal(ev.value('$tab.url'), 'https://x.dev');
   assert.equal(ev.value('$today_date'), '2026-10-21');
 });
+
+test('a chart over a past range stops at the end of that range', () => {
+  const m = manifest({
+    collections: [{ key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', optional: true }] }],
+    computed: {
+      yesterday: { count: 'glass', range: 'yesterday', group: 'day' },
+      last_week: { count: 'glass', range: 'last_week', group: 'day' },
+    },
+  });
+  const ev = createEvaluator(m, { ...CTX, records: events('glass', '2026-10-20', 2) });
+  assert.deepEqual(ev.computed('yesterday'), [{ start: '2026-10-20', value: 2 }]);
+  const week = ev.computed('last_week') as SeriesPoint[];
+  assert.deepEqual([week[0]!.start, week.at(-1)!.start, week.length], ['2026-10-12', '2026-10-18', 7]);
+});
+
+test('ranging by a date field reads its default on records written before it existed', () => {
+  const m = manifest({
+    collections: [{ key: 'book', kind: 'item', fields: [{ key: 'finished_on', type: 'date', default: '2026-10-02' }] }],
+    computed: { this_month: { count: 'book', range: 'this_month', by: 'finished_on' } },
+  });
+  const ev = createEvaluator(m, { ...CTX, records: [rec('book', {}), rec('book', { data: { finished_on: '2025-01-01' } })] });
+  assert.equal(ev.computed('this_month'), 1);
+});
+
+test('last and first compare instants, not timestamp text', () => {
+  const m = manifest({
+    collections: [{ key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', optional: true }] }],
+    computed: { last_ml: { last: 'glass', field: 'ml' }, first_ml: { first: 'glass', field: 'ml' } },
+  });
+  const records = [
+    rec('glass', { occurred_at: '2026-10-21T10:00:00-03:00', data: { ml: 1 } }), // 13:00Z
+    rec('glass', { occurred_at: '2026-10-21T12:00:00Z', data: { ml: 2 } }),
+  ];
+  const ev = createEvaluator(m, { ...CTX, records });
+  assert.equal(ev.computed('last_ml'), 1);
+  assert.equal(ev.computed('first_ml'), 2);
+});
+
+test('min and max handle histories longer than the argument limit', () => {
+  const m = manifest({
+    collections: [{ key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number', optional: true }] }],
+    computed: { most: { max: 'glass', field: 'ml' }, least: { min: 'glass', field: 'ml' } },
+  });
+  const records = Array.from({ length: 200_000 }, (_, i) => rec('glass', { occurred_at: '2026-10-01T12:00:00Z', data: { ml: i } }));
+  const ev = createEvaluator(m, { ...CTX, records });
+  assert.equal(ev.computed('most'), 199_999);
+  assert.equal(ev.computed('least'), 0);
+});
