@@ -21,12 +21,15 @@ import { BreakdownBars, Legend, SeriesChart, YearGrid } from './charts.js';
 import { RecordForm, chipStyle } from './RecordForm.js';
 import { buttonStyle, cardStyle, labelStyle } from './styles.js';
 
-/** Writes a client performs for a plugin. The client applies `rules` and stamps timestamps. */
+/**
+ * Writes a client performs for a plugin. The client applies `rules` and
+ * stamps timestamps. A returned promise settles when the write is stored.
+ */
 export interface PluginActions {
-  add(collection: string, data: Record<string, unknown>): void;
-  setDay(collection: string, day: string, data: Record<string, unknown>): void;
-  update(record: PluginRecord, data: Record<string, unknown>): void;
-  remove(record: PluginRecord): void;
+  add(collection: string, data: Record<string, unknown>): void | Promise<unknown>;
+  setDay(collection: string, day: string, data: Record<string, unknown>): void | Promise<unknown>;
+  update(record: PluginRecord, data: Record<string, unknown>): void | Promise<unknown>;
+  remove(record: PluginRecord): void | Promise<unknown>;
   openUrl(url: string): void;
 }
 
@@ -51,10 +54,8 @@ type Editing =
   | { mode: 'edit'; collection: PluginCollection; record: PluginRecord }
   | { mode: 'day'; collection: PluginCollection; day: string; initial: Record<string, unknown> };
 
-interface TagFilter {
-  field: string;
-  tag: string | null;
-}
+/** Active tag-filter choices: collection → field → tag. Each tag-filter block owns one field. */
+type TagFilters = Record<string, Record<string, string | null>>;
 
 interface BlockCtx extends PluginEnv {
   collection(key: string): PluginCollection | undefined;
@@ -63,8 +64,8 @@ interface BlockCtx extends PluginEnv {
   stat(v: PluginValue, format?: Parameters<typeof formatStat>[1]): string;
   /** A label with its `{$ref}` templates filled in. */
   text(label: string): string;
-  tagFilters: Record<string, TagFilter>;
-  setTagFilter(collection: string, f: TagFilter): void;
+  tagFilters: TagFilters;
+  setTagFilter(collection: string, field: string, tag: string | null): void;
   /** Live records of a collection after the view's tag filter. */
   filtered(collection: string, where?: Parameters<PluginEvaluator['records']>[1]): PluginRecord[];
   edit(e: Editing): void;
@@ -72,7 +73,7 @@ interface BlockCtx extends PluginEnv {
 
 /** Renders one view of a plugin: its blocks, top to bottom. */
 export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec }) {
-  const [tagFilters, setTagFilters] = useState<Record<string, TagFilter>>({});
+  const [tagFilters, setTagFilters] = useState<TagFilters>({});
   const [editing, setEditing] = useState<Editing | null>(null);
   const collections = useMemo(() => new Map(env.manifest.collections.map((c) => [c.key, c])), [env.manifest]);
 
@@ -83,13 +84,14 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
     stat: (v, format) => formatStat(v, format, env.now),
     text: (label) => env.evaluator.template(label, (v) => formatStat(v, undefined, env.now)),
     tagFilters,
-    setTagFilter: (c, f) => setTagFilters((s) => ({ ...s, [c]: f })),
+    setTagFilter: (c, field, tag) => setTagFilters((s) => ({ ...s, [c]: { ...s[c], [field]: tag } })),
     filtered: (c, where) => {
       const rows = env.evaluator.records(c, where);
-      const f = tagFilters[c];
-      if (!f?.tag) return rows;
-      const c2 = collections.get(c);
-      return rows.filter((r) => valuesOf(c2 ? recordValue(c2, r, f.field) : r.data[f.field]).includes(f.tag!));
+      const spec = collections.get(c);
+      const active = Object.entries(tagFilters[c] ?? {}).filter((e): e is [string, string] => e[1] !== null);
+      if (!spec || active.length === 0) return rows;
+      // Every active choice applies: two filters on different fields combine.
+      return rows.filter((r) => active.every(([field, tag]) => valuesOf(recordValue(spec, r, field)).includes(tag)));
     },
     edit: (e) => {
       if (!env.readOnly) setEditing(e);
@@ -109,8 +111,9 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
 /** A record's field, or the field's default when the record predates it (as the evaluator reads it). */
 function recordValue(c: PluginCollection, r: PluginRecord, key: string): unknown {
   if (key === 'created_at') return r.created_at;
-  if (key === 'occurred_at') return r.occurred_at ?? undefined;
-  if (key === 'day') return r.day ?? undefined;
+  // Built in only for the kind that owns them: an item may declare its own `day`.
+  if (key === 'occurred_at' && c.kind === 'event') return r.occurred_at ?? undefined;
+  if (key === 'day' && c.kind === 'daily') return r.day ?? undefined;
   const v = r.data[key];
   return v !== undefined ? v : c.fields.find((f) => f.key === key)?.default;
 }
@@ -241,8 +244,8 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const all = new Set<string>();
       for (const r of ctx.evaluator.records(b.collection)) for (const t of valuesOf(recordValue(c, r, b.field))) all.add(t);
       if (all.size === 0) return null;
-      const current = ctx.tagFilters[b.collection]?.tag ?? null;
-      const pick = (tag: string | null) => ctx.setTagFilter(b.collection, { field: b.field, tag });
+      const current = ctx.tagFilters[b.collection]?.[b.field] ?? null;
+      const pick = (tag: string | null) => ctx.setTagFilter(b.collection, b.field, tag);
       return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           <button type="button" onClick={() => pick(null)} style={chipStyle(current === null)}>All</button>
@@ -349,15 +352,17 @@ function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockC
   return (
     <div style={cardStyle}>
       <RecordForm
-        key={`${round}:${todays?.id ?? ''}`}
+        // Remounts from the saved record once the write lands (its updated_at changes).
+        key={`${round}:${todays?.id ?? ''}:${todays?.updated_at ?? ''}`}
         collection={c}
         settings={ctx.settings}
         initial={initialRecordData(c, todays?.data)}
         submitLabel={saved ? 'Saved ✓' : 'Save'}
         disabled={ctx.readOnly}
-        onSubmit={(data) => {
-          if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
-          else ctx.actions.add(c.key, data);
+        onSubmit={async (data) => {
+          // Reset only after the write is stored, so the form never restarts from the old values.
+          if (c.kind === 'daily') await ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
+          else await ctx.actions.add(c.key, data);
           setRound((n) => n + 1);
           setSaved(true);
           setTimeout(() => setSaved(false), 1500);
