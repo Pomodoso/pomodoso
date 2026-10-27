@@ -169,7 +169,7 @@ export const computedSchema: z.ZodType<ComputedExpr> = z.lazy(() =>
         }),
     }),
     z.strictObject({ delta: z.tuple([valueRefSchema, valueRefSchema]) }),
-  ]),
+  ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper or delta.' }),
 );
 
 // Compile-time guard: the union above must list one branch per operator.
