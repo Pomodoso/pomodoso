@@ -28,6 +28,8 @@ function next(change: (m: Mutable) => void): PluginManifest {
 
 const book = (m: Mutable) => m.collections[0];
 const fieldOf = (m: Mutable, key: string) => book(m).fields.find((f: Mutable) => f.key === key);
+/** Replays a migration over records written under bookshelf v1. */
+const replay = (records: PluginRecord[], migrate: Parameters<typeof applyMigration>[1]) => applyMigration(records, migrate, v1);
 const messages = (issues: PluginIssue[]) => issues.map((i) => i.message).join('\n');
 
 // ─── Additive ───────────────────────────────────────────────────────────────
@@ -210,7 +212,7 @@ test('applyMigration replays the steps in order and reports what changed', () =>
     rec('b', 'book', { title: 'B', status: 'read' }),
     rec('c', 'note', { author: 'not a book' }),
   ];
-  const { records: out, changedIds } = applyMigration(records, {
+  const { records: out, changedIds } = replay(records, {
     from: '1.x',
     steps: [
       { rename_collection: { from: 'book', to: 'novel' } },
@@ -227,7 +229,7 @@ test('applyMigration replays the steps in order and reports what changed', () =>
 });
 
 test('map_values maps every element of a multiselect and drops duplicates', () => {
-  const { records: out } = applyMigration([rec('a', 'book', { moods: ['sad', 'blue', 'happy'] })], {
+  const { records: out } = replay([rec('a', 'book', { moods: ['sad', 'blue', 'happy'] })], {
     from: '1.x',
     steps: [{ map_values: { collection: 'book', field: 'moods', map: { sad: 'down', blue: 'down' } } }],
   });
@@ -268,10 +270,43 @@ test('a kind change still lists the field changes next to it', () => {
 });
 
 test('map_values only uses the map\'s own keys', () => {
-  const { records: out, changedIds } = applyMigration([rec('a', 'book', { status: 'constructor' })], {
+  const { records: out, changedIds } = replay([rec('a', 'book', { status: 'constructor' })], {
     from: '1.x',
     steps: [{ map_values: { collection: 'book', field: 'status', map: { want: 'reading' } } }],
   });
   assert.equal(out[0]!.data.status, 'constructor');
   assert.deepEqual(changedIds, []);
+});
+
+test('records that predate a field carry its old default through renames and value maps', () => {
+  const withDefault = next((m) => {
+    fieldOf(m, 'status').default = 'want';
+  });
+  const old = [rec('a', 'book', { title: 'A' })];
+  const mapped = applyMigration(old, { from: '1.x', steps: [{ map_values: { collection: 'book', field: 'status', map: { want: 'reading' } } }] }, withDefault);
+  assert.equal(mapped.records[0]!.data.status, 'reading');
+  const renamed = applyMigration(old, { from: '1.x', steps: [{ rename_field: { collection: 'book', from: 'status', to: 'state' } }] }, withDefault);
+  assert.equal(renamed.records[0]!.data.state, 'want');
+  // A map that leaves the default alone stores nothing.
+  const untouched = applyMigration(old, { from: '1.x', steps: [{ map_values: { collection: 'book', field: 'status', map: { read: 'done' } } }] }, withDefault);
+  assert.deepEqual(untouched.changedIds, []);
+});
+
+test('a daily collection cannot be renamed: its record ids derive from the name', () => {
+  const pixels = (() => {
+    const r = parsePluginFile(readFileSync(new URL('./examples/year-in-pixels.yaml', import.meta.url), 'utf8'));
+    if (!r.ok) assert.fail(JSON.stringify(r.issues));
+    return r.manifest;
+  })();
+  const m = structuredClone(pixels) as Mutable;
+  m.version = '2.0.0';
+  m.collections[0].key = 'mood';
+  for (const b of m.views[0].blocks) if (b.collection) b.collection = 'mood';
+  m.computed.logged_this_year.count = 'mood';
+  m.today.widget.collection = 'mood';
+  m.hooks[0].pick.collection = 'mood';
+  m.migrate = { from: '1.x', steps: [{ rename_collection: { from: 'day_state', to: 'mood' } }] };
+  const r2 = validatePluginData(m);
+  if (!r2.ok) assert.fail(JSON.stringify(r2.issues));
+  assert.match(messages(checkUpdate(pixels, r2.manifest).issues), /daily collection.*can't be renamed/);
 });

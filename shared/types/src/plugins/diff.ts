@@ -138,6 +138,8 @@ function simulate(prev: PluginManifest, steps: readonly MigrateStep[], issues: P
       const { from, to } = step.rename_collection;
       const c = find(from);
       if (!c) issue(i, 'rename_collection', `the previous version has no collection "${from}"`);
+      // Daily record ids derive from the collection name (one row per day), so a rename would orphan them.
+      else if (c.kind === 'daily') issue(i, 'rename_collection', `"${from}" is a daily collection; its records are keyed by name, so it can't be renamed`);
       else if (find(to)) issue(i, 'rename_collection', `collection "${to}" already exists; renaming onto it would mix two collections`);
       else c.key = to;
     } else if ('rename_field' in step) {
