@@ -49,6 +49,11 @@ test('refinements are in the JSON Schema too: what zod rejects, the schema rejec
     ['min on a text field', (m) => { m.collections[0].fields.push({ key: 'kind', type: 'text', min: 1 }); }],
   ];
   assert.ok(validate(base()), ajv.errorsText(validate.errors));
+  // What zod accepts, the schema accepts too.
+  const allowed = base();
+  allowed.collections[0].fields.push({ key: 'note', type: 'text', optional: true, user_editable: false });
+  assert.equal(validatePluginData(allowed).ok, true);
+  assert.ok(validate(allowed), ajv.errorsText(validate.errors));
   for (const [name, change] of cases) {
     const m = base();
     change(m);

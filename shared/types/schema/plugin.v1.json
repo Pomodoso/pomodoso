@@ -335,10 +335,10 @@
                   },
                   "then": {},
                   "else": {
-                    "not": {
-                      "required": [
-                        "user_editable"
-                      ]
+                    "properties": {
+                      "user_editable": {
+                        "const": false
+                      }
                     }
                   }
                 },

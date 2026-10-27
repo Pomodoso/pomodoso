@@ -245,7 +245,8 @@ export const fieldSchema = z
   .meta({
     allOf: [
       whenType([...OPTION_TYPES], { required: ['options'] }, forbids('options')),
-      whenType(['select'], {}, forbids('user_editable')),
+      // zod only rejects a true user_editable; false is fine on any field.
+      whenType(['select'], {}, { properties: { user_editable: { const: false } } }),
       whenType([...RANGED_TYPES], {}, { allOf: [forbids('min'), forbids('max')] }),
     ],
   });
