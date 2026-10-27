@@ -13,4 +13,5 @@ export { didYouMean, formatPath, type PluginIssue } from './issues.ts';
 export * from './manifest.ts';
 export { applyMigration, type MigrationResult } from './migrate.ts';
 export { parsePluginFile, validatePluginData, type PluginParseResult } from './parse.ts';
+export { addDays, localDayOf } from './dates.ts';
 export { applyRules, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, type PluginOption } from './view.ts';
