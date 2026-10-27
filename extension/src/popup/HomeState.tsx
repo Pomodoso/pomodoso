@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   DndContext,
@@ -48,10 +48,12 @@ import {
 import { triggerSync } from '../syncEngine';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
+// Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
+const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
 
 marked.use({ breaks: true });
 
-export type Tab = 'today' | 'habits' | 'tasks' | 'schedule';
+export type Tab = 'today' | 'habits' | 'tasks' | 'schedule' | 'apps';
 
 interface HomeStateProps {
   timerState: TimerState;
@@ -91,6 +93,7 @@ interface HomeStateProps {
   onOpenSettings: () => void;
   onOpenCalendarSettings: () => void;
   currentUrl?: string;
+  currentTitle?: string;
   urlMatchesRule?: boolean;
   onAddDetectionRule?: (name: string, urlPattern: string) => void;
   onOpenAccount: () => void;
@@ -251,7 +254,7 @@ export function HomeState({
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
-  currentUrl, urlMatchesRule, onAddDetectionRule,
+  currentUrl, currentTitle, urlMatchesRule, onAddDetectionRule,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday, onReorderBacklog,
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
@@ -1811,6 +1814,18 @@ export function HomeState({
           </>
         )}
 
+        {activeTab === 'apps' && (
+          <Suspense fallback={null}>
+            <AppsTab
+              timezone={timezone}
+              weekStart={weekStart}
+              isSignedIn={isSignedIn}
+              tab={{ url: currentUrl ?? '', title: currentTitle ?? '' }}
+              onSignIn={onOpenAccount}
+            />
+          </Suspense>
+        )}
+
         {activeTab === 'schedule' && (
           selectedMeeting ? (
             <MeetingDetailState
@@ -1869,6 +1884,7 @@ export function HomeState({
           { key: 'tasks' as Tab, label: 'Tasks', icon: <TasksIcon /> },
           { key: 'habits' as Tab, label: 'Habits', icon: <HabitsIcon /> },
           { key: 'schedule' as Tab, label: 'Schedule', icon: <ScheduleIcon /> },
+          { key: 'apps' as Tab, label: 'Apps', icon: <AppsIcon /> },
         ]).map(({ key, label, icon }) => (
           <button
             key={key}
@@ -5907,6 +5923,17 @@ function FormLabel({ children, style }: { children: React.ReactNode; style?: Rea
 }
 
 // ── Tab icons ─────────────────────────────────────────────────────────────────
+
+function AppsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="5" height="5" rx="1.2" />
+      <rect x="9" y="2" width="5" height="5" rx="1.2" />
+      <rect x="2" y="9" width="5" height="5" rx="1.2" />
+      <circle cx="11.5" cy="11.5" r="2.5" />
+    </svg>
+  );
+}
 
 function TodayIcon() {
   return (

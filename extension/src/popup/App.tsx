@@ -1235,6 +1235,7 @@ function AppContent() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenCalendarSettings={() => { setSettingsInitialPage('calendar'); setShowSettings(true); }}
         currentUrl={tabUrl}
+        currentTitle={tabTitle}
         urlMatchesRule={urlMatchesRule}
         onAddDetectionRule={(name, urlPattern) => void addRule({ id: crypto.randomUUID(), name, urlPattern, active: true, kind: 'custom', updatedAt: now() })}
         onOpenAccount={() => { setSettingsInitialPage('account'); setShowSettings(true); }}

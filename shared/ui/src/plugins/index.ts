@@ -4,3 +4,4 @@
 export { PluginView, type PluginActions, type PluginEnv } from './PluginView.js';
 export { FieldInput, RecordForm } from './RecordForm.js';
 export { BreakdownBars, Legend, SeriesChart, YearGrid } from './charts.js';
+export { PluginIcon } from './PluginIcon.js';

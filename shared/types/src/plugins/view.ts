@@ -17,9 +17,14 @@ export interface PluginOption {
 
 /** `after_meal` → `After meal`. The label a key gets when the file names none. */
 export function humanize(key: string): string {
-  const s = key.replace(/_/g, ' ');
+  const s = key
+    .split('_')
+    .map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : w))
+    .join(' ');
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+const ACRONYMS = new Set(['url', 'id', 'isbn', 'imdb', 'pr', 'api']);
 
 export function normalizeOption(o: SelectOption): PluginOption {
   return typeof o === 'string' ? { value: o, label: humanize(o) } : { value: o.value, label: o.label ?? humanize(o.value), color: o.color };
@@ -36,6 +41,14 @@ export function fieldLabel(f: PluginField): string {
  */
 export function optionsSettingKey(collection: string, field: string): string {
   return `options:${collection}.${field}`;
+}
+
+/** Settings key for the user's "Show on Today" switch; reserved like optionsSettingKey. */
+export const SHOW_ON_TODAY_KEY = 'today:on';
+
+/** Whether the plugin's Today widget shows: the file must declare one and the user must have turned it on. */
+export function showsOnToday(manifest: PluginManifest, settings: Record<string, unknown> | undefined): boolean {
+  return manifest.today !== undefined && settings?.[SHOW_ON_TODAY_KEY] === true;
 }
 
 function isOptionList(v: unknown): v is PluginOption[] {

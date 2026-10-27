@@ -6,11 +6,13 @@
 // every change, syncedAt cleared so sync picks it up, soft delete only.
 
 import {
+  applyRules,
   createEvaluator,
   dailyRecordId,
   parsePluginExport,
   parsePluginFile,
   serializePluginExport,
+  SHOW_ON_TODAY_KEY,
   type PluginEvaluator,
   type PluginIssue,
 } from '@pomodoso/types/plugins';
@@ -19,6 +21,12 @@ import { db, localDate, now, type PluginRecordRow, type PluginRow } from './db';
 import { rowsFromExport, toEngineRecord } from './pluginRows';
 
 export type PluginWriteResult = { ok: true; plugin: PluginRow } | { ok: false; issues: PluginIssue[] };
+
+/** What a write needs to know about the user's clock: `rules` can stamp `$today_date`. */
+export interface PluginEnv {
+  timezone: string;
+  weekStart: number;
+}
 
 const live = <T extends { deletedAt?: string | null }>(r: T) => !r.deletedAt;
 
@@ -36,16 +44,20 @@ async function liveBySlug(slug: string): Promise<PluginRow | undefined> {
 
 // ─── Install / uninstall ─────────────────────────────────────────────────────
 
-export async function installPlugin(text: string, timezone: string, source: PluginRow['source'] = 'file'): Promise<PluginWriteResult> {
+export async function installPlugin(
+  text: string,
+  timezone: string,
+  opts: { settings?: Record<string, unknown>; showOnToday?: boolean; source?: PluginRow['source'] } = {},
+): Promise<PluginWriteResult> {
   const parsed = parsePluginFile(text);
   if (!parsed.ok) return parsed;
   const ts = now();
   const plugin: PluginRow = {
     id: crypto.randomUUID(),
     slug: parsed.manifest.id,
-    source,
+    source: opts.source ?? 'file',
     manifest: parsed.manifest,
-    settings: {},
+    settings: { ...opts.settings, [SHOW_ON_TODAY_KEY]: Boolean(parsed.manifest.today && (opts.showOnToday ?? parsed.manifest.today.default_on)) },
     enabled: true,
     autoUpdate: false,
     installedOn: localDate(timezone),
@@ -80,51 +92,94 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
   });
 }
 
-export async function updatePluginSettings(pluginId: string, settings: Record<string, unknown>): Promise<void> {
-  await db.plugins.update(pluginId, { settings, updatedAt: now(), syncedAt: undefined });
+/** Sets one setting, merged over the stored ones in a transaction, so overlapping changes all land. */
+export async function updatePluginSetting(pluginId: string, key: string, value: unknown): Promise<void> {
+  await db.transaction('rw', db.plugins, async () => {
+    const plugin = await db.plugins.get(pluginId);
+    if (!plugin || plugin.deletedAt) return;
+    await db.plugins.update(pluginId, { settings: { ...plugin.settings, [key]: value }, updatedAt: now(), syncedAt: undefined });
+  });
 }
 
 // ─── Records ─────────────────────────────────────────────────────────────────
+// Every write goes through the file's `rules`, so a rule behaves the same
+// whether the record came from a form, a quick button or (later) a hook.
 
-export async function addEvent(pluginId: string, collection: string, data: Record<string, unknown> = {}): Promise<PluginRecordRow> {
-  const ts = now();
-  const row: PluginRecordRow = { id: crypto.randomUUID(), pluginId, collection, occurredAt: ts, data, createdAt: ts, updatedAt: ts };
-  await db.pluginRecords.add(row);
-  return row;
+/**
+ * `next`'s data after the file's rules. Rules see the record's real dates and
+ * the plugin's other records, so a `$count` in `set` counts the collection.
+ * Runs inside the caller's transaction.
+ */
+async function withRules(plugin: PluginRow, env: PluginEnv, prev: PluginRecordRow | undefined, next: PluginRecordRow): Promise<Record<string, unknown>> {
+  if (!plugin.manifest.rules?.some((r) => r.collection === next.collection)) return next.data;
+  const records = (await pluginRecords(plugin.id)).map(toEngineRecord);
+  return applyRules(plugin.manifest, prev && toEngineRecord(prev), toEngineRecord(next), {
+    today: localDate(env.timezone),
+    now: now(),
+    timeZone: env.timezone,
+    weekStart: env.weekStart,
+    installedOn: plugin.installedOn,
+    settings: plugin.settings,
+    records,
+  });
 }
 
-export async function addItem(pluginId: string, collection: string, data: Record<string, unknown>): Promise<PluginRecordRow> {
+/** Adds a record to an event or item collection. Events happen now. */
+export async function addRecord(plugin: PluginRow, collection: string, data: Record<string, unknown>, env: PluginEnv): Promise<PluginRecordRow> {
   const ts = now();
-  const row: PluginRecordRow = { id: crypto.randomUUID(), pluginId, collection, data, createdAt: ts, updatedAt: ts };
-  await db.pluginRecords.add(row);
-  return row;
+  const kind = plugin.manifest.collections.find((c) => c.key === collection)?.kind;
+  const row: PluginRecordRow = {
+    id: crypto.randomUUID(),
+    pluginId: plugin.id,
+    collection,
+    ...(kind === 'event' ? { occurredAt: ts } : {}),
+    data,
+    createdAt: ts,
+    updatedAt: ts,
+  };
+  return db.transaction('rw', db.pluginRecords, async () => {
+    row.data = await withRules(plugin, env, undefined, row);
+    await db.pluginRecords.add(row);
+    return row;
+  });
 }
 
-/** Writes a daily collection's record for `day`. Same id on every device, so offline edits converge. */
-export async function setDaily(pluginId: string, collection: string, day: string, data: Record<string, unknown>): Promise<PluginRecordRow> {
+/**
+ * Writes a daily collection's record for `day`, merged over what's saved
+ * (a null clears a field). Same id on every device, so offline edits
+ * converge. Read, merge and write share one transaction: overlapping saves
+ * of the same day must both land.
+ */
+export async function setDaily(plugin: PluginRow, collection: string, day: string, data: Record<string, unknown>, env: PluginEnv): Promise<PluginRecordRow> {
   const ts = now();
-  const id = dailyRecordId(pluginId, collection, day);
-  // Read, merge and write in one transaction: overlapping saves of the same day
-  // (state, then note) must both land.
+  const id = dailyRecordId(plugin.id, collection, day);
   return db.transaction('rw', db.pluginRecords, async () => {
     const existing = await db.pluginRecords.get(id);
+    const prev = existing && !existing.deletedAt ? existing : undefined;
     const row: PluginRecordRow = {
       id,
-      pluginId,
+      pluginId: plugin.id,
       collection,
       day,
-      data: existing && !existing.deletedAt ? { ...existing.data, ...data } : data,
+      data: { ...prev?.data, ...data },
       createdAt: existing?.createdAt ?? ts,
       updatedAt: ts,
       deletedAt: null,
     };
+    row.data = await withRules(plugin, env, prev, row);
     await db.pluginRecords.put(row);
     return row;
   });
 }
 
-export async function updateRecord(id: string, data: Record<string, unknown>): Promise<void> {
-  await db.pluginRecords.update(id, { data, updatedAt: now(), syncedAt: undefined });
+export async function updateRecord(plugin: PluginRow, id: string, data: Record<string, unknown>, env: PluginEnv): Promise<void> {
+  await db.transaction('rw', db.pluginRecords, async () => {
+    const existing = await db.pluginRecords.get(id);
+    if (!existing || existing.deletedAt) return;
+    const ts = now();
+    const next = await withRules(plugin, env, existing, { ...existing, data, updatedAt: ts });
+    await db.pluginRecords.update(id, { data: next, updatedAt: ts, syncedAt: undefined });
+  });
 }
 
 export async function deleteRecord(id: string): Promise<void> {
