@@ -23,7 +23,12 @@ interface RecordFormProps {
 
 /** One input per field of a collection. Submitting is blocked until required fields are filled. */
 export function RecordForm({ collection, settings, initial, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
-  const [data, setData] = useState<Record<string, unknown>>(initial);
+  // A checkbox has no "unanswered" look: an unset boolean starts as the false it shows.
+  const [data, setData] = useState<Record<string, unknown>>(() => {
+    const out = { ...initial };
+    for (const f of collection.fields) if (f.type === 'boolean' && out[f.key] === undefined) out[f.key] = false;
+    return out;
+  });
   const missing = missingFields(collection, data);
   const set = (key: string, v: unknown) => setData((d) => ({ ...d, [key]: v }));
 
