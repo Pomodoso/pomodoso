@@ -15,10 +15,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'"
+    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
+    "gen:plugin-schema": "node --experimental-strip-types scripts/gen-plugin-schema.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "ajv": "^8.20.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
