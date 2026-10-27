@@ -233,3 +233,45 @@ test('map_values maps every element of a multiselect and drops duplicates', () =
   });
   assert.deepEqual(out[0]!.data.moods, ['down', 'happy']);
 });
+
+test('a rename onto a field that already exists is rejected', () => {
+  const r = checkUpdate(v1, next((m) => {
+    m.version = '2.0.0';
+    book(m).fields = book(m).fields.filter((f: Mutable) => f.key !== 'cover');
+    m.views[0].blocks[2].card.image = undefined;
+    m.migrate = { from: '1.x', steps: [{ rename_field: { collection: 'book', from: 'cover', to: 'title' } }] };
+  }));
+  assert.match(messages(r.issues), /"title" already exists in "book"/);
+});
+
+test('an additive update still checks the migration it carries', () => {
+  const r = checkUpdate(v1, next((m) => {
+    m.version = '2.0.0';
+    book(m).fields.push({ key: 'authors', type: 'text', optional: true });
+    m.migrate = { from: '1.x', steps: [{ rename_field: { collection: 'book', from: 'author', to: 'authors' } }] };
+  }));
+  assert.equal(r.kind, 'additive');
+  assert.match(messages(r.issues), /moves or drops "author", but this version still declares it/);
+});
+
+test('a kind change still lists the field changes next to it', () => {
+  const withNotes = next((m) => {
+    m.collections.push({ key: 'note', kind: 'item', fields: [{ key: 'text', type: 'text' }, { key: 'mood', type: 'text', optional: true }] });
+  });
+  const r = checkUpdate(withNotes, next((m) => {
+    m.version = '2.0.0';
+    m.collections.push({ key: 'note', kind: 'event', fields: [{ key: 'text', type: 'text' }] });
+  }));
+  const paths = r.changes.map((c) => c.path);
+  assert.ok(paths.includes('collections.note.kind'));
+  assert.ok(paths.includes('collections.note.fields.mood'));
+});
+
+test('map_values only uses the map\'s own keys', () => {
+  const { records: out, changedIds } = applyMigration([rec('a', 'book', { status: 'constructor' })], {
+    from: '1.x',
+    steps: [{ map_values: { collection: 'book', field: 'status', map: { want: 'reading' } } }],
+  });
+  assert.equal(out[0]!.data.status, 'constructor');
+  assert.deepEqual(changedIds, []);
+});

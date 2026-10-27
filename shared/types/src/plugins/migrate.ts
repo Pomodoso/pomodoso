@@ -16,8 +16,10 @@ export interface MigrationResult {
 }
 
 function mapValue(v: unknown, map: Record<string, string>): unknown {
-  if (typeof v === 'string') return map[v] ?? v;
-  if (Array.isArray(v)) return [...new Set(v.map((x) => (typeof x === 'string' ? (map[x] ?? x) : x)))];
+  // Own keys only: an option named "constructor" must not hit Object.prototype.
+  const to = (x: string) => (Object.hasOwn(map, x) ? map[x]! : x);
+  if (typeof v === 'string') return to(v);
+  if (Array.isArray(v)) return [...new Set(v.map((x) => (typeof x === 'string' ? to(x) : x)))];
   return v;
 }
 
@@ -37,13 +39,13 @@ export function applyMigration(records: readonly PluginRecord[], migrate: Plugin
         if (rec.collection === step.rename_collection.from) touch({ ...rec, collection: step.rename_collection.to });
       } else if ('rename_field' in step) {
         const { collection, from, to } = step.rename_field;
-        if (rec.collection === collection && from in rec.data) {
+        if (rec.collection === collection && Object.hasOwn(rec.data, from)) {
           const { [from]: value, ...rest } = rec.data;
           touch({ ...rec, data: { ...rest, [to]: value } });
         }
       } else if ('map_values' in step) {
         const { collection, field, map } = step.map_values;
-        if (rec.collection === collection && field in rec.data) {
+        if (rec.collection === collection && Object.hasOwn(rec.data, field)) {
           touch({ ...rec, data: { ...rec.data, [field]: mapValue(rec.data[field], map) } });
         }
       }

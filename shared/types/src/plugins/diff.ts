@@ -78,7 +78,6 @@ function diffField(path: string, prev: PluginField, next: PluginField, out: Mani
 function diffCollection(path: string, prev: PluginCollection, next: PluginCollection, out: ManifestChange[]) {
   if (prev.kind !== next.kind) {
     out.push({ kind: 'breaking', path: `${path}.kind`, message: `collection "${next.key}" changed kind ${prev.kind} → ${next.kind}` });
-    return;
   }
   for (const pf of prev.fields) {
     const nf = next.fields.find((f) => f.key === pf.key);
@@ -139,11 +138,14 @@ function simulate(prev: PluginManifest, steps: readonly MigrateStep[], issues: P
       const { from, to } = step.rename_collection;
       const c = find(from);
       if (!c) issue(i, 'rename_collection', `the previous version has no collection "${from}"`);
+      else if (find(to)) issue(i, 'rename_collection', `collection "${to}" already exists; renaming onto it would mix two collections`);
       else c.key = to;
     } else if ('rename_field' in step) {
       const { collection, from, to } = step.rename_field;
-      const f = find(collection)?.fields.find((x) => x.key === from);
+      const fields = find(collection)?.fields;
+      const f = fields?.find((x) => x.key === from);
       if (!f) issue(i, 'rename_field', `the previous version has no field "${from}" in "${collection}"`);
+      else if (fields!.some((x) => x.key === to)) issue(i, 'rename_field', `field "${to}" already exists in "${collection}"; renaming onto it would overwrite its values`);
       else f.key = to;
     } else if ('map_values' in step) {
       const { collection, field, map } = step.map_values;
@@ -156,7 +158,7 @@ function simulate(prev: PluginManifest, steps: readonly MigrateStep[], issues: P
       for (const from of Object.keys(map)) {
         if (!values.includes(from)) issue(i, 'map_values', `the previous version of "${field}" has no option "${from}"`);
       }
-      const kept = f.options.filter((o) => !(optionValue(o) in map));
+      const kept = f.options.filter((o) => !Object.hasOwn(map, optionValue(o)));
       const targets = Object.values(map).filter((v) => !kept.some((o) => optionValue(o) === v));
       f.options = [...kept, ...new Set(targets)];
     } else {
@@ -195,10 +197,26 @@ export function checkUpdate(prev: PluginManifest, next: PluginManifest): UpdateR
         path: 'migrate',
         message: `breaking changes need a migrate block from "${prevMajor}.x": ${breaking.map((b) => b.message).join('; ')}`,
       });
-    } else {
-      const simulated = simulate(prev, next.migrate!.steps, issues);
-      for (const left of diffManifests(simulated, next).filter((c) => c.kind === 'breaking')) {
-        issues.push({ path: left.path, message: `not covered by migrate: ${left.message}` });
+    }
+  }
+
+  // Whatever the diff says, steps that will run are validated: an additive
+  // update can still carry a migration that moves values away from a field.
+  if (migrates) {
+    const simulated = simulate(prev, next.migrate!.steps, issues);
+    for (const left of diffManifests(simulated, next).filter((c) => c.kind === 'breaking')) {
+      issues.push({ path: left.path, message: `not covered by migrate: ${left.message}` });
+    }
+    for (const nc of next.collections) {
+      const pc = prev.collections.find((c) => c.key === nc.key);
+      const sc = simulated.collections.find((c) => c.key === nc.key);
+      for (const nf of nc.fields) {
+        if (pc?.fields.some((f) => f.key === nf.key) && !sc?.fields.some((f) => f.key === nf.key)) {
+          issues.push({
+            path: `collections.${nc.key}.fields.${nf.key}`,
+            message: `migrate moves or drops "${nf.key}", but this version still declares it; its saved values would be lost`,
+          });
+        }
       }
     }
   }
