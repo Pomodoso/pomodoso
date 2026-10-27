@@ -154,9 +154,12 @@ export function evaluatorFor(
 // ─── Export / import one plugin ──────────────────────────────────────────────
 
 export async function exportPlugin(pluginId: string): Promise<string> {
-  const plugin = await db.plugins.get(pluginId);
+  // One read transaction: an uninstall can't land between the plugin and its records.
+  const { plugin, records } = await db.transaction('r', db.plugins, db.pluginRecords, async () => ({
+    plugin: await db.plugins.get(pluginId),
+    records: await pluginRecords(pluginId),
+  }));
   if (!plugin) throw new Error(`no plugin ${pluginId}`);
-  const records = await pluginRecords(pluginId);
   return serializePluginExport({
     exported_at: now(),
     plugin: { id: plugin.id, manifest: plugin.manifest, settings: plugin.settings, installed_on: plugin.installedOn },
@@ -192,6 +195,19 @@ export async function importPlugin(text: string): Promise<PluginWriteResult> {
     if (taken !== -1) return refuse(`records[${taken}].id`, 'this record id belongs to another plugin; the export was edited');
     await db.plugins.put(plugin);
     await db.pluginRecords.bulkPut(records);
+    // The restore is a snapshot: records of this install that the export
+    // doesn't have are tombstoned, so old and new data don't mix.
+    const restored = new Set(records.map((r) => r.id));
+    const ts = now();
+    await db.pluginRecords
+      .where('pluginId')
+      .equals(plugin.id)
+      .modify((r) => {
+        if (r.deletedAt || restored.has(r.id)) return;
+        r.deletedAt = ts;
+        r.updatedAt = ts;
+        r.syncedAt = undefined;
+      });
     return { ok: true, plugin };
   });
 }
