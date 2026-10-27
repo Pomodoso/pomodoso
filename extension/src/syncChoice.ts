@@ -28,6 +28,7 @@ const SYNC_CHOICE_KEY = 'sync_choice';
 const CONTENT_TABLES = [
   'tasks', 'taskOrders', 'projects', 'workspaces',
   'habits', 'habitHistory', 'meetings', 'detectionRules',
+  'plugins', 'pluginRecords',
 ] as const;
 
 export async function getSyncChoice(scope: string): Promise<SyncChoice | undefined> {
