@@ -39,10 +39,6 @@ async function liveBySlug(slug: string): Promise<PluginRow | undefined> {
 export async function installPlugin(text: string, timezone: string, source: PluginRow['source'] = 'file'): Promise<PluginWriteResult> {
   const parsed = parsePluginFile(text);
   if (!parsed.ok) return parsed;
-  const existing = await liveBySlug(parsed.manifest.id);
-  if (existing) {
-    return { ok: false, issues: [{ path: 'id', message: `"${existing.manifest.name}" is already installed (${existing.manifest.version})` }] };
-  }
   const ts = now();
   const plugin: PluginRow = {
     id: crypto.randomUUID(),
@@ -56,8 +52,15 @@ export async function installPlugin(text: string, timezone: string, source: Plug
     createdAt: ts,
     updatedAt: ts,
   };
-  await db.plugins.add(plugin);
-  return { ok: true, plugin };
+  // Check and write in one transaction, so two overlapping installs can't both pass.
+  return db.transaction('rw', db.plugins, async (): Promise<PluginWriteResult> => {
+    const existing = await liveBySlug(parsed.manifest.id);
+    if (existing) {
+      return { ok: false, issues: [{ path: 'id', message: `"${existing.manifest.name}" is already installed (${existing.manifest.version})` }] };
+    }
+    await db.plugins.add(plugin);
+    return { ok: true, plugin };
+  });
 }
 
 /** Soft-deletes the plugin and every record, in one transaction. */
@@ -101,19 +104,23 @@ export async function addItem(pluginId: string, collection: string, data: Record
 export async function setDaily(pluginId: string, collection: string, day: string, data: Record<string, unknown>): Promise<PluginRecordRow> {
   const ts = now();
   const id = dailyRecordId(pluginId, collection, day);
-  const existing = await db.pluginRecords.get(id);
-  const row: PluginRecordRow = {
-    id,
-    pluginId,
-    collection,
-    day,
-    data: existing && !existing.deletedAt ? { ...existing.data, ...data } : data,
-    createdAt: existing?.createdAt ?? ts,
-    updatedAt: ts,
-    deletedAt: null,
-  };
-  await db.pluginRecords.put(row);
-  return row;
+  // Read, merge and write in one transaction: overlapping saves of the same day
+  // (state, then note) must both land.
+  return db.transaction('rw', db.pluginRecords, async () => {
+    const existing = await db.pluginRecords.get(id);
+    const row: PluginRecordRow = {
+      id,
+      pluginId,
+      collection,
+      day,
+      data: existing && !existing.deletedAt ? { ...existing.data, ...data } : data,
+      createdAt: existing?.createdAt ?? ts,
+      updatedAt: ts,
+      deletedAt: null,
+    };
+    await db.pluginRecords.put(row);
+    return row;
+  });
 }
 
 export async function updateRecord(id: string, data: Record<string, unknown>): Promise<void> {
@@ -166,14 +173,25 @@ export async function exportPlugin(pluginId: string): Promise<string> {
 export async function importPlugin(text: string): Promise<PluginWriteResult> {
   const parsed = parsePluginExport(text);
   if (!parsed.ok) return parsed;
-  const existing = await liveBySlug(parsed.value.plugin.manifest.id);
-  if (existing && existing.id !== parsed.value.plugin.id) {
-    return { ok: false, issues: [{ path: 'plugin.manifest.id', message: `"${existing.manifest.name}" is already installed; uninstall it first to restore this export` }] };
-  }
   const { plugin, records } = rowsFromExport(parsed.value, now());
-  await db.transaction('rw', db.plugins, db.pluginRecords, async () => {
+  const refuse = (path: string, message: string): PluginWriteResult => ({ ok: false, issues: [{ path, message }] });
+
+  // Every check runs inside the write transaction: an edited export must not
+  // overwrite another plugin, or records that belong to one.
+  return db.transaction('rw', db.plugins, db.pluginRecords, async (): Promise<PluginWriteResult> => {
+    const existing = await liveBySlug(plugin.slug);
+    if (existing && existing.id !== plugin.id) {
+      return refuse('plugin.manifest.id', `"${existing.manifest.name}" is already installed; uninstall it first to restore this export`);
+    }
+    const sameId = await db.plugins.get(plugin.id);
+    if (sameId && sameId.slug !== plugin.slug) {
+      return refuse('plugin.id', `this export's install id belongs to "${sameId.manifest.name}"; it was edited`);
+    }
+    const stored = await db.pluginRecords.bulkGet(records.map((r) => r.id));
+    const taken = stored.findIndex((r) => r !== undefined && r.pluginId !== plugin.id);
+    if (taken !== -1) return refuse(`records[${taken}].id`, 'this record id belongs to another plugin; the export was edited');
     await db.plugins.put(plugin);
     await db.pluginRecords.bulkPut(records);
+    return { ok: true, plugin };
   });
-  return { ok: true, plugin };
 }

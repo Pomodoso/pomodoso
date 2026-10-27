@@ -6,6 +6,7 @@
 import { parse, stringify } from 'yaml';
 
 import type { PluginRecord } from './compute.ts';
+import { dailyRecordId } from './ids.ts';
 import { formatPath, type PluginIssue } from './issues.ts';
 import type { PluginManifest } from './manifest.ts';
 import { validatePluginData } from './parse.ts';
@@ -34,8 +35,15 @@ export function serializePluginExport(value: Omit<PluginExport, 'pomodoso_plugin
   return stringify({ pomodoso_plugin_export: PLUGIN_EXPORT_VERSION, ...live }, { lineWidth: 0 });
 }
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const timestamp = z.string().min(10);
+/** A real calendar day: 2026-02-30 has the right shape but doesn't exist. */
+const day = z.string().refine((v) => {
+  const d = new Date(`${v}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}, 'must be a real date like 2026-01-31');
+/** An ISO timestamp the date helpers can read. */
+const timestamp = z
+  .string()
+  .refine((v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) && !Number.isNaN(Date.parse(v)), 'must be an ISO timestamp like 2026-01-31T12:00:00Z');
 
 const recordSchema = z.object({
   id: z.string().min(1),
@@ -79,10 +87,22 @@ export function parsePluginExport(text: string): PluginExportResult {
 
   const kinds = new Map(manifest.manifest.collections.map((c) => [c.key, c.kind]));
   const issues: PluginIssue[] = [];
+  const ids = new Set<string>();
   env.data.records.forEach((r, i) => {
+    // Repeated ids would silently collapse into one row on import.
+    if (ids.has(r.id)) issues.push({ path: formatPath(['records', i, 'id']), message: `record id "${r.id}" appears twice` });
+    ids.add(r.id);
     const kind = kinds.get(r.collection);
     if (!kind) issues.push({ path: formatPath(['records', i, 'collection']), message: `no collection "${r.collection}" in this plugin` });
-    else if (kind === 'daily' && !r.day) issues.push({ path: formatPath(['records', i, 'day']), message: 'daily records need a day' });
+    else if (kind === 'daily') {
+      if (!r.day) issues.push({ path: formatPath(['records', i, 'day']), message: 'daily records need a day' });
+      // A daily record's id comes from its plugin, collection and day: one row
+      // per day, found again by the next save. This also rules out two records
+      // for the same day, since they'd share the id.
+      else if (r.id !== dailyRecordId(env.data.plugin.id, r.collection, r.day)) {
+        issues.push({ path: formatPath(['records', i, 'id']), message: `a daily record's id must be the one for its day (${r.day}); this one was edited` });
+      }
+    }
   });
   if (issues.length > 0) return { ok: false, issues };
 
