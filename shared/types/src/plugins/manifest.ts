@@ -39,11 +39,24 @@ export const refString = z
   .string()
   .regex(REF_PATTERN, 'must be a $reference like $limit (references start with $ and use lower_snake_case)');
 
+// JSON Schema export drops .refine() and .superRefine(), so each refinement
+// also declares its constraint through .meta(), which the export keeps.
+// json-schema.test.ts checks the two agree.
+
+/** `if`/`then` that applies `then` when `type` is one of `types`. */
+const whenType = (types: readonly string[], then: Record<string, unknown>, otherwise?: Record<string, unknown>) => ({
+  if: { properties: { type: { enum: types } }, required: ['type'] },
+  then,
+  ...(otherwise ? { else: otherwise } : {}),
+});
+const forbids = (k: string) => ({ not: { required: [k] } });
+
 const range = z
   .string()
   .refine((v) => (NAMED_RANGES as readonly string[]).includes(v) || RANGE_PATTERN.test(v), {
     message: `expected one of ${NAMED_RANGES.join(', ')}, or a rolling window like 14d or 12mo`,
-  });
+  })
+  .meta({ anyOf: [{ enum: [...NAMED_RANGES] }, { pattern: RANGE_PATTERN.source }] });
 
 // ─── Where ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +73,8 @@ const whereCondition = z.union([
       gt: comparable.optional(),
       gte: comparable.optional(),
     })
-    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, exists, lt, lte, gt, gte' }),
+    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, exists, lt, lte, gt, gte' })
+    .meta({ minProperties: 1 }),
 ]);
 
 export const whereSchema = z.record(key, whereCondition);
@@ -166,7 +180,8 @@ export const computedSchema: z.ZodType<ComputedExpr> = z.lazy(() =>
         })
         .refine((t) => (t.down_by === undefined) !== (t.up_by === undefined), {
           message: 'needs exactly one of down_by or up_by',
-        }),
+        })
+        .meta({ oneOf: [{ required: ['down_by'] }, { required: ['up_by'] }] }),
     }),
     z.strictObject({ delta: z.tuple([valueRefSchema, valueRefSchema]) }),
   ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper or delta.' }),
@@ -199,7 +214,8 @@ export const settingSchema = z
   .superRefine((s, ctx) => {
     if (s.type === 'select' && !s.options) ctx.addIssue({ code: 'custom', path: ['options'], message: 'a select setting needs options' });
     if (s.type !== 'select' && s.options) ctx.addIssue({ code: 'custom', path: ['options'], message: 'only select settings take options' });
-  });
+  })
+  .meta({ allOf: [whenType(['select'], { required: ['options'] }, forbids('options'))] });
 export type PluginSetting = z.infer<typeof settingSchema>;
 
 const OPTION_TYPES = new Set(['select', 'multiselect']);
@@ -225,6 +241,13 @@ export const fieldSchema = z
     if ((f.min !== undefined || f.max !== undefined) && !RANGED_TYPES.has(f.type)) {
       ctx.addIssue({ code: 'custom', path: ['min'], message: 'min/max only apply to number, scale, rating and duration fields' });
     }
+  })
+  .meta({
+    allOf: [
+      whenType([...OPTION_TYPES], { required: ['options'] }, forbids('options')),
+      whenType(['select'], {}, forbids('user_editable')),
+      whenType([...RANGED_TYPES], {}, { allOf: [forbids('min'), forbids('max')] }),
+    ],
   });
 export type PluginField = z.infer<typeof fieldSchema>;
 
@@ -353,7 +376,8 @@ const promptHook = z
     yes: actionSchema.optional(),
     pick: z.strictObject({ collection: key, field: key }).optional(),
   })
-  .refine((h) => (h.yes === undefined) !== (h.pick === undefined), { message: 'needs exactly one of yes or pick' });
+  .refine((h) => (h.yes === undefined) !== (h.pick === undefined), { message: 'needs exactly one of yes or pick' })
+  .meta({ oneOf: [{ required: ['yes'] }, { required: ['pick'] }] });
 
 const reportHook = z.strictObject({
   on: z.enum(['daily_report', 'weekly_report']),
