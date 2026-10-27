@@ -100,11 +100,14 @@ export function applyRules(
   const matches = (ev: PluginEvaluator, id: string, when: Where) => ev.records(next.collection, when).some((r) => r.id === id);
 
   const out = { ...next.data };
+  const fields = manifest.collections.find((c) => c.key === next.collection)?.fields ?? [];
+  // A field the record predates reads its default, as the evaluator does.
+  const effective = (key: string) => (out[key] !== undefined ? out[key] : fields.find((f) => f.key === key)?.default);
   for (const rule of rules) {
     if (!matches(nextEval, next.id, rule.when)) continue;
     if (prev && prevEval && matches(prevEval, prev.id, rule.when)) continue;
     for (const [key, v] of Object.entries(rule.set)) {
-      if (rule.only_if_empty && !isEmpty(out[key])) continue;
+      if (rule.only_if_empty && !isEmpty(effective(key))) continue;
       out[key] = typeof v === 'string' && v.startsWith('$') ? nextEval.value(v) : v;
     }
   }

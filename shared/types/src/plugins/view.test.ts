@@ -134,3 +134,18 @@ test('stats read naturally', () => {
   assert.equal(formatStat('2026-10-21', 'date', now), 'Oct 21, 2026');
   assert.equal(formatStat(['a', 'b'], 'number', now), 'a, b');
 });
+
+test('only_if_empty counts a field default as a value', () => {
+  const m = parsed({
+    schema_version: 1,
+    id: 'tasks',
+    name: 'Tasks',
+    version: '1.0.0',
+    collections: [{ key: 'task', kind: 'item', fields: [{ key: 'title', type: 'text' }, { key: 'urgent', type: 'boolean', optional: true }, { key: 'priority', type: 'number', default: 5 }] }],
+    rules: [{ collection: 'task', when: { urgent: true }, set: { priority: 1 }, only_if_empty: true }],
+    views: [{ id: 'main', blocks: [{ type: 'text', text: 'x' }] }],
+  });
+  const old: PluginRecord = { id: 't', collection: 'task', created_at: '2026-10-01T12:00:00Z', data: { title: 'A' } };
+  const out = applyRules(m, old, { ...old, data: { title: 'A', urgent: true } }, rulesCtx);
+  assert.equal(out.priority, undefined);
+});
