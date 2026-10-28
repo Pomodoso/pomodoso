@@ -492,11 +492,11 @@ function Pricing({ authed }: { authed: boolean }) {
             ))}
           </ul>
           {authed ? (
-            <Link to="/settings/billing" style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
+            <Link to={`/settings/billing?checkout=${annual ? 'annual' : 'monthly'}`} style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
               Get Pro
             </Link>
           ) : (
-            <Link to="/login?mode=signup&next=/settings/billing" style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
+            <Link to={`/login?mode=signup&next=${encodeURIComponent(`/settings/billing?checkout=${annual ? 'annual' : 'monthly'}`)}`} style={{ ...btnBase, background: ACCENT, color: '#fff', boxShadow: `0 4px 16px ${ACCENT}45` }}>
               Get Pro
             </Link>
           )}
@@ -515,9 +515,9 @@ function Pricing({ authed }: { authed: boolean }) {
           </p>
         </div>
         {authed ? (
-          <Link to="/settings/billing" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
+          <Link to="/settings/billing?checkout=lifetime" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
         ) : (
-          <Link to="/login?mode=signup&next=/settings/billing" style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
+          <Link to={`/login?mode=signup&next=${encodeURIComponent('/settings/billing?checkout=lifetime')}`} style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: 13, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Get Lifetime</Link>
         )}
       </div>
 

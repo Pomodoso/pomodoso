@@ -12,7 +12,8 @@ export default function Pricing() {
 
   const handleCheckout = async (price: 'annual' | 'monthly' | 'lifetime') => {
     if (!session) {
-      void navigate('/login?next=/settings/billing');
+      // Back here after signing in, straight into this plan's checkout (Billing starts it).
+      void navigate(`/login?next=${encodeURIComponent(`/settings/billing?checkout=${price}`)}`);
       return;
     }
     setError('');
