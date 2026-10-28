@@ -129,7 +129,8 @@ function Card({ manifest, label, onOpen, children }: TodayWidgetProps & { label:
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onOpen();
+        // Only the card itself: Enter on its + or a chip does that control's action.
+        if (e.target === e.currentTarget && e.key === 'Enter') onOpen();
       }}
       style={{ ...cardStyle, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}
     >

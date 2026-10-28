@@ -319,6 +319,10 @@ export function HomeState({
   const hasPlugins = (useLiveQuery(() => db.plugins.filter(p => !p.deletedAt).count()) ?? 0) > 0;
   // A widget tapped on Today opens its app in the Apps tab.
   const [openApp, setOpenApp] = useState<{ id: string; nonce: number } | null>(null);
+  // The request is consumed by the visit it opened: a later visit to Apps starts at the list.
+  useEffect(() => {
+    if (activeTab !== 'apps') setOpenApp(null);
+  }, [activeTab]);
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
   const today = localDate(timezone);
