@@ -24,6 +24,7 @@ use uuid::Uuid;
 use crate::{
     error::{AppError, Result},
     middleware::auth::AuthUser,
+    models::EntitlementFeatures,
     AppState,
 };
 
@@ -364,11 +365,35 @@ pub async fn publish(
 
     // Locked, so two publishes of one slug can't both pass the checks.
     let existing = sqlx::query!(
-        "SELECT id, owner_user_id, latest_version FROM plugin_listing WHERE slug = $1 FOR UPDATE",
+        "SELECT id, owner_user_id, latest_version, visibility FROM plugin_listing WHERE slug = $1 FOR UPDATE",
         slug,
     )
     .fetch_optional(&mut *tx)
     .await?;
+
+    // Private listings are a paid feature. What counts is the visibility the
+    // listing ends up with, so a lapsed subscriber can't keep publishing to a
+    // private one either: they pick public or unlisted, or take it down.
+    let effective = visibility
+        .as_deref()
+        .or(existing.as_ref().map(|r| r.visibility.as_str()))
+        .unwrap_or("public");
+    if effective == "private" {
+        let sub = sqlx::query!(
+            "SELECT plan, feature_overrides FROM subscription WHERE user_id = $1",
+            auth.id,
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        let allowed = sub.is_some_and(|s| {
+            EntitlementFeatures::resolve(&s.plan, s.feature_overrides.as_ref()).private_plugins
+        });
+        if !allowed {
+            return Err(AppError::ForbiddenBecause(
+                "private apps need Pomodoso Pro; publish it as public or unlisted".to_owned(),
+            ));
+        }
+    }
 
     let (listing_id, change_kind) = match existing {
         None => {

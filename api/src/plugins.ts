@@ -59,6 +59,7 @@ export function getDirectoryVersion(client: IApiClient, slug: string, version: s
 export interface PublishBody {
   manifest: unknown;
   changelog?: string;
+  /** Omitted keeps the listing's current one. `private` needs entitlements.features.private_plugins (403 otherwise). */
   visibility?: DirectoryVisibility;
   /** From checkUpdate against the latest published version; omitted for a first version. */
   change_kind?: 'additive' | 'breaking';

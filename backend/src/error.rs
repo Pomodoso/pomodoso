@@ -21,6 +21,10 @@ pub enum AppError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    /// Forbidden, with the reason shown to the user (a paid feature, say).
+    #[error("forbidden: {0}")]
+    ForbiddenBecause(String),
+
     #[error("too many requests: {0}")]
     TooManyRequests(String),
 
@@ -38,6 +42,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::ForbiddenBecause(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             AppError::Sqlx(e) => {
                 tracing::error!("database error: {e}");
