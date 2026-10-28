@@ -1,0 +1,649 @@
+# Pomodoso plugins — full reference
+
+A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with built-in components: the file can't run code, load scripts or call other services. Anything the format can't express doesn't exist yet — don't invent keys or block types.
+
+## Rules that matter
+
+- Keys (collections, fields, settings, computed, views) are lower_snake_case, up to 40 characters, starting with a letter. The plugin `id` is lower-kebab-case.
+- Read a value anywhere a value goes with `$name`: a setting, a computed value or a built-in (`$today_date`, `$now`, `$tab.url`, `$tab.title`). `$tab.*` only works in an add-button's `prefill`.
+- Put a value inside a label or text with `{$name}`.
+- A one-tap action (counter-button, mini-counter, hook `yes`, day picks) has no form, so every required field of its collection must be optional, have a `default`, or be set by the action.
+- Literal values must fit their field: numbers within min/max, select values from `options`.
+- The file is at most 256 KB.
+- Validate against https://pomodoso.com/schema/plugin.v1.json; Pomodoso also checks that every collection, field and `$reference` you name exists, and says what's available when one doesn't.
+
+## The file
+- `schema_version` (required): 1. Always `1`.
+- `id` (required): text. The plugin id, lower-kebab-case (`quit-smoking`). It never changes between versions.
+- `name` (required): text. Shown in the app list.
+- `version` (required): text. Semver, `1.0.0`. A breaking change needs a new major and a `migrate` block.
+- `icon`: text. One word: book, film, grid, no-smoking, water, coffee, run, heart, mood, sleep, money, music, game, plant, pill, food, star, check, calendar, pen, link, code, brain, dumbbell. Anything else shows the initial.
+- `description`: text. One sentence.
+- `author`: text. Your name.
+- `license`: text. Default MIT.
+- `settings`: list of object. Values the user sets on install (a starting limit, a goal). Readable as `$key`.
+- `collections` (required): list of object. What the plugin stores. Each has a `key`, a `kind` and `fields`.
+- `computed`: map of key → computed value. Named values calculated from the records, readable as `$name`.
+- `views` (required): list of object. The screens of the plugin, each a list of blocks.
+- `today`: object. Optional widget for the Today tab; the user switches it on. `default_on` suggests a starting state.
+- `hooks`: list of object. Optional questions after pomodoros or at day end, and lines in reports.
+- `rules`: list of object. Fields set automatically when a record starts matching `when` (stamp a date when a book becomes read). `only_if_empty` keeps a value the user set.
+- `migrate`: object. How a breaking update carries existing records over: `from: "1.x"` and `steps` (rename_collection, rename_field, map_values, drop_field).
+
+## Settings
+
+Each setting:
+  - `key` (required): key
+  - `type` (required): number | text | boolean | select
+  - `label` (required): text
+  - `default`: text | number | true | false
+  - `options`: list of key | object
+  - `min`: number
+  - `max`: number
+
+## Collections
+
+- `event`: Things that happen at a moment: a cigarette, a glass of water. Each record gets `occurred_at`.
+- `item`: Things you keep and update: a book, a link. Records have no date of their own beyond `created_at`.
+- `daily`: One record per day: a mood, a day state. Records have a `day`; saving the same day again updates it.
+
+Each field:
+  - `key` (required): key
+  - `type` (required): text | longtext | number | scale | boolean | date | url | select | multiselect | tags | rating | duration | image_url
+  - `label`: text
+  - `optional`: true | false
+  - `default`: text | number | true | false | list of text
+  - `options`: list of key | object
+  - `user_editable`: true | false
+  - `min`: number
+  - `max`: number
+  - `unit`: text
+
+Field types:
+
+- `text`: One line of text.
+- `longtext`: Multi-line text (notes).
+- `number`: A number; `min`, `max` and `unit` are optional.
+- `scale`: A number picked from a short range (default 1–5), shown as buttons.
+- `boolean`: Yes / no, shown as a checkbox.
+- `date`: A calendar day, YYYY-MM-DD.
+- `url`: A link.
+- `select`: One option from `options`. Add `user_editable: true` to let the user rename, recolor and add options.
+- `multiselect`: Several options from `options`.
+- `tags`: Free-form tags, typed comma-separated. No `options`.
+- `rating`: Stars (default 1–5).
+- `duration`: Minutes.
+- `image_url`: An image link (https), shown as a cover in boards.
+
+## Computed values
+
+Each entry under `computed` has exactly one operator key, which names the collection (or holds the operator's settings). They can reference each other with `$name`, without cycles.
+
+Ranges: `today`, `yesterday`, `this_week`, `last_week`, `this_month`, `last_month`, `this_year`, `all`, or a rolling window like `14d` or `12mo`.
+
+### `count`
+
+How many records match. Optional `where`, `range`, `by` (the date field the range applies to) and `group` (day | week | month, which makes it a series for charts).
+
+  - `count` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+  - `by`: key
+  - `group`: day | week | month
+
+### `sum`
+
+Sum of a numeric `field` over the matching records. Same options as count.
+
+  - `sum` (required): key
+  - `field` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+  - `by`: key
+  - `group`: day | week | month
+
+### `avg`
+
+Average of a numeric `field`. Same options as count.
+
+  - `avg` (required): key
+  - `field` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+  - `by`: key
+  - `group`: day | week | month
+
+### `min`
+
+Smallest value of a numeric `field`. Same options as count.
+
+  - `min` (required): key
+  - `field` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+  - `by`: key
+  - `group`: day | week | month
+
+### `max`
+
+Largest value of a numeric `field`. Same options as count.
+
+  - `max` (required): key
+  - `field` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+  - `by`: key
+  - `group`: day | week | month
+
+### `last`
+
+The most recent record (or its `field`). Optional `where`.
+
+  - `last` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `field`: key
+
+### `first`
+
+The oldest record (or its `field`). Optional `where`.
+
+  - `first` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `field`: key
+
+### `streak`
+
+Consecutive days, ending today, with a count within `at_least` / `at_most`. Optional `where`.
+
+  - `streak` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `at_least`: value (number, $reference or computed)
+  - `at_most`: value (number, $reference or computed)
+
+### `taper`
+
+A value that changes by a step every period since install: `from`, `down_by` or `up_by`, `every` (day | week | month), optional `min` / `max`. For limits that tighten over time.
+
+  - `taper` (required): object
+    - `from` (required): value (number, $reference or computed)
+    - `down_by`: value (number, $reference or computed)
+    - `up_by`: value (number, $reference or computed)
+    - `every` (required): day | week | month
+    - `min`: value (number, $reference or computed)
+    - `max`: value (number, $reference or computed)
+
+### `delta`
+
+Relative change between two values, `[a, b]` → (a − b) / b. Reads as a percent in templates.
+
+  - `delta` (required): [value (number, $reference or computed), value (number, $reference or computed)]
+
+## Views and blocks
+
+Each view has an `id`, an optional `label` (the tab name) and `blocks`, shown top to bottom.
+
+### `counter-button`
+
+A big button that adds a record to an event collection in one tap. `set` fills fields; `details: form` opens a form instead.
+
+  - `label` (required): text
+  - `adds` (required): key
+  - `details`: none | form
+  - `set`: map of key → text | number | true | false
+
+### `add-button`
+
+A button that opens a form to add an item. `prefill` can use `$tab.url` / `$tab.title` (the current page).
+
+  - `label` (required): text
+  - `adds` (required): key
+  - `prefill`: map of key → text | number | true | false
+
+### `form`
+
+An inline form for a collection. On a daily collection it edits today.
+
+  - `collection` (required): key
+
+### `stat`
+
+One number or value with a label. `format` says how it reads.
+
+  - `label` (required): text
+  - `value` (required): value (number, $reference or computed)
+  - `format`: number | time_ago | days | percent | duration | date
+
+### `stat-row`
+
+Up to four stats side by side.
+
+  - `items` (required): list of object
+
+### `progress`
+
+A bar of `value` against `max`. `invert: true` for limits (going over is bad).
+
+  - `label`: text
+  - `value` (required): value (number, $reference or computed)
+  - `max` (required): value (number, $reference or computed)
+  - `invert`: true | false
+
+### `chart`
+
+A bar or line chart of a grouped series (`count` / `sum` / … with `group`). Optional dashed `reference` line.
+
+  - `label`: text
+  - `kind` (required): bar | line
+  - `series` (required): computed value
+  - `reference`: value (number, $reference or computed)
+
+### `list`
+
+Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field) and a `swipe` action that sets fields.
+
+  - `collection` (required): key
+  - `filter`: map of key → text | number | true | false | object
+  - `primary` (required): key
+  - `secondary`: list of key
+  - `open`: key
+  - `sort`: object
+    - `field` (required): key
+    - `order`: asc | desc
+  - `swipe`: object
+    - `label`: text
+    - `set` (required): map of key → text | number | true | false
+
+### `tag-filter`
+
+Chips that filter the lists and boards of the same view by a tags, multiselect or select field.
+
+  - `collection` (required): key
+  - `field` (required): key
+
+### `board`
+
+Items grouped in columns by a select field (`group_by`), as cards with title, subtitle, image and badge.
+
+  - `collection` (required): key
+  - `group_by` (required): key
+  - `card` (required): object
+    - `title` (required): key
+    - `subtitle`: key
+    - `image`: key
+    - `badge`: key
+
+### `year-grid`
+
+Every day of the year as a colored cell (like a contribution graph), colored by a select field.
+
+  - `collection` (required): key
+  - `color_by`: key
+  - `legend`: true | false
+
+### `day-picker`
+
+Pick a select value for today, or move to other days.
+
+  - `collection` (required): key
+  - `field` (required): key
+
+### `breakdown`
+
+How many records have each option of a select, multiselect or tags field, as bars.
+
+  - `collection` (required): key
+  - `field` (required): key
+  - `range`: today | yesterday | this_week | last_week | this_month | last_month | this_year | all | a rolling window like 14d or 12mo
+
+### `text`
+
+A paragraph; `{$name}` inside it is replaced by the value.
+
+  - `text` (required): text
+
+## Today widget
+
+`today: { default_on: true | false, widget: … }`
+
+### `mini-counter`
+
+A number with a + button that adds to an event collection (`adds`). Optional `max`.
+
+  - `label` (required): text
+  - `value` (required): value (number, $reference or computed)
+  - `max`: value (number, $reference or computed)
+  - `adds` (required): key
+
+### `select-today`
+
+Option chips that set today's value of a daily collection's select field.
+
+  - `label` (required): text
+  - `collection` (required): key
+  - `field` (required): key
+
+### `count-badge`
+
+A single number.
+
+  - `label` (required): text
+  - `value` (required): value (number, $reference or computed)
+
+### `stat`
+
+A single value with a `format`.
+
+  - `label` (required): text
+  - `value` (required): value (number, $reference or computed)
+  - `format`: number | time_ago | days | percent | duration | date
+
+## Hooks
+
+- `pomodoro_end`: After a pomodoro, during the break: `ask` a question; `yes` adds a record, or `pick` sets a select on today. At most one plugin question per break.
+- `day_end`: The next day: `ask` about yesterday, with `yes` or `pick`.
+- `daily_report`: A `line` added to the daily report, with `{$name}` values.
+- `weekly_report`: A `line` added to the weekly report.
+
+A pomodoro_end / day_end hook:
+  - `on` (required): pomodoro_end | day_end
+  - `ask` (required): text
+  - `yes`: object
+    - `add` (required): key
+    - `set`: map of key → text | number | true | false
+  - `pick`: object
+    - `collection` (required): key
+    - `field` (required): key
+
+A daily_report / weekly_report hook:
+  - `on` (required): daily_report | weekly_report
+  - `line` (required): text
+
+A prompt hook takes exactly one of `yes` or `pick`.
+
+## Stat formats
+
+- `number`: 12, 2.5
+- `time_ago`: 3h 20m ago (for timestamps such as `last`)
+- `days`: 8 days
+- `percent`: +20%, −34% (for fractions such as `delta`)
+- `duration`: 1h 35m (minutes)
+- `date`: Oct 21, 2026
+
+## Common mistakes
+
+- Inventing a block type (`kanban`, `calendar`): use `board` or `year-grid`. The error lists what's available.
+- A counter-button on a collection with a required field and no `set` or `default` for it.
+- Writing a reference without `$` (`value: today` instead of `value: $today`).
+- A chart series without `group`: charts need `count` / `sum` / `avg` / `min` / `max` with `group: day | week | month`.
+- `options` on a field that isn't select or multiselect (tags take no options).
+- Naming a setting or computed value `now` or `today_date` (built in).
+- A breaking change (renaming or removing a field, collection or option, changing a type) without a new major version and a `migrate` block.
+
+## Complete examples
+
+### quit-smoking
+
+```yaml
+schema_version: 1
+id: quit-smoking
+name: Quit smoking
+version: 1.0.0
+icon: no-smoking
+description: A daily limit that drops every week. Log each one and watch the trend go down.
+license: MIT
+
+settings:
+  - { key: start_limit, type: number, label: Starting daily limit, default: 15, min: 0 }
+  - { key: weekly_reduction, type: number, label: Reduce every week by, default: 1, min: 0 }
+
+collections:
+  - key: cigarette
+    kind: event
+    fields:
+      - { key: craving, type: scale, label: "How strong was the craving?", min: 1, max: 5, optional: true }
+      - key: trigger
+        type: select
+        optional: true
+        options: [coffee, stress, after_meal, pomodoro_break, social]
+      - { key: note, type: text, optional: true }
+
+computed:
+  today: { count: cigarette, range: today }
+  limit: { taper: { from: $start_limit, down_by: $weekly_reduction, every: week, min: 0 } }
+  last: { last: cigarette }
+  under_limit: { streak: cigarette, at_most: $limit }
+  week: { count: cigarette, range: this_week }
+  last_week: { count: cigarette, range: last_week }
+  week_change: { delta: [$week, $last_week] }
+
+views:
+  - id: main
+    blocks:
+      - { type: counter-button, label: Smoked one, adds: cigarette }
+      - { type: progress, value: $today, max: $limit, invert: true }
+      - type: stat-row
+        items:
+          - { label: Since last, value: $last, format: time_ago }
+          - { label: Under limit, value: $under_limit, format: days }
+          - { label: vs last week, value: $week_change, format: percent }
+      - type: chart
+        label: Last 14 days
+        kind: bar
+        series: { count: cigarette, group: day, range: 14d }
+        reference: $limit
+  - id: log
+    label: Log with details
+    blocks:
+      - { type: form, collection: cigarette }
+
+today:
+  default_on: true
+  widget: { type: mini-counter, label: Cigarettes, value: $today, max: $limit, adds: cigarette }
+
+hooks:
+  - on: pomodoro_end
+    ask: Did you smoke during this break?
+    yes: { add: cigarette, set: { trigger: pomodoro_break } }
+  - on: weekly_report
+    line: "Cigarettes: {$week} this week ({$week_change} vs last week)"
+```
+
+### year-in-pixels
+
+```yaml
+schema_version: 1
+id: year-in-pixels
+name: Year in Pixels
+version: 1.0.0
+icon: grid
+description: Color every day by how it went. You choose the states and their colors.
+license: MIT
+
+collections:
+  - key: day_state
+    kind: daily
+    fields:
+      - key: state
+        type: select
+        user_editable: true
+        options:
+          - { value: great, label: Great, color: "#2D8A7A" }
+          - { value: productive, label: Productive, color: "#8FB08F" }
+          - { value: normal, label: Normal, color: "#E8D9A8" }
+          - { value: unproductive, label: Not productive, color: "#D98C7A" }
+      - { key: note, type: text, optional: true }
+
+computed:
+  logged_this_year: { count: day_state, range: this_year }
+
+views:
+  - id: main
+    blocks:
+      - { type: day-picker, collection: day_state, field: state }
+      - { type: year-grid, collection: day_state, color_by: state, legend: true }
+      - { type: breakdown, collection: day_state, field: state, range: this_year }
+      - { type: stat, label: Days logged this year, value: $logged_this_year }
+
+today:
+  default_on: false
+  widget: { type: select-today, label: How was today?, collection: day_state, field: state }
+
+hooks:
+  - on: day_end
+    ask: How was today?
+    pick: { collection: day_state, field: state }
+```
+
+### reading-list
+
+```yaml
+schema_version: 1
+id: reading-list
+name: Reading list
+version: 1.0.0
+icon: bookmark
+description: Articles, videos and papers to get to later, organized with tags.
+license: MIT
+
+collections:
+  - key: link
+    kind: item
+    title_field: title
+    fields:
+      - { key: url, type: url }
+      - { key: title, type: text }
+      - { key: kind, type: select, options: [article, video, paper, other], default: article }
+      - { key: tags, type: tags, optional: true }
+      - { key: status, type: select, options: [to_read, done], default: to_read }
+
+computed:
+  to_read: { count: link, where: { status: to_read } }
+
+views:
+  - id: main
+    blocks:
+      - type: add-button
+        label: Save current tab
+        adds: link
+        prefill: { url: $tab.url, title: $tab.title }
+      - { type: tag-filter, collection: link, field: tags }
+      - type: list
+        collection: link
+        filter: { status: to_read }
+        primary: title
+        secondary: [kind, tags]
+        open: url
+        sort: { field: created_at, order: desc }
+        swipe: { label: Done, set: { status: done } }
+  - id: done
+    label: Done
+    blocks:
+      - { type: list, collection: link, filter: { status: done }, primary: title, open: url }
+
+today:
+  widget: { type: count-badge, label: To read, value: $to_read }
+```
+
+### bookshelf
+
+```yaml
+schema_version: 1
+id: bookshelf
+name: Bookshelf
+version: 1.0.0
+icon: book
+description: Books you want to read, are reading and have read.
+license: MIT
+
+collections:
+  - key: book
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: author, type: text, optional: true }
+      - { key: status, type: select, options: [want, reading, read], default: want }
+      - { key: rating, type: rating, optional: true }
+      - { key: tags, type: tags, optional: true }
+      - { key: cover, type: image_url, optional: true }
+      - { key: finished_on, type: date, optional: true }
+
+computed:
+  read_this_year: { count: book, where: { status: read }, range: this_year, by: finished_on }
+
+views:
+  - id: main
+    blocks:
+      - { type: add-button, label: Add a book, adds: book }
+      - { type: tag-filter, collection: book, field: tags }
+      - type: board
+        collection: book
+        group_by: status
+        card: { title: title, subtitle: author, image: cover, badge: rating }
+  - id: stats
+    label: Stats
+    blocks:
+      - { type: stat, label: Read this year, value: $read_this_year }
+      - type: chart
+        label: Books per month
+        kind: bar
+        series: { count: book, where: { status: read }, by: finished_on, group: month, range: 12mo }
+
+rules:
+  - collection: book
+    when: { status: read }
+    set: { finished_on: $today_date }
+    only_if_empty: true
+```
+
+### movieshelf
+
+```yaml
+schema_version: 1
+id: movieshelf
+name: Movieshelf
+version: 1.0.0
+icon: film
+description: Movies to watch and the ones you've seen.
+license: MIT
+
+collections:
+  - key: movie
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: director, type: text, optional: true }
+      - { key: status, type: select, options: [watchlist, watched], default: watchlist }
+      - { key: rating, type: rating, optional: true }
+      - { key: tags, type: tags, optional: true }
+      - { key: cover, type: image_url, optional: true }
+      - { key: watched_on, type: date, optional: true }
+
+computed:
+  watched_this_year: { count: movie, where: { status: watched }, range: this_year, by: watched_on }
+
+views:
+  - id: main
+    blocks:
+      - { type: add-button, label: Add a movie, adds: movie }
+      - { type: tag-filter, collection: movie, field: tags }
+      - type: board
+        collection: movie
+        group_by: status
+        card: { title: title, subtitle: director, image: cover, badge: rating }
+  - id: stats
+    label: Stats
+    blocks:
+      - { type: stat, label: Watched this year, value: $watched_this_year }
+      - type: chart
+        label: Movies per month
+        kind: bar
+        series: { count: movie, where: { status: watched }, by: watched_on, group: month, range: 12mo }
+
+rules:
+  - collection: movie
+    when: { status: watched }
+    set: { watched_on: $today_date }
+    only_if_empty: true
+```

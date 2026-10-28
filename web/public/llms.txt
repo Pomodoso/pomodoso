@@ -1,0 +1,30 @@
+# Pomodoso plugins
+
+> A Pomodoso plugin is one YAML file that becomes a small app inside Pomodoso: its own screen, the records it keeps, and optionally a widget on Today, a question after pomodoros and a line in reports. Plugins are configuration, never code: they combine a closed set of blocks and computed values.
+
+- Write the whole file at once, then validate it against the JSON Schema.
+- Every key is lower_snake_case except the plugin `id` (lower-kebab-case).
+- Read a value with `$name`; put one in text with `{$name}`.
+- Only use the blocks, field types and operators listed in the full reference.
+
+## Reference
+
+- [Full reference with every block, field type, computed value, hook and five complete examples](/llms-full.txt)
+- [JSON Schema](https://pomodoso.com/schema/plugin.v1.json)
+
+## Blocks
+
+- `counter-button`
+- `add-button`
+- `form`
+- `stat`
+- `stat-row`
+- `progress`
+- `chart`
+- `list`
+- `tag-filter`
+- `board`
+- `year-grid`
+- `day-picker`
+- `breakdown`
+- `text`
