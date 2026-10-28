@@ -23,6 +23,9 @@ const BUILTIN_FIELDS: Record<CollectionKind, readonly string[]> = {
   item: ['created_at', 'updated_at'],
   daily: ['day', 'created_at', 'updated_at'],
 };
+/** "a" or "an" before a catalog word (event, item, image_url…). */
+const article = (word: string) => (/^[aeiou]/.test(word) ? 'an' : 'a');
+
 const DATE_BUILTINS = new Set(['occurred_at', 'created_at', 'updated_at', 'day']);
 const NUMERIC_TYPES: readonly FieldType[] = ['number', 'scale', 'rating', 'duration'];
 const TEMPLATE_REF = /\{\$([^}]*)\}/g;
@@ -171,7 +174,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       return undefined;
     }
     if (kinds && !kinds.includes(c.kind)) {
-      add(path, `${usage ?? 'this'} needs a ${kinds.join(' or ')} collection; "${k}" is ${c.kind}`);
+      add(path, `${usage ?? 'this'} needs ${article(kinds.join(' or '))} ${kinds.join(' or ')} collection; "${k}" is ${c.kind}`);
     }
     return c;
   }
@@ -179,7 +182,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
   function field(path: Path, c: PluginCollection | undefined, k: string, types?: readonly FieldType[], usage?: string) {
     if (!c) return undefined;
     if (BUILTIN_FIELDS[c.kind].includes(k)) {
-      if (types) add(path, `${usage ?? 'this'} needs a ${types.join(' or ')} field; "${k}" is a built-in date`);
+      if (types) add(path, `${usage ?? 'this'} needs ${article(types.join(' or '))} ${types.join(' or ')} field; "${k}" is a built-in date`);
       return undefined;
     }
     const f = c.fields.find((x) => x.key === k);
@@ -188,7 +191,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       return undefined;
     }
     if (types && !types.includes(f.type)) {
-      add(path, `${usage ?? 'this'} needs a ${types.join(' or ')} field; "${k}" is ${f.type}`);
+      add(path, `${usage ?? 'this'} needs ${article(types.join(' or '))} ${types.join(' or ')} field; "${k}" is ${f.type}`);
     }
     return f;
   }

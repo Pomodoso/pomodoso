@@ -147,6 +147,11 @@ test('a block on the wrong kind of collection says which kind it needs', () => {
   assertIssue(issues, 'views[0].blocks[0].field', 'needs a select field', '"ml" is number');
 });
 
+test('kind and type names get the right article', () => {
+  const issues = blockIssues({ type: 'counter-button', label: 'One', adds: 'mood' });
+  assertIssue(issues, 'views[0].blocks[0].adds', 'counter-button needs an event collection', '"mood" is daily');
+});
+
 test('a one-tap add must be able to fill every required field', () => {
   const m = base();
   m.collections = [{ key: 'glass', kind: 'event', fields: [{ key: 'ml', type: 'number' }] }];

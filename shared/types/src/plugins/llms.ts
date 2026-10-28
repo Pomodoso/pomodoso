@@ -131,6 +131,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 - Read a value anywhere a value goes with \`$name\`: a setting, a computed value or a built-in (${BUILTIN_REFS.map((r) => `\`$${r}\``).join(', ')}). \`$tab.*\` only works in an add-button's \`prefill\`.
 - Put a value inside a label or text with \`{$name}\`.
 - A one-tap action (counter-button, mini-counter, hook \`yes\`, day picks) has no form, so every required field of its collection must be optional, have a \`default\`, or be set by the action.
+- Every record also has built-in fields you can list, sort and filter by without declaring them: \`created_at\` and \`updated_at\`, plus \`occurred_at\` on events and \`day\` on dailies.
 - Literal values must fit their field: numbers within min/max, select values from \`options\`.
 - The file is at most ${PLUGIN_FILE_MAX_BYTES / 1024} KB.
 - Validate against ${PLUGIN_JSON_SCHEMA_URL}; Pomodoso also checks that every collection, field and \`$reference\` you name exists, and says what's available when one doesn't.
