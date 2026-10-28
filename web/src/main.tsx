@@ -14,6 +14,7 @@ import Privacy from './pages/legal/Privacy'
 import Terms from './pages/legal/Terms.tsx'
 import Refund from './pages/legal/Refund.tsx'
 import Gdpr from './pages/legal/Gdpr.tsx'
+import Directory from './pages/apps/Directory.tsx'
 import './index.css'
 
 declare global {
@@ -37,6 +38,11 @@ export const routes: RouteRecord[] = [
       { path: 'gdpr', element: <Gdpr /> },
       { path: 'pricing', element: <Pricing /> },
       { path: 'support', element: <Support /> },
+      // The public app directory. The app page and the build guide bring the
+      // plugin validator and components (zod, yaml), so they load on their own.
+      { path: 'apps', element: <Directory /> },
+      { path: 'apps/build', lazy: () => import('./pages/apps/BuildPage.tsx').then((m) => ({ Component: m.default })) },
+      { path: 'apps/:slug', lazy: () => import('./pages/apps/AppPage.tsx').then((m) => ({ Component: m.default })) },
       {
         path: 'dashboard',
         element: (

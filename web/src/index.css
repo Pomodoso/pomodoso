@@ -525,3 +525,50 @@ body {
 @media (max-width: 640px) {
   .lp-nav-links { display: none !important; }
 }
+
+/* Public app directory (/apps): the extension's palette, so the shared plugin
+   components (@pomodoso/ui) render here as they do in the popup. */
+.pomo-site {
+  --color-bg: #FBFAF7;
+  --color-surface: #FFFFFF;
+  --color-border: #E8E5DD;
+  --color-border-strong: #D0CCBF;
+  --color-text: #1A1A17;
+  --color-text-muted: #6B6960;
+  --color-text-faint: #8A877E;
+  --color-accent: #C8553D;
+  --color-accent-hover: #B44A34;
+  --color-accent-soft: rgba(200,85,61,0.08);
+  --color-success: #4A7C4A;
+  --color-success-bg: #EEF5EE;
+  --color-warning: #B07A1F;
+  --color-warning-bg: #FDF6E3;
+  --color-info: #4A6FA5;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.pomo-site a { color: #4A6FA5; }
+.pomo-site a:hover { color: #3A5A88; }
+.pomo-site-btn {
+  height: 44px; padding: 0 18px; border-radius: 8px; font: 600 14px/1 inherit; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  text-decoration: none; cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+}
+.pomo-site a.pomo-site-btn-primary, .pomo-site-btn-primary { background: var(--color-accent); color: #FFFFFF; }
+.pomo-site a.pomo-site-btn-primary:hover, .pomo-site-btn-primary:hover { background: var(--color-accent-hover); color: #FFFFFF; }
+.pomo-site a.pomo-site-btn-secondary, .pomo-site-btn-secondary { background: #FFFFFF; color: var(--color-text); border-color: var(--color-border-strong); font-weight: 500; }
+.pomo-site-btn:disabled { opacity: 0.6; cursor: default; }
+.pomo-site code { font-family: var(--font-mono); font-size: 0.87em; background: #F4F2EC; padding: 1px 5px; border-radius: 4px; }
+.pomo-site-nav-links { display: flex; gap: 20px; flex: 1; flex-wrap: wrap; font-size: 14px; }
+@media (max-width: 640px) {
+  .pomo-site-nav-links { display: none; }
+}

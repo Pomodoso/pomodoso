@@ -62,7 +62,7 @@ function Nav({ authed }: { authed: boolean }) {
             <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.02em', color: '#fff' }}>Pomodoso</span>
           </Link>
           <div className="lp-nav-links" style={{ display: 'flex', gap: 22 }}>
-            {[['#features', 'Features'], ['#apps', 'Apps'], ['#pricing', 'Pricing'], ['#faq', 'FAQ']].map(([href, label]) => (
+            {[['#features', 'Features'], ['/apps', 'Apps'], ['#pricing', 'Pricing'], ['#faq', 'FAQ']].map(([href, label]) => (
               <a key={label} href={href} style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', textDecoration: 'none' }} onMouseEnter={lnk} onMouseLeave={lnkOut}>{label}</a>
             ))}
           </div>
@@ -360,7 +360,11 @@ views:
           ))}
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 24, lineHeight: 1.7 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginTop: 28 }}>
+          <Link to="/apps" style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 20px', borderRadius: 10, background: ACCENT, color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none', boxShadow: `0 6px 20px ${ACCENT}35` }}>Browse apps</Link>
+          <Link to="/apps/build" style={{ display: 'inline-flex', alignItems: 'center', padding: '11px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.8)', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>Build one with AI</Link>
+        </div>
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 20, lineHeight: 1.7 }}>
           Free and unlimited with an account. An app is a file, not code: it can't run scripts or send your data anywhere.
           <br />
           Writing one with an AI assistant? Point it to <a href="/llms.txt" style={{ color: 'rgba(255,255,255,0.55)' }}>pomodoso.com/llms.txt</a>.
