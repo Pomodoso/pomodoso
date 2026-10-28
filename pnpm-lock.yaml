@@ -246,6 +246,21 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  shared/plugin:
+    devDependencies:
+      '@pomodoso/types':
+        specifier: workspace:*
+        version: link:../types
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      esbuild:
+        specifier: 0.25.12
+        version: 0.25.12
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   shared/types:
     dependencies:
       yaml:
