@@ -14,8 +14,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     (() => {
-      // A local web app (VITE_WEB_URL, e.g. http://localhost:5180) is added to
-      // externally_connectable for that build only; the store build keeps
+      // A local web app (VITE_WEB_URL, e.g. http://localhost:5180) gets the
+      // web-bridge content script in that build only; the store build keeps
       // pomodoso.com alone.
       let webUrl: string | undefined;
       let outDir = resolve(__dirname, 'dist');
@@ -27,7 +27,8 @@ export default defineConfig({
         },
         closeBundle() {
           const manifest = JSON.parse(readFileSync(resolve(__dirname, 'manifest.json'), 'utf8'));
-          const matches: string[] = manifest.externally_connectable.matches;
+          const bridge = manifest.content_scripts.find((c: { js: string[] }) => c.js.includes('content-scripts/web-bridge.js'));
+          const matches: string[] = bridge.matches;
           const extra = webUrl ? `${new URL(webUrl).origin}/*` : null;
           if (extra && !matches.includes(extra)) matches.push(extra);
           writeFileSync(resolve(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -72,6 +73,7 @@ export default defineConfig({
         'content-scripts/selection': resolve(root, 'content-scripts/selection.ts'),
         'content-scripts/break-overlay': resolve(root, 'content-scripts/break-overlay.ts'),
         'content-scripts/arxiv': resolve(root, 'content-scripts/arxiv.ts'),
+        'content-scripts/web-bridge': resolve(root, 'content-scripts/web-bridge.ts'),
       },
       output: {
         entryFileNames: (chunk) => {
