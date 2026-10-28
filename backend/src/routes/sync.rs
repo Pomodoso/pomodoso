@@ -102,6 +102,18 @@ pub async fn push(
             accepted += 1;
         }
     }
+    // Plugins before their records: a record references its plugin, so a
+    // first sync carrying both would otherwise hit the foreign key.
+    for entity in body.entities.iter().filter(|e| e.table == "plugin") {
+        if push_plugin(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
+    for entity in body.entities.iter().filter(|e| e.table == "plugin_record") {
+        if push_plugin_record(&state, auth.id, entity).await.is_ok() {
+            accepted += 1;
+        }
+    }
 
     // Pass 2: workspace-scoped entities. Each entity syncs into the workspace it
     // carries in data.workspace_id (falling back to the legacy body field); the
@@ -123,6 +135,8 @@ pub async fn push(
                 | "achievement"
                 | "habit"
                 | "habit_log"
+                | "plugin"
+                | "plugin_record"
         )
     }) {
         let ws = entity_workspace_id(entity, body.workspace_id);
@@ -837,6 +851,163 @@ async fn push_achievement(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity)
     Ok(())
 }
 
+/// Largest manifest the server stores, in serialized bytes: the client's own
+/// file limit (PLUGIN_FILE_MAX_BYTES), so anything a client accepted fits.
+const PLUGIN_MANIFEST_MAX_BYTES: usize = 256 * 1024;
+/// Settings and a record's data are small maps of the user's values.
+const PLUGIN_VALUES_MAX_BYTES: usize = 64 * 1024;
+
+/// When the client created the row. It matters for plugins: lists sort by it
+/// and items don't carry another date, so it can't be the server's arrival
+/// time. Kept on first insert only (the upserts don't update it); a missing or
+/// future value falls back to the row's updated_at.
+fn client_created_at(e: &SyncEntity) -> DateTime<Utc> {
+    e.data["created_at"]
+        .as_str()
+        .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+        .filter(|t| *t <= e.updated_at)
+        .unwrap_or(e.updated_at)
+}
+
+/// A JSON object no larger than `max` bytes, or None.
+fn bounded_object(v: &Value, max: usize) -> Option<Value> {
+    if !v.is_object() {
+        return None;
+    }
+    let size = serde_json::to_vec(v).map(|b| b.len()).unwrap_or(usize::MAX);
+    (size <= max).then(|| v.clone())
+}
+
+/// An installed plugin. The manifest is stored as the client validated it;
+/// the server only bounds its size and never interprets it.
+async fn push_plugin(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+    let Ok(id) = e.id.parse::<uuid::Uuid>() else {
+        return Ok(());
+    };
+    let slug = e.data["slug"].as_str().unwrap_or("").to_owned();
+    if slug.is_empty() || slug.len() > 50 {
+        return Ok(());
+    }
+    let source = match e.data["source"].as_str() {
+        Some("directory") => "directory",
+        _ => "file",
+    };
+    let Some(manifest) = bounded_object(&e.data["manifest"], PLUGIN_MANIFEST_MAX_BYTES) else {
+        return Ok(());
+    };
+    let settings = bounded_object(&e.data["settings"], PLUGIN_VALUES_MAX_BYTES)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let Some(installed_on) = e.data["installed_on"]
+        .as_str()
+        .and_then(|s| s.parse::<NaiveDate>().ok())
+    else {
+        return Ok(());
+    };
+    let directory_version_id = e.data["directory_version_id"]
+        .as_str()
+        .and_then(|s| s.parse::<uuid::Uuid>().ok());
+    let enabled = e.data["enabled"].as_bool().unwrap_or(true);
+    let auto_update = e.data["auto_update"].as_bool().unwrap_or(false);
+    let created_at = client_created_at(e);
+
+    sqlx::query!(
+        r#"
+        INSERT INTO plugin (id, user_id, slug, source, directory_version_id, manifest, settings,
+                            enabled, auto_update, installed_on, created_at, updated_at, deleted_at, synced_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        ON CONFLICT (user_id, id) DO UPDATE SET
+          slug                 = EXCLUDED.slug,
+          source               = EXCLUDED.source,
+          directory_version_id = EXCLUDED.directory_version_id,
+          manifest             = EXCLUDED.manifest,
+          settings             = EXCLUDED.settings,
+          enabled              = EXCLUDED.enabled,
+          auto_update          = EXCLUDED.auto_update,
+          installed_on         = EXCLUDED.installed_on,
+          updated_at           = EXCLUDED.updated_at,
+          deleted_at           = EXCLUDED.deleted_at,
+          synced_at            = NOW()
+        -- Keyed by (user_id, id): a conflict is always this user's own row.
+        WHERE EXCLUDED.updated_at >= plugin.updated_at
+        "#,
+        id,
+        user_id,
+        slug,
+        source,
+        directory_version_id,
+        manifest,
+        settings,
+        enabled,
+        auto_update,
+        installed_on,
+        created_at,
+        e.updated_at,
+        e.deleted_at,
+    )
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
+/// One record of a plugin's collection. The (user_id, plugin_id) foreign key
+/// rejects a record whose plugin isn't this user's.
+async fn push_plugin_record(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
+    let Ok(id) = e.id.parse::<uuid::Uuid>() else {
+        return Ok(());
+    };
+    let Some(plugin_id) = e.data["plugin_id"]
+        .as_str()
+        .and_then(|s| s.parse::<uuid::Uuid>().ok())
+    else {
+        return Ok(());
+    };
+    let collection = e.data["collection"].as_str().unwrap_or("").to_owned();
+    if collection.is_empty() || collection.len() > 40 {
+        return Ok(());
+    }
+    let day = e.data["day"]
+        .as_str()
+        .and_then(|s| s.parse::<NaiveDate>().ok());
+    let occurred_at = e.data["occurred_at"]
+        .as_str()
+        .and_then(|s| s.parse::<DateTime<Utc>>().ok());
+    let Some(data) = bounded_object(&e.data["data"], PLUGIN_VALUES_MAX_BYTES) else {
+        return Ok(());
+    };
+    let created_at = client_created_at(e);
+
+    sqlx::query!(
+        r#"
+        INSERT INTO plugin_record (id, user_id, plugin_id, collection, day, occurred_at, data,
+                                   created_at, updated_at, deleted_at, synced_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+        ON CONFLICT (user_id, id) DO UPDATE SET
+          plugin_id   = EXCLUDED.plugin_id,
+          collection  = EXCLUDED.collection,
+          day         = EXCLUDED.day,
+          occurred_at = EXCLUDED.occurred_at,
+          data        = EXCLUDED.data,
+          updated_at  = EXCLUDED.updated_at,
+          deleted_at  = EXCLUDED.deleted_at,
+          synced_at   = NOW()
+        WHERE EXCLUDED.updated_at >= plugin_record.updated_at
+        "#,
+        id,
+        user_id,
+        plugin_id,
+        collection,
+        day,
+        occurred_at,
+        data,
+        created_at,
+        e.updated_at,
+        e.deleted_at,
+    )
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
 async fn push_detection_rule(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> Result<()> {
     // Detection-rule ids are stable string keys (e.g. "r-linear"), not UUIDs, so
     // identical presets seeded on every install converge to one row.
@@ -1027,6 +1198,62 @@ pub async fn pull(
                 "kind": row.kind,
                 "earned_on": row.earned_on,
                 "habit_id": row.habit_id,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+
+    // Plugins and their records (user-global)
+    for row in sqlx::query!(
+        r#"SELECT id, slug, source, directory_version_id, manifest, settings, enabled,
+                  auto_update, installed_on, created_at, updated_at, deleted_at
+           FROM plugin
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "plugin".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "slug": row.slug,
+                "source": row.source,
+                "directory_version_id": row.directory_version_id,
+                "manifest": row.manifest,
+                "settings": row.settings,
+                "enabled": row.enabled,
+                "auto_update": row.auto_update,
+                "installed_on": row.installed_on,
+                "created_at": row.created_at,
+            }),
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+        });
+    }
+    for row in sqlx::query!(
+        r#"SELECT id, plugin_id, collection, day, occurred_at, data, created_at, updated_at, deleted_at
+           FROM plugin_record
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+        auth.id,
+        q.since,
+    )
+    .fetch_all(&state.pool)
+    .await?
+    {
+        entities.push(SyncEntity {
+            table: "plugin_record".into(),
+            id: row.id.to_string(),
+            data: serde_json::json!({
+                "plugin_id": row.plugin_id,
+                "collection": row.collection,
+                "day": row.day,
+                "occurred_at": row.occurred_at,
+                "data": row.data,
+                "created_at": row.created_at,
             }),
             updated_at: row.updated_at,
             deleted_at: row.deleted_at,

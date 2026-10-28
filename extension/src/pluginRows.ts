@@ -51,3 +51,83 @@ export function rowsFromExport(exp: PluginExport, ts: string): { plugin: PluginR
   }));
   return { plugin, records };
 }
+
+// ─── Sync ─────────────────────────────────────────────────────────────────────
+// The `data` of a sync entity is snake_case, as the server stores it
+// (backend/src/routes/sync.rs push_plugin / push_plugin_record).
+
+export function pluginSyncData(p: PluginRow): Record<string, unknown> {
+  return {
+    slug: p.slug,
+    source: p.source,
+    directory_version_id: p.directoryVersionId ?? null,
+    manifest: p.manifest,
+    settings: p.settings,
+    enabled: p.enabled,
+    auto_update: p.autoUpdate,
+    installed_on: p.installedOn,
+    created_at: p.createdAt,
+  };
+}
+
+export function pluginRecordSyncData(r: PluginRecordRow): Record<string, unknown> {
+  return {
+    plugin_id: r.pluginId,
+    collection: r.collection,
+    day: r.day ?? null,
+    occurred_at: r.occurredAt ?? null,
+    data: r.data,
+    created_at: r.createdAt,
+  };
+}
+
+/**
+ * A server timestamp in the client's ISO form. The server writes
+ * `…T10:00:00Z`, the client `…T10:00:00.000Z`; they sort as text (list order
+ * by created_at), so both must have one shape.
+ */
+function iso(v: unknown, fallback: string): string {
+  const t = typeof v === 'string' ? Date.parse(v) : NaN;
+  return Number.isNaN(t) ? fallback : new Date(t).toISOString();
+}
+
+interface RemoteMeta {
+  id: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+/** A pulled plugin as a local row, already marked synced. */
+export function pluginFromSync(meta: RemoteMeta, data: Record<string, unknown>): PluginRow {
+  return {
+    id: meta.id,
+    slug: String(data['slug'] ?? ''),
+    source: data['source'] === 'directory' ? 'directory' : 'file',
+    ...(typeof data['directory_version_id'] === 'string' ? { directoryVersionId: data['directory_version_id'] } : {}),
+    manifest: data['manifest'] as PluginRow['manifest'],
+    settings: (data['settings'] as Record<string, unknown> | null) ?? {},
+    enabled: data['enabled'] !== false,
+    autoUpdate: data['auto_update'] === true,
+    installedOn: String(data['installed_on'] ?? '').slice(0, 10),
+    createdAt: iso(data['created_at'], meta.updatedAt),
+    updatedAt: meta.updatedAt,
+    syncedAt: meta.updatedAt,
+    ...(meta.deletedAt ? { deletedAt: meta.deletedAt } : {}),
+  };
+}
+
+/** A pulled plugin record as a local row, already marked synced. */
+export function pluginRecordFromSync(meta: RemoteMeta, data: Record<string, unknown>): PluginRecordRow {
+  return {
+    id: meta.id,
+    pluginId: String(data['plugin_id'] ?? ''),
+    collection: String(data['collection'] ?? ''),
+    ...(typeof data['day'] === 'string' ? { day: data['day'].slice(0, 10) } : {}),
+    ...(typeof data['occurred_at'] === 'string' ? { occurredAt: iso(data['occurred_at'], meta.updatedAt) } : {}),
+    data: (data['data'] as Record<string, unknown> | null) ?? {},
+    createdAt: iso(data['created_at'], meta.updatedAt),
+    updatedAt: meta.updatedAt,
+    syncedAt: meta.updatedAt,
+    ...(meta.deletedAt ? { deletedAt: meta.deletedAt } : {}),
+  };
+}

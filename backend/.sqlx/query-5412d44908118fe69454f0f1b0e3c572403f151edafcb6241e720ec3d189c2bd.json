@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO plugin (id, user_id, slug, source, directory_version_id, manifest, settings,\n                            enabled, auto_update, installed_on, created_at, updated_at, deleted_at, synced_at)\n        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())\n        ON CONFLICT (user_id, id) DO UPDATE SET\n          slug                 = EXCLUDED.slug,\n          source               = EXCLUDED.source,\n          directory_version_id = EXCLUDED.directory_version_id,\n          manifest             = EXCLUDED.manifest,\n          settings             = EXCLUDED.settings,\n          enabled              = EXCLUDED.enabled,\n          auto_update          = EXCLUDED.auto_update,\n          installed_on         = EXCLUDED.installed_on,\n          updated_at           = EXCLUDED.updated_at,\n          deleted_at           = EXCLUDED.deleted_at,\n          synced_at            = NOW()\n        -- Keyed by (user_id, id): a conflict is always this user's own row.\n        WHERE EXCLUDED.updated_at >= plugin.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Jsonb",
+        "Jsonb",
+        "Bool",
+        "Bool",
+        "Date",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5412d44908118fe69454f0f1b0e3c572403f151edafcb6241e720ec3d189c2bd"
+}

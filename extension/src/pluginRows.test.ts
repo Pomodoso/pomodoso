@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import type { PluginExport } from '@pomodoso/types/plugins';
 
-import type { PluginRecordRow } from './db.ts';
-import { rowsFromExport, toEngineRecord } from './pluginRows.ts';
+import type { PluginRecordRow, PluginRow } from './db.ts';
+import { pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord } from './pluginRows.ts';
 
 test('a stored row becomes the engine record shape', () => {
   const row: PluginRecordRow = {
@@ -51,4 +51,25 @@ test('imported rows are live, dirty and newest, with their original ids', () => 
   assert.equal(records[0]!.day, '2026-10-19');
   assert.equal(records[1]!.occurredAt, '2026-10-19T10:00:00Z');
   assert.equal('day' in records[1]!, false);
+});
+
+test('plugin rows survive the sync mapping both ways, with server timestamps normalized', () => {
+  const plugin: PluginRow = {
+    id: 'p1', slug: 'water', source: 'file', manifest: { id: 'water' } as unknown as PluginRow['manifest'],
+    settings: { 'today:on': true }, enabled: true, autoUpdate: false, installedOn: '2026-10-01',
+    createdAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z',
+  };
+  const meta = { id: 'p1', updatedAt: plugin.updatedAt, deletedAt: null };
+  // The server writes timestamps without milliseconds.
+  const fromServer = { ...pluginSyncData(plugin), created_at: '2026-10-01T12:00:00Z' };
+  assert.deepEqual(pluginFromSync(meta, fromServer), { ...plugin, syncedAt: plugin.updatedAt });
+
+  const rec: PluginRecordRow = {
+    id: 'r1', pluginId: 'p1', collection: 'glass', occurredAt: '2026-10-02T15:00:00.000Z', data: { ml: 250 },
+    createdAt: '2026-10-02T15:00:00.000Z', updatedAt: '2026-10-02T15:00:00.000Z',
+  };
+  const recServer = { ...pluginRecordSyncData(rec), occurred_at: '2026-10-02T15:00:00Z', created_at: '2026-10-02T15:00:00Z' };
+  assert.deepEqual(pluginRecordFromSync({ id: 'r1', updatedAt: rec.updatedAt, deletedAt: '2026-10-03T00:00:00.000Z' }, recServer), {
+    ...rec, syncedAt: rec.updatedAt, deletedAt: '2026-10-03T00:00:00.000Z',
+  });
 });

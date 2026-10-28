@@ -1,6 +1,7 @@
 import { TokenApiClient, pushEntities, pullEntities } from '@pomodoso/api';
 import type { SyncEntity } from '@pomodoso/api';
 import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, normalizeHabits, habitLogId } from './db';
+import { pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData } from './pluginRows';
 import { ensureFreshSession } from './supabaseClient';
 import {
   clearPendingSyncChoice, discardLocalData, needsSyncChoice, recordSyncChoice, requestSyncChoice,
@@ -368,6 +369,21 @@ async function push(client: TokenApiClient): Promise<void> {
     }));
   }
 
+  // Plugins and their records (user-global). Plugins go first in the batch;
+  // the server also pushes them before records, for the foreign key.
+  const plugins = await db.plugins
+    .filter(p => !p.syncedAt || p.syncedAt < p.updatedAt)
+    .toArray();
+  for (const p of plugins) {
+    entities.push(toEntity('plugin', p.id, p.updatedAt, p.deletedAt ?? null, pluginSyncData(p)));
+  }
+  const pluginRecords = await db.pluginRecords
+    .filter(r => !r.syncedAt || r.syncedAt < r.updatedAt)
+    .toArray();
+  for (const r of pluginRecords) {
+    entities.push(toEntity('plugin_record', r.id, r.updatedAt, r.deletedAt ?? null, pluginRecordSyncData(r)));
+  }
+
   // Settings
   for (const key of SYNCED_SETTINGS) {
     const row = await db.settings.get(key);
@@ -406,6 +422,8 @@ async function push(client: TokenApiClient): Promise<void> {
     if (habits.length)     await db.habits.where('id').anyOf(habits.map(h => h.id)).modify({ syncedAt: ts });
     if (rules.length)      await db.detectionRules.where('id').anyOf(rules.map(r => r.id)).modify({ syncedAt: ts });
     if (achievements.length) await db.achievements.where('id').anyOf(achievements.map(a => a.id)).modify({ syncedAt: ts });
+    if (plugins.length) await db.plugins.where('id').anyOf(plugins.map(p => p.id)).modify({ syncedAt: ts });
+    if (pluginRecords.length) await db.pluginRecords.where('id').anyOf(pluginRecords.map(r => r.id)).modify({ syncedAt: ts });
     for (const r of history) {
       await db.habitHistory.where('[habitId+date]').equals([r.habitId, r.date]).modify({ syncedAt: ts });
     }
@@ -607,6 +625,20 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         syncedAt,
       };
       await db.taskOrders.put(row);
+      break;
+    }
+
+    case 'plugin': {
+      const existing = await db.plugins.get(id);
+      if (existing && existing.updatedAt >= updated_at) return;
+      await db.plugins.put(pluginFromSync({ id, updatedAt: updated_at, deletedAt: deleted_at ?? null }, data));
+      break;
+    }
+
+    case 'plugin_record': {
+      const existing = await db.pluginRecords.get(id);
+      if (existing && existing.updatedAt >= updated_at) return;
+      await db.pluginRecords.put(pluginRecordFromSync({ id, updatedAt: updated_at, deletedAt: deleted_at ?? null }, data));
       break;
     }
 
