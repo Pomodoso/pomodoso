@@ -155,7 +155,7 @@ pub struct PublishBody {
     /// The plugin file, parsed (the client reads the YAML).
     pub manifest: Value,
     pub changelog: Option<String>,
-    /// 'public' (default for a new listing), 'unlisted' or 'private'.
+    /// 'public' (default for a new listing) or 'private' (only its owner sees it).
     pub visibility: Option<String>,
     /// The publishing client's classification against the previous version:
     /// 'additive' or 'breaking'. Ignored for a first version.
@@ -205,13 +205,19 @@ pub async fn search(
     Ok(Json(rows))
 }
 
-/// A listing anyone with the link can open: public or unlisted, not taken down.
-async fn open_listing(state: &AppState, slug: &str) -> Result<(Uuid, ListingSummary)> {
+/// A listing that isn't taken down: public, or any of `owner`'s.
+async fn open_listing(
+    state: &AppState,
+    slug: &str,
+    owner: Option<Uuid>,
+) -> Result<(Uuid, ListingSummary)> {
     let row = sqlx::query!(
         r#"SELECT id, slug, name, description, icon, author, has_today, latest_version, visibility, updated_at
            FROM plugin_listing
-           WHERE slug = $1 AND visibility IN ('public', 'unlisted') AND deleted_at IS NULL"#,
+           WHERE slug = $1 AND deleted_at IS NULL
+             AND (visibility = 'public' OR owner_user_id = $2)"#,
         slug,
+        owner,
     )
     .fetch_optional(&state.pool)
     .await?
@@ -236,7 +242,25 @@ pub async fn get_listing(
     State(state): State<AppState>,
     Path(slug): Path<String>,
 ) -> Result<Json<ListingPage>> {
-    let (id, listing) = open_listing(&state, &slug).await?;
+    let (id, listing) = open_listing(&state, &slug, None).await?;
+    listing_page(&state, id, listing).await
+}
+
+/// One of the user's own listings, private ones included, to install or update from.
+pub async fn get_mine(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Path(slug): Path<String>,
+) -> Result<Json<ListingPage>> {
+    let (id, listing) = open_listing(&state, &slug, Some(auth.id)).await?;
+    listing_page(&state, id, listing).await
+}
+
+async fn listing_page(
+    state: &AppState,
+    id: Uuid,
+    listing: ListingSummary,
+) -> Result<Json<ListingPage>> {
     let manifest = sqlx::query_scalar!(
         "SELECT manifest FROM plugin_version WHERE listing_id = $1 AND version = $2",
         id,
@@ -263,7 +287,7 @@ pub async fn get_version(
     State(state): State<AppState>,
     Path((slug, version)): Path<(String, String)>,
 ) -> Result<Json<Value>> {
-    let (id, _) = open_listing(&state, &slug).await?;
+    let (id, _) = open_listing(&state, &slug, None).await?;
     let manifest = sqlx::query_scalar!(
         "SELECT manifest FROM plugin_version WHERE listing_id = $1 AND version = $2",
         id,
@@ -327,10 +351,10 @@ pub async fn publish(
     }
     let visibility = match body.visibility.as_deref() {
         None => None,
-        Some(v @ ("public" | "unlisted" | "private")) => Some(v.to_owned()),
+        Some(v @ ("public" | "private")) => Some(v.to_owned()),
         Some(v) => {
             return Err(AppError::BadRequest(format!(
-                "visibility \"{v}\" must be public, unlisted or private"
+                "visibility \"{v}\" must be public or private"
             )))
         }
     };
@@ -373,7 +397,7 @@ pub async fn publish(
 
     // Private listings are a paid feature. What counts is the visibility the
     // listing ends up with, so a lapsed subscriber can't keep publishing to a
-    // private one either: they pick public or unlisted, or take it down.
+    // private one either: they make it public or take it down.
     let effective = visibility
         .as_deref()
         .or(existing.as_ref().map(|r| r.visibility.as_str()))
@@ -390,7 +414,7 @@ pub async fn publish(
         });
         if !allowed {
             return Err(AppError::ForbiddenBecause(
-                "private apps need Pomodoso Pro; publish it as public or unlisted".to_owned(),
+                "private apps need Pomodoso Pro; publish it as public".to_owned(),
             ));
         }
     }
@@ -524,7 +548,7 @@ pub async fn report(
             "a report needs a reason of 1 to {REPORT_MAX_CHARS} characters"
         )));
     }
-    let (listing_id, _) = open_listing(&state, &slug).await?;
+    let (listing_id, _) = open_listing(&state, &slug, None).await?;
     let recent = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM plugin_report
            WHERE reporter_user_id = $1 AND created_at > NOW() - INTERVAL '1 day'"#,

@@ -10,7 +10,7 @@ mod routes;
 
 use axum::{
     middleware as axum_middleware,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Router,
 };
 use jsonwebtoken::jwk::JwkSet;
@@ -117,7 +117,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/plugins/mine/{slug}",
-            delete(routes::plugin_directory::take_down).route_layer(auth.clone()),
+            get(routes::plugin_directory::get_mine)
+                .delete(routes::plugin_directory::take_down)
+                .route_layer(auth.clone()),
         )
         .route(
             "/plugins/directory/{slug}/report",
