@@ -46,6 +46,7 @@ import {
   type MeetingTrackMode,
 } from '../db';
 import { triggerSync } from '../syncEngine';
+import { INSTALL_REQUEST_KEY, INSTALL_REQUEST_TTL_MS, isPluginSlug, type InstallRequest } from '../installRequest';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
 // Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
@@ -320,9 +321,33 @@ export function HomeState({
   const hasPlugins = (useLiveQuery(() => db.plugins.filter(p => !p.deletedAt).count()) ?? 0) > 0;
   // A widget tapped on Today opens its app in the Apps tab.
   const [openApp, setOpenApp] = useState<{ id: string; nonce: number } | null>(null);
+  // An app the web app asked to install (installRequest.ts): taken once, it
+  // opens Apps on its install preview.
+  const [installSlug, setInstallSlug] = useState<{ slug: string; nonce: number } | null>(null);
+  useEffect(() => {
+    const take = () => {
+      void chrome.storage.local.get(INSTALL_REQUEST_KEY).then((r) => {
+        const req = r[INSTALL_REQUEST_KEY] as InstallRequest | undefined;
+        if (!req) return;
+        void chrome.storage.local.remove(INSTALL_REQUEST_KEY);
+        if (Date.now() - req.at > INSTALL_REQUEST_TTL_MS || !isPluginSlug(req.slug)) return;
+        setActiveTab('apps');
+        setInstallSlug({ slug: req.slug, nonce: req.at });
+      });
+    };
+    take();
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && changes[INSTALL_REQUEST_KEY]?.newValue) take();
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // The request is consumed by the visit it opened: a later visit to Apps starts at the list.
   useEffect(() => {
-    if (activeTab !== 'apps') setOpenApp(null);
+    if (activeTab !== 'apps') {
+      setOpenApp(null);
+      setInstallSlug(null);
+    }
   }, [activeTab]);
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
@@ -1856,6 +1881,7 @@ export function HomeState({
               tab={{ url: currentUrl ?? '', title: currentTitle ?? '' }}
               onSignIn={onOpenAccount}
               openApp={openApp}
+              installSlug={installSlug}
             />
           </Suspense>
         )}

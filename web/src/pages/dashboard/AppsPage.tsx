@@ -12,6 +12,7 @@ import {
   type UpdateReport,
 } from '@pomodoso/types/plugins';
 import { api } from '../../lib/api.ts';
+import { CHROME_STORE_URL, installInExtension } from '../../lib/extension.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 
 // Dashboard → Apps: the apps you've published to the directory. Publish a new
@@ -240,6 +241,11 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
 function AppRow({ app, onTakenDown }: { app: DirectoryListing; onTakenDown: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [install, setInstall] = useState<'opened' | 'waiting' | 'no-extension' | null>(null);
+
+  const installApp = () => {
+    void installInExtension(app.slug).then((r) => setInstall(!r?.ok ? 'no-extension' : r.opened ? 'opened' : 'waiting'));
+  };
 
   const takeDown = () => {
     setError(null);
@@ -265,7 +271,21 @@ function AppRow({ app, onTakenDown }: { app: DirectoryListing; onTakenDown: () =
           {app.description ?? app.slug}
         </div>
         {error ? <div style={{ fontSize: 11.5, color: 'var(--accent)' }}>{error}</div> : null}
+        {install === 'opened' ? (
+          <div style={{ fontSize: 11.5, color: 'var(--text-sec)' }}>Opened in Pomodoso. Confirm the install there.</div>
+        ) : install === 'waiting' ? (
+          <div style={{ fontSize: 11.5, color: 'var(--text-sec)' }}>Click the Pomodoso icon in Chrome's toolbar to finish installing.</div>
+        ) : install === 'no-extension' ? (
+          <div style={{ fontSize: 11.5, color: 'var(--text-sec)' }}>
+            Installing needs the Pomodoso extension for Chrome (1.4 or later), signed in with this account.{' '}
+            <a href={CHROME_STORE_URL} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>Get it</a>
+          </div>
+        ) : null}
       </div>
+      <button className="pomo-btn" style={{ fontSize: 11.5, padding: '4px 10px' }} aria-label={`Install ${app.name}`} onClick={installApp}>
+        <i className="ti ti-download" style={{ marginRight: 4 }} />
+        Install
+      </button>
       {confirming ? (
         <button
           className="pomo-btn"

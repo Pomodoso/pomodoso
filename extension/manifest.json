@@ -15,6 +15,9 @@
     "windows"
   ],
   "host_permissions": ["https://*/*", "http://*/*"],
+  "externally_connectable": {
+    "matches": ["https://pomodoso.com/*", "https://www.pomodoso.com/*"]
+  },
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",

@@ -6,6 +6,7 @@ import {
   parsePluginExport,
   parsePluginFile,
   SHOW_ON_TODAY_KEY,
+  validatePluginData,
   type PluginExport,
   type PluginIssue,
   type PluginManifest,
@@ -30,6 +31,7 @@ import {
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
 import { isSupported } from './supported';
 import { Browse, directoryAvailable } from './Browse';
+import { openListing, SignInToOpen } from './directory';
 import { describeStep, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
 import { usePluginData } from './usePluginData';
 
@@ -45,15 +47,22 @@ interface AppsTabProps {
   onSignIn: () => void;
   /** An app to open, e.g. from its Today widget; a new nonce opens it again. */
   openApp?: { id: string; nonce: number } | null;
+  /** A directory app to preview for install, e.g. asked for by the web app. */
+  installSlug?: { slug: string; nonce: number } | null;
 }
 
-type Screen = { kind: 'list' } | { kind: 'add' } | { kind: 'app'; id: string } | { kind: 'settings'; id: string };
+type Screen = { kind: 'list' } | { kind: 'add'; slug?: string } | { kind: 'app'; id: string } | { kind: 'settings'; id: string };
 
-export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openApp }: AppsTabProps) {
-  const [screen, setScreen] = useState<Screen>(openApp ? { kind: 'app', id: openApp.id } : { kind: 'list' });
+export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openApp, installSlug }: AppsTabProps) {
+  const [screen, setScreen] = useState<Screen>(
+    installSlug ? { kind: 'add', slug: installSlug.slug } : openApp ? { kind: 'app', id: openApp.id } : { kind: 'list' },
+  );
   useEffect(() => {
     if (openApp) setScreen({ kind: 'app', id: openApp.id });
   }, [openApp?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (installSlug) setScreen({ kind: 'add', slug: installSlug.slug });
+  }, [installSlug?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const plugins = useLiveQuery(async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), []);
   const readOnly = !isSignedIn;
   const updates = useDirectoryUpdates(plugins);
@@ -92,6 +101,8 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
       {readOnly ? <SignedOutBanner onSignIn={onSignIn} /> : null}
       {screen.kind === 'add' ? (
         <AddApp
+          key={screen.slug ?? ''}
+          slug={screen.slug}
           timezone={timezone}
           readOnly={readOnly}
           onCancel={() => setScreen({ kind: 'list' })}
@@ -249,7 +260,7 @@ function UnsupportedRow({ plugin }: { plugin: PluginRow }) {
 
 // ─── Add / preview ───────────────────────────────────────────────────────────
 
-function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: string; readOnly: boolean; onCancel: () => void; onInstalled: (id: string) => void }) {
+function AddApp({ slug, timezone, readOnly, onCancel, onInstalled }: { slug?: string | undefined; timezone: string; readOnly: boolean; onCancel: () => void; onInstalled: (id: string) => void }) {
   const [text, setText] = useState('');
   const [manifest, setManifest] = useState<PluginManifest | null>(null);
   const [backup, setBackup] = useState<PluginExport | null>(null);
@@ -257,6 +268,38 @@ function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: strin
 
   const [mode, setMode] = useState<'browse' | 'file'>(directoryAvailable ? 'browse' : 'file');
   const [source, setSource] = useState<PluginRow['source']>('file');
+  // Asked for by slug (from the web app): open that listing's preview.
+  const [opening, setOpening] = useState<{ slug: string; error: string | null } | null>(slug ? { slug, error: null } : null);
+  useEffect(() => {
+    if (!slug) return;
+    let live = true;
+    openListing(slug)
+      .then((page) => {
+        if (!live) return;
+        const r = validatePluginData(page.manifest);
+        if (!r.ok) {
+          setOpening({ slug, error: `"${page.name}" needs a newer version of Pomodoso.` });
+          return;
+        }
+        // JSON is YAML, so the install path parses it like any file.
+        setText(JSON.stringify(page.manifest));
+        setSource('directory');
+        setManifest(r.manifest);
+        setOpening(null);
+      })
+      .catch((e: unknown) => {
+        if (!live) return;
+        setOpening({
+          slug,
+          error: e instanceof SignInToOpen
+            ? 'Sign in to Pomodoso to install your private apps.'
+            : "Couldn't open that app. It may have been taken down, or it's private to another account.",
+        });
+      });
+    return () => {
+      live = false;
+    };
+  }, [slug]);
   const check = (input: string) => {
     setSource('file');
     setText(input);
@@ -279,6 +322,16 @@ function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: strin
 
   if (backup) {
     return <RestorePreview text={text} backup={backup} readOnly={readOnly} onBack={() => setBackup(null)} onInstalled={onInstalled} />;
+  }
+  if (opening) {
+    return (
+      <>
+        <Header title="Add an app" onBack={onCancel} />
+        <div style={{ fontSize: 12, color: opening.error ? 'var(--color-accent)' : 'var(--color-text-muted)', textAlign: 'center', padding: '16px 8px', lineHeight: 1.5 }}>
+          {opening.error ?? `Opening “${opening.slug}”…`}
+        </div>
+      </>
+    );
   }
   if (manifest) {
     return <InstallPreview text={text} manifest={manifest} source={source} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
