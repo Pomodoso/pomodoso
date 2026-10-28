@@ -112,7 +112,11 @@ export async function syncAll(
   // through this one function, and any of them merging while the dialog is
   // still open would decide the question for the user.
   if (await needsSyncChoice(scope)) {
-    requestSyncChoice(scope);
+    // Only a sync that's still live asks: the popup's open-sync can be
+    // cancelled (clearSync: signed out, or fresh entitlements without sync)
+    // while this await runs, and a question opened after that has no sync to
+    // answer it. The service worker has no dialog and never sets _config.
+    if (_config) requestSyncChoice(scope);
     return;
   }
 
