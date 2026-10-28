@@ -520,3 +520,8 @@ body {
   50% { opacity: 0.6; }
 }
 .pomo-active-dot { animation: pomo-pulse 2s infinite; }
+
+/* Landing: the section links don't fit next to the sign-up buttons on a phone. */
+@media (max-width: 640px) {
+  .lp-nav-links { display: none !important; }
+}

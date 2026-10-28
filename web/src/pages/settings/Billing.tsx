@@ -101,6 +101,7 @@ const PRO_FEATURES = [
   'Multi-device sync',
   'Web dashboard',
   'Unlimited workspaces',
+  'Private apps',
   'Full history',
   'No upgrade prompts',
 ];

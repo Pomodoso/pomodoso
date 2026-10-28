@@ -100,6 +100,7 @@ export default function Pricing() {
                 'Multi-device sync',
                 'Web dashboard',
                 'Unlimited workspaces',
+                'Private apps',
                 'Full history',
                 'No upgrade prompts',
               ]}
@@ -116,6 +117,7 @@ export default function Pricing() {
                 'Multi-device sync',
                 'Web dashboard',
                 'Unlimited workspaces',
+                'Private apps',
                 'Full history',
                 'No upgrade prompts',
               ]}

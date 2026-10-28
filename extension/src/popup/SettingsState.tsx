@@ -818,7 +818,7 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                 <div style={{ padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 6 }}>Upgrade to Pro</div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
-                    Sync across devices · Unlimited workspaces · Web dashboard
+                    Sync across devices · Unlimited workspaces · Web dashboard · Private apps
                   </div>
                   <a
                     href="https://pomodoso.com/pricing"

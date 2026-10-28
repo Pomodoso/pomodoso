@@ -39,6 +39,7 @@ export default function Landing() {
       <Nav authed={authed} />
       <Hero authed={authed} />
       <FeatureCarousel />
+      <Apps />
       <HowItWorks />
       <Pricing authed={authed} />
       <FAQ />
@@ -60,8 +61,8 @@ function Nav({ authed }: { authed: boolean }) {
             <Logo size={22} />
             <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.02em', color: '#fff' }}>Pomodoso</span>
           </Link>
-          <div style={{ display: 'flex', gap: 22 }}>
-            {[['#features', 'Features'], ['#pricing', 'Pricing'], ['#faq', 'FAQ']].map(([href, label]) => (
+          <div className="lp-nav-links" style={{ display: 'flex', gap: 22 }}>
+            {[['#features', 'Features'], ['#apps', 'Apps'], ['#pricing', 'Pricing'], ['#faq', 'FAQ']].map(([href, label]) => (
               <a key={label} href={href} style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', textDecoration: 'none' }} onMouseEnter={lnk} onMouseLeave={lnkOut}>{label}</a>
             ))}
           </div>
@@ -71,9 +72,9 @@ function Nav({ authed }: { authed: boolean }) {
             <Link to="/dashboard" style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', boxShadow: `0 2px 10px ${ACCENT}40` }}>Dashboard</Link>
           ) : (
             <>
-              <Link to="/login" style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', padding: '6px 12px', textDecoration: 'none' }}>Sign in</Link>
-              <Link to="/login?mode=signup" style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: `1px solid ${ACCENT}`, color: '#fff', textDecoration: 'none' }}>Sign up</Link>
-              <a href={CHROME_URL} style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', boxShadow: `0 2px 10px ${ACCENT}40` }}>Add to Chrome</a>
+              <Link to="/login" style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', padding: '6px 12px', textDecoration: 'none', whiteSpace: 'nowrap' }}>Sign in</Link>
+              <Link to="/login?mode=signup" style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: `1px solid ${ACCENT}`, color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}>Sign up</Link>
+              <a href={CHROME_URL} style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 2px 10px ${ACCENT}40` }}>Add to Chrome</a>
             </>
           )}
         </div>
@@ -256,6 +257,119 @@ function FeatureCarousel() {
   )
 }
 
+// ─── Apps ─────────────────────────────────────────────────────────────────────
+
+const APP_EXAMPLES = ['Water', 'Reading list', 'Year in pixels', 'Quit smoking', 'Workouts', 'Sleep', 'Gratitude journal', 'Movies to watch']
+
+const APP_HOOKS = [
+  { icon: 'ti-layout-dashboard', title: 'On your Today tab', desc: 'A counter, a quick pick or a number, one tap away from your timer.' },
+  { icon: 'ti-coffee', title: 'Asks during breaks', desc: '“Did you stretch?” One question per break, answered in a tap.' },
+  { icon: 'ti-file-text', title: 'In your reports', desc: 'Your daily and weekly reports include the numbers you care about.' },
+  { icon: 'ti-world', title: 'Share or keep private', desc: 'Publish to the directory for everyone, or keep your apps just for you.', pro: true },
+]
+
+function Apps() {
+  const week = [5, 8, 6, 8, 7, 4, 6]
+  return (
+    <section id="apps" style={{ padding: '80px 20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ maxWidth: 980, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 44 }}>
+          <p style={{ fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>Apps</p>
+          <h2 style={{ fontSize: 'clamp(1.7rem,3.5vw,2.5rem)', fontWeight: 800, letterSpacing: '-0.025em', margin: '0 0 10px', color: '#fff' }}>
+            Track anything.{' '}
+            <span style={{ color: ACCENT }}>Just describe it.</span>
+          </h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', maxWidth: 560, margin: '0 auto', lineHeight: 1.7 }}>
+            Ask ChatGPT, Claude or any AI assistant for the tracker you want. Paste what it writes into Pomodoso and it becomes an app, right next to your timer. Or install one from the directory.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, alignItems: 'stretch' }}>
+          {/* The ask */}
+          <div style={{ ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>You ask</div>
+            <div style={{ alignSelf: 'flex-end', maxWidth: '88%', padding: '10px 14px', borderRadius: '14px 14px 4px 14px', background: `${ACCENT}22`, border: `1px solid ${ACCENT}40`, fontSize: 13.5, color: '#fff', lineHeight: 1.55 }}>
+              Make me a Pomodoso app to count my glasses of water. Goal: 8 a day.
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 4 }}>It writes</div>
+            <pre style={{ margin: 0, padding: '12px 14px', borderRadius: 10, background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.06)', fontSize: 'clamp(10.5px, 2.8vw, 12px)', lineHeight: 1.6, color: 'rgba(255,255,255,0.7)', overflowX: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+{`id: water
+name: Water
+collections:
+  - key: glass
+    kind: event
+computed:
+  today: { count: glass, range: today }
+views:
+  - blocks:
+    - { type: counter-button, adds: glass }
+    - { type: progress, value: $today, max: 8 }`}
+            </pre>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>Pomodoso checks the file and shows you the app before it installs.</div>
+          </div>
+
+          {/* The app */}
+          <div style={{ ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>You get</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(56,189,248,0.15)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ti ti-droplet" style={{ fontSize: 18 }} aria-hidden="true" />
+              </span>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Water</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>12-day streak</div>
+              </div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>6</span>
+                <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>of 8 glasses today</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ width: '75%', height: '100%', borderRadius: 999, background: '#38bdf8' }} />
+              </div>
+            </div>
+            <div style={{ alignSelf: 'flex-start', padding: '9px 18px', borderRadius: 9, background: '#38bdf8', color: '#0a0a0e', fontSize: 13, fontWeight: 700 }}>+ 1 glass</div>
+            <div style={{ marginTop: 'auto' }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>This week</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 54 }}>
+                {week.map((n, i) => (
+                  <div key={i} style={{ flex: 1, height: `${(n / 8) * 100}%`, borderRadius: 4, background: n >= 8 ? '#38bdf8' : 'rgba(56,189,248,0.35)' }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, margin: '22px 0 34px' }}>
+          {APP_EXAMPLES.map(e => (
+            <span key={e} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.55)' }}>{e}</span>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 10 }}>
+          {APP_HOOKS.map(h => (
+            <div key={h.title} style={{ ...card, padding: '20px 20px' }}>
+              <i className={`ti ${h.icon}`} style={{ fontSize: 20, color: ACCENT }} aria-hidden="true" />
+              <div style={{ fontSize: 14, fontWeight: 650, color: '#fff', margin: '10px 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {h.title}
+                {h.pro ? <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: `${ACCENT}20`, border: `1px solid ${ACCENT}35`, color: ACCENT, whiteSpace: 'nowrap' }}>PRO</span> : null}
+              </div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>{h.desc}</div>
+            </div>
+          ))}
+        </div>
+
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 24, lineHeight: 1.7 }}>
+          Free and unlimited with an account. An app is a file, not code: it can't run scripts or send your data anywhere.
+          <br />
+          Writing one with an AI assistant? Point it to <a href="/llms.txt" style={{ color: 'rgba(255,255,255,0.55)' }}>pomodoso.com/llms.txt</a>.
+        </p>
+      </div>
+    </section>
+  )
+}
+
 // ─── How It Works ─────────────────────────────────────────────────────────────
 
 function HowItWorks() {
@@ -294,6 +408,7 @@ const FREE_FEATURES = [
   'Habit tracking + weekly history',
   'Task auto-detection + select & convert',
   'Google Calendar',
+  'Apps: install or build your own trackers',
   'Data import and export',
   'Full history in the extension',
   '1 workspace - Local storage',
@@ -305,6 +420,7 @@ const PRO_FEATURES = [
   'Web dashboard and analytics',
   'Full history in the extension and web',
   'Unlimited workspaces',
+  'Private apps, just for you',
   'No upgrade prompts',
 ]
 
@@ -418,6 +534,8 @@ const FAQS = [
   { q: 'Does Pomodoso work without an account?', a: 'Yes. The full extension works completely offline, no account required. Everything is stored locally on your device. An account is only needed for Pro cloud features like multi-device sync and the web dashboard.' },
   { q: 'Does Pomodoso read my browser history or ticket content?', a: 'No. Pomodoso only detects tickets on pages you currently have open, by reading the URL and page title. It never reads body content, sends browsing history to any server, or tracks you across sites.' },
   { q: 'What happens to my data if I cancel Pro?', a: 'Your data stays on your device forever. If you cancel Pro, sync and the web dashboard become unavailable but all your local data remains intact. Nothing is deleted.' },
+  { q: 'What are Pomodoso apps?', a: 'Small trackers that live inside Pomodoso: a water counter, a reading list, a mood calendar. Install one from the directory, or describe what you want to ChatGPT, Claude or any AI assistant and paste the file it writes. Apps are free and unlimited with an account; keeping your own apps private is part of Pro.' },
+  { q: 'Are apps safe to install?', a: 'An app is a single file that describes what to show, not code. Pomodoso checks it before installing and shows you the app first. It cannot run scripts or send your data anywhere, and its data stays with the rest of yours.' },
   { q: 'Is Pomodoso open source?', a: 'Yes. The Chrome extension is MIT licensed and fully auditable on GitHub. The backend sync server is source-available.' },
   { q: 'What is the Founder Lifetime Deal?', a: 'A one-time payment that gives you Pro forever, including all future features. Available for a limited time after launch as a thank-you to early supporters. Once it closes, it is gone.' },
   { q: 'Can I use Pomodoso on multiple devices?', a: 'The Free plan is single-device (local storage only). Pro includes sync across unlimited devices via end-to-end encrypted cloud sync.' },
