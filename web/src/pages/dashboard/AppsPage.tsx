@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMyPlugin, myPlugins, publishPlugin, takeDownPlugin, type DirectoryListing, type DirectoryVisibility } from '@pomodoso/api';
+import { ApiError, getDirectoryPage, getMyPlugin, myPlugins, publishPlugin, takeDownPlugin, type DirectoryListing, type DirectoryVisibility } from '@pomodoso/api';
 import {
   STARTER_PROMPT,
   checkUpdate,
@@ -58,7 +58,22 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
       }
       const current = mine.find((l) => l.slug === r.manifest.id) ?? null;
       if (!current) {
+        // Not one of yours: if the directory already lists this id, it's
+        // another author's app and the server would refuse it.
         setChecked({ ok: true, manifest: r.manifest, current: null, update: null, error: null });
+        getDirectoryPage(api, r.manifest.id)
+          .then((page) => {
+            if (!live) return;
+            const by = page.author ? ` by ${page.author}` : '';
+            setChecked({
+              ok: true, manifest: r.manifest, current: null, update: null,
+              error: `The id "${r.manifest.id}" belongs to another app in the directory ("${page.name}"${by}). Change \`id\` in the file to publish this as your own app.`,
+            });
+          })
+          .catch((e: unknown) => {
+            // 404 is the good case: the id is free (or private to someone; the server says so then).
+            if (!(e instanceof ApiError && e.status === 404)) console.warn('[apps] id check', e);
+          });
         return;
       }
       getMyPlugin(api, current.slug)
@@ -130,7 +145,7 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
         <button className="pomo-link-btn" onClick={copyPrompt}>{copied ? 'Copied' : 'Copy a prompt for your AI assistant'}</button>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--text-sec)', lineHeight: 1.6, marginBottom: 10 }}>
-        Paste the app's file or pick it from your computer. To update one of your apps, publish its file with a higher version.
+        Paste the app's file or pick it from your computer. Its <code>id</code> names the app for good: keep it the same and raise <code>version</code> to update one of your apps, and everyone who installed it gets the new version. A different <code>id</code> is a new app, and the people using the old one won't get it.
       </p>
       <textarea
         className="pomo-input"

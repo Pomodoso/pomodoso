@@ -65,7 +65,7 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
   }, [installSlug?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const plugins = useLiveQuery(async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), []);
   const readOnly = !isSignedIn;
-  const updates = useDirectoryUpdates(plugins);
+  const { updates, gone } = useDirectoryUpdates(plugins);
 
   // Small (additive) updates apply on their own for apps that allow it; a
   // breaking one always waits for the user. Each version is tried once per
@@ -115,7 +115,7 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
           onSettings={() => setScreen({ kind: 'settings', id: current.id })}
         />
       ) : screen.kind === 'settings' && current ? (
-        <AppSettings plugin={current} update={updates.get(current.id)} readOnly={readOnly} onBack={() => setScreen({ kind: 'app', id: current.id })} />
+        <AppSettings plugin={current} update={updates.get(current.id)} gone={gone.has(current.id)} readOnly={readOnly} onBack={() => setScreen({ kind: 'app', id: current.id })} />
       ) : (
         <AppList plugins={plugins} updates={updates} timezone={timezone} weekStart={weekStart} readOnly={readOnly} onOpen={(id) => setScreen({ kind: 'app', id })} onAdd={() => setScreen({ kind: 'add' })} />
       )}
@@ -601,7 +601,7 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-function AppSettings({ plugin, update, readOnly, onBack }: { plugin: PluginRow; update: AvailableUpdate | undefined; readOnly: boolean; onBack: () => void }) {
+function AppSettings({ plugin, update, gone, readOnly, onBack }: { plugin: PluginRow; update: AvailableUpdate | undefined; gone: boolean; readOnly: boolean; onBack: () => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const m = plugin.manifest;
   // One key at a time, merged over the stored settings: two quick changes can't undo each other.
@@ -613,7 +613,13 @@ function AppSettings({ plugin, update, readOnly, onBack }: { plugin: PluginRow; 
       <Header title={`${m.name} settings`} onBack={onBack} />
       <SettingsFields manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       <EditableOptions manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
-      {plugin.source === 'directory' ? <Updates plugin={plugin} update={update} readOnly={readOnly} /> : null}
+      {plugin.source === 'directory' && gone ? (
+        <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--color-text-muted)', padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+          This app is no longer in the directory. It keeps working here with all your entries, but won't get updates.
+        </div>
+      ) : plugin.source === 'directory' ? (
+        <Updates plugin={plugin} update={update} readOnly={readOnly} />
+      ) : null}
       {m.today ? (
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
           <input type="checkbox" disabled={readOnly} checked={plugin.settings[SHOW_ON_TODAY_KEY] === true} onChange={(e) => save(SHOW_ON_TODAY_KEY, e.target.checked)} />

@@ -439,8 +439,12 @@ pub async fn publish(
             (id, "initial".to_owned())
         }
         Some(row) => {
+            // An id belongs to its first publisher for good, taken down or not:
+            // reusing it would push someone else's file to that app's users.
             if row.owner_user_id != auth.id {
-                return Err(AppError::Forbidden);
+                return Err(AppError::ForbiddenBecause(format!(
+                    "the id \"{slug}\" belongs to another author's app; change `id` in the file to publish it as your own"
+                )));
             }
             let prev = semver(&row.latest_version).unwrap_or((0, 0, 0));
             if next <= prev {

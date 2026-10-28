@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { ApiError } from '@pomodoso/api';
 import { checkUpdate, compareVersions, validatePluginData, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
 
 import type { PluginRow } from '../../db';
@@ -17,22 +18,30 @@ export interface AvailableUpdate {
   report: UpdateReport;
 }
 
-/** slug → when it was asked and the latest file the directory had. */
-const latestBySlug = new Map<string, { at: number; manifest: PluginManifest | null }>();
+interface Latest {
+  manifest: PluginManifest | null;
+  /** The directory answered that it doesn't have it (taken down, or private
+   *  to someone else): it keeps working here, with no more updates. */
+  gone: boolean;
+}
 
-async function latest(slug: string): Promise<PluginManifest | null> {
+/** slug → when it was asked and what the directory had. */
+const latestBySlug = new Map<string, Latest & { at: number }>();
+
+async function latest(slug: string): Promise<Latest> {
   const hit = latestBySlug.get(slug);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.manifest;
-  let manifest: PluginManifest | null = null;
+  if (hit && Date.now() - hit.at < TTL_MS) return hit;
+  let found: Latest = { manifest: null, gone: false };
   try {
     const page = await openListing(slug);
     const r = validatePluginData(page.manifest);
-    manifest = r.ok ? r.manifest : null;
-  } catch {
-    // Taken down, offline or unreachable: no update to offer.
+    found = { manifest: r.ok ? r.manifest : null, gone: false };
+  } catch (e) {
+    // Offline or unreachable says nothing; a 404 means it's not there anymore.
+    found = { manifest: null, gone: e instanceof ApiError && e.status === 404 };
   }
-  latestBySlug.set(slug, { at: Date.now(), manifest });
-  return manifest;
+  latestBySlug.set(slug, { ...found, at: Date.now() });
+  return found;
 }
 
 /** What `next` would do to an install of `current`, or null when it isn't newer. */
@@ -41,9 +50,16 @@ export function updateFor(current: PluginManifest, next: PluginManifest): Availa
   return { next, report: checkUpdate(current, next) };
 }
 
-/** Plugin id → its available update, for the given installs. */
-export function useDirectoryUpdates(plugins: readonly PluginRow[] | undefined): Map<string, AvailableUpdate> {
-  const [updates, setUpdates] = useState<Map<string, AvailableUpdate>>(new Map());
+export interface DirectoryState {
+  /** Plugin id → its available update. */
+  updates: Map<string, AvailableUpdate>;
+  /** Plugin ids the directory no longer has. */
+  gone: Set<string>;
+}
+
+/** Available updates, and installs no longer in the directory, for the given installs. */
+export function useDirectoryUpdates(plugins: readonly PluginRow[] | undefined): DirectoryState {
+  const [state, setState] = useState<DirectoryState>({ updates: new Map(), gone: new Set() });
   const key = (plugins ?? [])
     .filter((p) => p.source === 'directory' && !p.deletedAt)
     .map((p) => `${p.id}@${p.manifest.version}`)
@@ -55,12 +71,15 @@ export function useDirectoryUpdates(plugins: readonly PluginRow[] | undefined): 
     const fromDirectory = plugins.filter((p) => p.source === 'directory' && !p.deletedAt);
     void Promise.all(
       fromDirectory.map(async (p) => {
-        const next = await latest(p.slug);
-        const u = next ? updateFor(p.manifest, next) : null;
-        return u ? ([p.id, u] as const) : null;
+        const l = await latest(p.slug);
+        return { id: p.id, gone: l.gone, update: l.manifest ? updateFor(p.manifest, l.manifest) : null };
       }),
     ).then((found) => {
-      if (live) setUpdates(new Map(found.filter((x): x is readonly [string, AvailableUpdate] => x !== null)));
+      if (!live) return;
+      setState({
+        updates: new Map(found.flatMap((f) => (f.update ? [[f.id, f.update] as const] : []))),
+        gone: new Set(found.filter((f) => f.gone).map((f) => f.id)),
+      });
     });
     return () => {
       live = false;
@@ -69,7 +88,7 @@ export function useDirectoryUpdates(plugins: readonly PluginRow[] | undefined): 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return updates;
+  return state;
 }
 
 /** A migrate step in words, for the confirmation of a breaking update. */
