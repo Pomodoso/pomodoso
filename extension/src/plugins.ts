@@ -6,7 +6,9 @@
 // every change, syncedAt cleared so sync picks it up, soft delete only.
 
 import {
+  applyMigration,
   applyRules,
+  checkUpdate,
   createEvaluator,
   dailyRecordId,
   PLUGIN_VALUES_MAX_BYTES,
@@ -15,6 +17,7 @@ import {
   serializePluginExport,
   SHOW_ON_TODAY_KEY,
   type PluginEvaluator,
+  type PluginManifest,
   type PluginIssue,
 } from '@pomodoso/types/plugins';
 
@@ -112,6 +115,47 @@ function withinLimit<T extends Record<string, unknown>>(values: T, what: string)
     throw new Error(`${what} are too large to save (limit ${PLUGIN_VALUES_MAX_BYTES / 1024} KB)`);
   }
   return values;
+}
+
+// ─── Updates ─────────────────────────────────────────────────────────────────
+
+export async function setAutoUpdate(pluginId: string, on: boolean): Promise<void> {
+  await db.plugins.update(pluginId, { autoUpdate: on, updatedAt: now(), syncedAt: undefined });
+}
+
+/**
+ * Moves an install to a newer version of its file. The check runs again here
+ * on the stored manifest (whoever offered the update), and a version that
+ * doesn't pass it is refused. A breaking update replays the new version's
+ * `migrate` steps over the plugin's records first; changed records are
+ * written as edits, so sync carries them. All in one transaction: the
+ * manifest never moves ahead of its records, or the other way round.
+ */
+export async function applyPluginUpdate(pluginId: string, next: PluginManifest): Promise<void> {
+  await db.transaction('rw', db.plugins, db.pluginRecords, async () => {
+    const plugin = await db.plugins.get(pluginId);
+    if (!plugin || plugin.deletedAt) throw new Error('This app is no longer installed');
+    const report = checkUpdate(plugin.manifest, next);
+    if (report.issues.length > 0) {
+      throw new Error(`This update can't be applied: ${report.issues.map((i) => i.message).join('; ')}`);
+    }
+    const ts = now();
+    if (report.migrates && next.migrate) {
+      const rows = await pluginRecords(pluginId);
+      const { records, changedIds } = applyMigration(rows.map(toEngineRecord), next.migrate, plugin.manifest);
+      const changed = new Set(changedIds);
+      const byId = new Map(records.map((r) => [r.id, r]));
+      await db.pluginRecords.bulkPut(
+        rows
+          .filter((r) => changed.has(r.id))
+          .map((r) => {
+            const m = byId.get(r.id)!;
+            return { ...r, collection: m.collection, data: m.data, updatedAt: ts, syncedAt: undefined };
+          }),
+      );
+    }
+    await db.plugins.update(pluginId, { manifest: next, updatedAt: ts, syncedAt: undefined });
+  });
 }
 
 // ─── Records ─────────────────────────────────────────────────────────────────
