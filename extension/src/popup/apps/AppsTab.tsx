@@ -27,6 +27,7 @@ import {
 } from '../../plugins';
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
 import { isSupported } from './supported';
+import { Browse, directoryAvailable } from './Browse';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
@@ -231,16 +232,19 @@ function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: strin
   const [backup, setBackup] = useState<PluginExport | null>(null);
   const [issues, setIssues] = useState<PluginIssue[]>([]);
 
-  const check = (source: string) => {
-    setText(source);
+  const [mode, setMode] = useState<'browse' | 'file'>(directoryAvailable ? 'browse' : 'file');
+  const [source, setSource] = useState<PluginRow['source']>('file');
+  const check = (input: string) => {
+    setSource('file');
+    setText(input);
     // An app's export (from its settings) restores the app with its data.
-    if (/^pomodoso_plugin_export:/m.test(source)) {
-      const r = parsePluginExport(source);
+    if (/^pomodoso_plugin_export:/m.test(input)) {
+      const r = parsePluginExport(input);
       setBackup(r.ok ? r.value : null);
       setIssues(r.ok ? [] : r.issues);
       return;
     }
-    const r = parsePluginFile(source);
+    const r = parsePluginFile(input);
     if (r.ok) {
       setManifest(r.manifest);
       setIssues([]);
@@ -254,12 +258,45 @@ function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: strin
     return <RestorePreview text={text} backup={backup} readOnly={readOnly} onBack={() => setBackup(null)} onInstalled={onInstalled} />;
   }
   if (manifest) {
-    return <InstallPreview text={text} manifest={manifest} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
+    return <InstallPreview text={text} manifest={manifest} source={source} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
   }
+
+  const tab = (value: 'browse' | 'file', label: string) => (
+    <button
+      type="button" onClick={() => setMode(value)}
+      style={{ flex: 1, padding: '5px 0', fontSize: 12, fontWeight: mode === value ? 600 : 400, fontFamily: 'inherit', cursor: 'pointer', border: 'none', borderBottom: `2px solid ${mode === value ? 'var(--color-accent)' : 'transparent'}`, background: 'none', color: mode === value ? 'var(--color-text)' : 'var(--color-text-muted)' }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <>
       <Header title="Add an app" onBack={onCancel} />
+      {directoryAvailable ? <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)' }}>{tab('browse', 'Browse')}{tab('file', 'From a file')}</div> : null}
+      {mode === 'browse' && directoryAvailable ? (
+        <Browse
+          onPick={(picked, m) => {
+            setText(picked);
+            setSource('directory');
+            setManifest(m);
+          }}
+        />
+      ) : (
+        <FromFile text={text} issues={issues} setText={setText} check={check} />
+      )}
+    </>
+  );
+}
+
+function FromFile({ text, issues, setText, check }: {
+  text: string;
+  issues: PluginIssue[];
+  setText: (t: string) => void;
+  check: (t: string) => void;
+}) {
+  return (
+    <>
       <label style={{ ...btn('secondary'), textAlign: 'center' }}>
         Choose a file (.yaml)
         <input
@@ -284,9 +321,10 @@ function AddApp({ timezone, readOnly, onCancel, onInstalled }: { timezone: strin
   );
 }
 
-function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalled }: {
+function InstallPreview({ text, manifest, source, timezone, readOnly, onBack, onInstalled }: {
   text: string;
   manifest: PluginManifest;
+  source: PluginRow['source'];
   timezone: string;
   /** Signing out while the preview is open disables the write. */
   readOnly: boolean;
@@ -342,7 +380,7 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
         type="button" disabled={busy || readOnly}
         onClick={async () => {
           setBusy(true);
-          const r = await installPlugin(text, timezone, { settings, showOnToday });
+          const r = await installPlugin(text, timezone, { settings, showOnToday, source });
           setBusy(false);
           if (r.ok) onInstalled(r.plugin.id);
           else setIssues(r.issues);
