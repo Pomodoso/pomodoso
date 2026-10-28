@@ -5,6 +5,7 @@ import {
   formatStat,
   parsePluginExport,
   parsePluginFile,
+  SHOW_ON_TODAY_KEY,
   type PluginExport,
   type PluginIssue,
   type PluginManifest,
@@ -16,7 +17,6 @@ import { db, localDate, type PluginRow } from '../../db';
 import {
   addRecord,
   deleteRecord,
-  evaluatorFor,
   exportPlugin,
   importPlugin,
   installPlugin,
@@ -26,6 +26,7 @@ import {
   updateRecord,
 } from '../../plugins';
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
+import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
 // installing a new one from a file. Signed out, everything stays visible but
@@ -37,12 +38,17 @@ interface AppsTabProps {
   isSignedIn: boolean;
   tab: { url: string; title: string };
   onSignIn: () => void;
+  /** An app to open, e.g. from its Today widget; a new nonce opens it again. */
+  openApp?: { id: string; nonce: number } | null;
 }
 
 type Screen = { kind: 'list' } | { kind: 'add' } | { kind: 'app'; id: string } | { kind: 'settings'; id: string };
 
-export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn }: AppsTabProps) {
-  const [screen, setScreen] = useState<Screen>({ kind: 'list' });
+export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openApp }: AppsTabProps) {
+  const [screen, setScreen] = useState<Screen>(openApp ? { kind: 'app', id: openApp.id } : { kind: 'list' });
+  useEffect(() => {
+    if (openApp) setScreen({ kind: 'app', id: openApp.id });
+  }, [openApp?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const plugins = useLiveQuery(async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), []);
   const readOnly = !isSignedIn;
 
@@ -147,26 +153,6 @@ function readFile(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
-}
-
-/** Today's records and evaluator for a plugin, refreshed when its data changes and once a minute (for "time ago"). */
-function usePluginData(plugin: PluginRow, timezone: string, weekStart: number, tab?: { url: string; title: string }) {
-  const records = useLiveQuery(
-    async () => (await db.pluginRecords.where('pluginId').equals(plugin.id).toArray()).filter((r) => !r.deletedAt),
-    [plugin.id],
-  );
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(t);
-  }, []);
-  const evaluator = useMemo(
-    () => (records ? evaluatorFor(plugin, records, { timezone, weekStart, ...(tab ? { tab } : {}) }) : undefined),
-    // tick re-evaluates "today" and "now" as time passes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plugin, records, timezone, weekStart, tab?.url, tab?.title, tick],
-  );
-  return { records, evaluator };
 }
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -287,6 +273,7 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
   onInstalled: (id: string) => void;
 }) {
   const [settings, setSettings] = useState<Record<string, unknown>>(() => defaultSettings(manifest));
+  const [showOnToday, setShowOnToday] = useState(manifest.today?.default_on ?? false);
   const [issues, setIssues] = useState<PluginIssue[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -306,6 +293,7 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
       <div style={{ fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
         <div style={sectionTitle}>What it adds</div>
         <div>• {manifest.views.length === 1 ? 'A screen' : `${manifest.views.length} screens`} in Apps</div>
+        {manifest.today ? <div>• A widget for Today: “{manifest.today.widget.label}”</div> : null}
         <div>• Stores: {manifest.collections.map((c) => c.key.replace(/_/g, ' ')).join(', ')} — only in this browser{' '}(and your account, with sync)</div>
         <div style={{ color: 'var(--color-text-faint)', marginTop: 4 }}>Apps only see their own data. They can't read your tasks or run code.</div>
       </div>
@@ -317,12 +305,19 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
         </div>
       ) : null}
 
+      {manifest.today ? (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
+          <input type="checkbox" checked={showOnToday} onChange={(e) => setShowOnToday(e.target.checked)} />
+          Show on Today
+        </label>
+      ) : null}
+
       {issues.length > 0 ? <IssueList issues={issues} /> : null}
       <button
         type="button" disabled={busy || readOnly}
         onClick={async () => {
           setBusy(true);
-          const r = await installPlugin(text, timezone, { settings });
+          const r = await installPlugin(text, timezone, { settings, showOnToday });
           setBusy(false);
           if (r.ok) onInstalled(r.plugin.id);
           else setIssues(r.issues);
@@ -479,6 +474,12 @@ function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly
       <Header title={`${m.name} settings`} onBack={onBack} />
       <SettingsFields manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       <EditableOptions manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
+      {m.today ? (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
+          <input type="checkbox" disabled={readOnly} checked={plugin.settings[SHOW_ON_TODAY_KEY] === true} onChange={(e) => save(SHOW_ON_TODAY_KEY, e.target.checked)} />
+          Show on Today
+        </label>
+      ) : null}
 
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={sectionTitle}>Data</div>

@@ -6,6 +6,7 @@
 
 - **New Apps tab** — Small tools that live inside Pomodoso, each one a single YAML file: a quit-smoking tracker, a year in pixels, a reading list, a bookshelf… Install one from **Apps → Add an app** by choosing the file or pasting it. Before installing you see what it adds, its settings, and whether to show it on Today.
 - **Each app has its own settings** — Change its values, edit the states and colors of lists that allow it (Year in Pixels), and turn Today on or off.
+- **Apps on Today** — Apps that offer it get a small card in a new Apps section of Today: tap + on a counter, pick today's state, or glance at a number. Tap the card to open the app. Turn it on when installing or from the app's settings.
 - **Export and restore an app with its data** — One file per app, from the app's settings. Restore it from Add an app, here or on another browser.
 - **Signed out, apps are read-only** — You still see your apps and their numbers, with a banner to sign in.
 
