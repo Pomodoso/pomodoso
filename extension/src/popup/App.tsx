@@ -20,6 +20,7 @@ import {
 import { syncAllConnectedWorkspaces } from '../calendarSync';
 import { detectTicketFromRules } from '../ticketRules';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
+import { clearPendingSyncChoice } from '../syncChoice';
 import { importDb } from '../backup';
 import { activeOccurrence } from '../recurrence';
 
@@ -304,8 +305,12 @@ function AppContent() {
   const isPro = auth.entitlements.features.sync;
 
   useEffect(() => {
-    if (!auth.session) { setSyncStatus('disconnected'); clearSync(); return; }
-    if (!canSync) { setSyncStatus('connected'); return; }
+    // The first-sign-in question (SyncChoiceDialog) only means something while
+    // syncing. Signing out, or entitlements arriving without sync (e.g. cached
+    // Pro replaced by a fresh Free), closes it: left open, its answer would
+    // have no sync to run.
+    if (!auth.session) { setSyncStatus('disconnected'); clearSync(); clearPendingSyncChoice(); return; }
+    if (!canSync) { setSyncStatus('connected'); clearPendingSyncChoice(); return; }
     if (typeof navigator !== 'undefined' && !navigator.onLine) { setSyncStatus('offline'); }
 
     initSync(auth.session.access_token, API_URL!, auth.session.user.id, setSyncStatus);
