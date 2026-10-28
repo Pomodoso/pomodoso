@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS plugin_listing (
   -- 'public' shows in search; 'unlisted' opens by link only; 'private' is
   -- visible to its owner alone.
   visibility        TEXT        NOT NULL DEFAULT 'public'
-                    CHECK (visibility IN ('public', 'unlisted', 'private')),
+                    CHECK (visibility IN ('public', 'private')),
   -- Copied from the latest version's manifest for listing and search, so a
   -- search never has to open manifests.
   name              TEXT        NOT NULL,

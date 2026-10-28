@@ -3,7 +3,8 @@ import type { IApiClient } from './client.ts';
 // The plugin directory (backend/src/routes/plugin_directory.rs). Browsing is
 // public; publishing, reporting and "my plugins" need a signed-in client.
 
-export type DirectoryVisibility = 'public' | 'unlisted' | 'private';
+/** `private` is only seen by its owner, and needs entitlements.features.private_plugins to publish. */
+export type DirectoryVisibility = 'public' | 'private';
 
 export interface DirectoryListing {
   slug: string;
@@ -71,6 +72,11 @@ export function publishPlugin(client: IApiClient, body: PublishBody): Promise<Di
 
 export function myPlugins(client: IApiClient): Promise<DirectoryListing[]> {
   return client.get('/plugins/mine');
+}
+
+/** One of your own listings, private ones included, with its latest file. */
+export function getMyPlugin(client: IApiClient, slug: string): Promise<DirectoryPage> {
+  return client.get(`/plugins/mine/${encodeURIComponent(slug)}`);
 }
 
 export function takeDownPlugin(client: IApiClient, slug: string): Promise<unknown> {
