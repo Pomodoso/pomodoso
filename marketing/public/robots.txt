@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://pomodoso.com/sitemap.xml

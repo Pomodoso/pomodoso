@@ -18,8 +18,7 @@ pomodoso/
 ├── apps/
 │   ├── backend/         # Rust, self-contained Cargo project
 │   ├── web/             # React + Vite web app
-│   ├── extension/       # Chrome MV3 extension
-│   └── marketing/       # Landing page (optional)
+│   └── extension/       # Chrome MV3 extension
 ├── packages/
 │   ├── shared/          # TS types, sync engine, validation schemas
 │   ├── ui/              # Shared React components

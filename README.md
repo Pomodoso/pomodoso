@@ -17,8 +17,7 @@ real-time sync across devices for paid users.
 ```
 backend/      Rust API (self-contained Cargo project)
 extension/    Chrome MV3 extension (React + Vite)
-web/          Web dashboard (React + Vite)
-marketing/    Landing page (pomodoso.com)
+web/          Landing (pomodoso.com) + web dashboard (React + Vite)
 api/          Shared TS HTTP/WS client (@pomodoso/api)
 shared/       Shared TS types/utils
 docs/         Spec, ADRs, logos
