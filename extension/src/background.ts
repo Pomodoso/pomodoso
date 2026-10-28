@@ -19,19 +19,26 @@ chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
 
 // ─── From the web app ─────────────────────────────────────────────────────────
-// Only pomodoso.com can reach this (externally_connectable), and the origin is
-// checked again here. `ping` tells the page the extension is there; `apps.install`
-// leaves a request for the popup, which shows the install preview.
+// Relayed by content-scripts/web-bridge.ts, which only runs on Pomodoso's site;
+// the tab's origin is checked again here. `web.ping` tells the page the
+// extension is there; `web.apps.install` leaves a request for the popup, which
+// shows the install preview.
 
-chrome.runtime.onMessageExternal.addListener((msg: unknown, sender, sendResponse) => {
-  if (!sender.origin || !WEB_ORIGINS.has(sender.origin)) return false;
-  const m = msg as { type?: unknown; slug?: unknown } | null;
-  if (m?.type === 'ping') {
+function handleWebMessage(
+  msg: { type?: unknown; slug?: unknown },
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: unknown) => void,
+): boolean {
+  if (!sender.origin || !WEB_ORIGINS.has(sender.origin)) {
+    sendResponse(null);
+    return false;
+  }
+  if (msg.type === 'web.ping') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
     return false;
   }
-  if (m?.type === 'apps.install' && isPluginSlug(m.slug)) {
-    const request: InstallRequest = { slug: m.slug, at: Date.now() };
+  if (msg.type === 'web.apps.install' && isPluginSlug(msg.slug)) {
+    const request: InstallRequest = { slug: msg.slug, at: Date.now() };
     void chrome.storage.local
       .set({ [INSTALL_REQUEST_KEY]: request })
       .then(() => chrome.action.openPopup())
@@ -40,8 +47,9 @@ chrome.runtime.onMessageExternal.addListener((msg: unknown, sender, sendResponse
       .catch(() => sendResponse({ ok: true, opened: false }));
     return true;
   }
+  sendResponse(null);
   return false;
-});
+}
 
 // ─── Background sync ──────────────────────────────────────────────────────────
 // The popup's debounced sync dies the moment the popup closes (click-away), so
@@ -334,6 +342,8 @@ function handleMessage(
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: ExtensionResponse) => void,
 ): boolean {
+  const type = (message as { type?: unknown }).type;
+  if (typeof type === 'string' && type.startsWith('web.')) return handleWebMessage(message as { type?: unknown }, _sender, sendResponse as (response: unknown) => void);
   handleMessageAsync(message)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((err: unknown) =>

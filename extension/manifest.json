@@ -15,9 +15,6 @@
     "windows"
   ],
   "host_permissions": ["https://*/*", "http://*/*"],
-  "externally_connectable": {
-    "matches": ["https://pomodoso.com/*", "https://www.pomodoso.com/*"]
-  },
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -39,6 +36,11 @@
     "type": "module"
   },
   "content_scripts": [
+    {
+      "matches": ["https://pomodoso.com/*", "https://www.pomodoso.com/*"],
+      "js": ["content-scripts/web-bridge.js"],
+      "run_at": "document_start"
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content-scripts/selection.js"],

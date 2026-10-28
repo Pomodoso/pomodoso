@@ -8,10 +8,6 @@
 # docker compose when Docker is installed, podman compose otherwise.
 COMPOSE ?= $(shell command -v docker >/dev/null 2>&1 && echo "docker compose" || echo "podman compose")
 
-# The unpacked extension's ID (chrome://extensions), so the local web app can
-# reach it (Dashboard → Apps → Install). Without it the web uses the store ID.
-EXTENSION_ID ?=
-
 WEB_URL := http://localhost:5180
 
 .PHONY: help install up down logs db-reset backend web extension dev test seed-apps
@@ -39,8 +35,8 @@ db-reset: up ## Drop and recreate the local database (needs sqlx-cli)
 backend: up ## API on :8080; runs pending migrations on start
 	cd backend && cargo run
 
-web: ## Web app on :5180 (EXTENSION_ID=… to install apps into an unpacked extension)
-	$(if $(EXTENSION_ID),VITE_EXTENSION_ID=$(EXTENSION_ID)) pnpm --filter web dev
+web: ## Web app on :5180
+	pnpm --filter web dev
 
 extension: ## Extension dev build into extension/dist, rebuilt on change; talks to :8080 and the local web
 	cd extension && VITE_WEB_URL=$(WEB_URL) pnpm exec vite build --mode development --watch
