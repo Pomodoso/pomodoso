@@ -391,6 +391,7 @@ name: Quit smoking
 version: 1.0.0
 icon: no-smoking
 description: A daily limit that drops every week. Log each one and watch the trend go down.
+author: Pomodoso
 license: MIT
 
 settings:
@@ -458,6 +459,7 @@ name: Year in Pixels
 version: 1.0.0
 icon: grid
 description: Color every day by how it went. You choose the states and their colors.
+author: Pomodoso
 license: MIT
 
 collections:
@@ -504,6 +506,7 @@ name: Reading list
 version: 1.0.0
 icon: bookmark
 description: Articles, videos and papers to get to later, organized with tags.
+author: Pomodoso
 license: MIT
 
 collections:
@@ -554,6 +557,7 @@ name: Bookshelf
 version: 1.0.0
 icon: book
 description: Books you want to read, are reading and have read.
+author: Pomodoso
 license: MIT
 
 collections:
@@ -606,6 +610,7 @@ name: Movieshelf
 version: 1.0.0
 icon: film
 description: Movies to watch and the ones you've seen.
+author: Pomodoso
 license: MIT
 
 collections:

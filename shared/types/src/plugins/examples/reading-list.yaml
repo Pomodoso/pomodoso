@@ -4,6 +4,7 @@ name: Reading list
 version: 1.0.0
 icon: bookmark
 description: Articles, videos and papers to get to later, organized with tags.
+author: Pomodoso
 license: MIT
 
 collections:
