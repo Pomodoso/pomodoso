@@ -21,6 +21,7 @@ import {
   type BaseTaskStatus, type TaskStatusConfig,
 } from '@pomodoso/types';
 import { updateTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
+import { WEB_URL } from '../webUrl';
 
 
 const PRESET_CATALOG = [
@@ -821,7 +822,7 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                     Sync across devices · Unlimited workspaces · Web dashboard · Private apps
                   </div>
                   <a
-                    href="https://pomodoso.com/pricing"
+                    href={`${WEB_URL}/pricing`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ display: 'block', textAlign: 'center', padding: '7px 0', background: 'var(--color-accent)', color: '#fff', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
@@ -969,7 +970,7 @@ function AccountPage({ auth, entitlements, onSyncNow, onBack }: {
                 <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
               </div>
               <button
-                onClick={() => void chrome.tabs.create({ url: 'https://pomodoso.com/login?mode=signup' })}
+                onClick={() => void chrome.tabs.create({ url: `${WEB_URL}/login?mode=signup` })}
                 style={{ width: '100%', marginTop: 10, padding: '9px 0', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 Create a free account
