@@ -21,6 +21,7 @@ import {
   exportPlugin,
   importPlugin,
   installPlugin,
+  installedBySlug,
   setDaily,
   applyPluginUpdate,
   setAutoUpdate,
@@ -32,7 +33,7 @@ import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFiel
 import { isSupported } from './supported';
 import { Browse, directoryAvailable } from './Browse';
 import { openListing, SignInToOpen } from './directory';
-import { describeStep, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
+import { describeStep, updateFor, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
@@ -268,6 +269,21 @@ function AddApp({ slug, timezone, readOnly, onCancel, onInstalled }: { slug?: st
 
   const [mode, setMode] = useState<'browse' | 'file'>(directoryAvailable ? 'browse' : 'file');
   const [source, setSource] = useState<PluginRow['source']>('file');
+  // A file (or listing) of an app that's already installed updates it rather
+  // than installing a second copy: undefined while it's looked up.
+  const [installed, setInstalled] = useState<PluginRow | null | undefined>(undefined);
+  useEffect(() => {
+    if (!manifest) {
+      setInstalled(undefined);
+      return;
+    }
+    let live = true;
+    void installedBySlug(manifest.id).then((p) => live && setInstalled(p ?? null));
+    return () => {
+      live = false;
+    };
+  }, [manifest]);
+
   // Asked for by slug (from the web app): open that listing's preview.
   const [opening, setOpening] = useState<{ slug: string; error: string | null } | null>(slug ? { slug, error: null } : null);
   useEffect(() => {
@@ -333,6 +349,10 @@ function AddApp({ slug, timezone, readOnly, onCancel, onInstalled }: { slug?: st
       </>
     );
   }
+  if (manifest && installed === undefined) return null;
+  if (manifest && installed) {
+    return <UpdatePreview installed={installed} next={manifest} readOnly={readOnly} onBack={() => setManifest(null)} onUpdated={onInstalled} />;
+  }
   if (manifest) {
     return <InstallPreview text={text} manifest={manifest} source={source} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
   }
@@ -393,6 +413,77 @@ function FromFile({ text, issues, setText, check }: {
       />
       {issues.length > 0 ? <IssueList issues={issues} /> : null}
       <button type="button" disabled={!text.trim()} onClick={() => check(text)} style={{ ...btn('primary'), opacity: text.trim() ? 1 : 0.5 }}>Continue</button>
+    </>
+  );
+}
+
+/** A newer file of an installed app: what changes, then the update, entries kept (and converted for a breaking one). */
+function UpdatePreview({ installed, next, readOnly, onBack, onUpdated }: {
+  installed: PluginRow;
+  next: PluginManifest;
+  readOnly: boolean;
+  onBack: () => void;
+  onUpdated: (id: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const update = updateFor(installed.manifest, next);
+  const breaking = update?.report.kind === 'breaking';
+  const blocked = (update?.report.issues.length ?? 0) > 0;
+  const steps = update?.report.migrates ? next.migrate?.steps ?? [] : [];
+  const box = { fontSize: 11, color: 'var(--color-text)', lineHeight: 1.5, padding: '8px 10px', border: `1px solid ${breaking || blocked ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column' as const, gap: 6 };
+
+  return (
+    <>
+      <Header title="Update app" onBack={onBack} />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <PluginIcon icon={next.icon} name={next.name} size={40} />
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)' }}>
+          {next.name} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--color-text-faint)' }}>{installed.manifest.version} → {next.version}</span>
+        </div>
+      </div>
+      {!update ? (
+        <div style={box}>
+          You already have {installed.manifest.name} {installed.manifest.version}. To update it, raise <code>version</code> in the file above {installed.manifest.version}.
+        </div>
+      ) : (
+        <div style={box}>
+          {blocked ? (
+            update.report.issues.map((i, n) => <div key={n} style={{ color: 'var(--color-accent)' }}>{i.message}</div>)
+          ) : breaking ? (
+            <>
+              <div>It changes how your entries are stored:</div>
+              {steps.map((s, i) => <div key={i}>• {describeStep(s)}</div>)}
+            </>
+          ) : update.report.changes.length > 0 ? (
+            update.report.changes.slice(0, 8).map((c, i) => <div key={i} style={{ color: 'var(--color-text-muted)' }}>• {c.message}</div>)
+          ) : (
+            <div style={{ color: 'var(--color-text-muted)' }}>Only the version changes.</div>
+          )}
+          <div style={{ color: 'var(--color-text-faint)' }}>Your entries and settings stay.</div>
+        </div>
+      )}
+      {error ? <div style={{ fontSize: 11, color: 'var(--color-accent)' }}>{error}</div> : null}
+      {update && !blocked ? (
+        <button
+          type="button" disabled={readOnly || busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await applyPluginUpdate(installed.id, next);
+              onUpdated(installed.id);
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+          style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}
+        >
+          {breaking ? 'Update and convert my entries' : 'Update'}
+        </button>
+      ) : null}
     </>
   );
 }

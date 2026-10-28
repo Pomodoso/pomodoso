@@ -46,6 +46,11 @@ async function liveBySlug(slug: string): Promise<PluginRow | undefined> {
   return (await db.plugins.where('slug').equals(slug).toArray()).find(live);
 }
 
+/** The live install of a plugin id, if any: adding its file again updates it. */
+export function installedBySlug(slug: string): Promise<PluginRow | undefined> {
+  return liveBySlug(slug);
+}
+
 // ─── Install / uninstall ─────────────────────────────────────────────────────
 
 export async function installPlugin(
