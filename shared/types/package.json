@@ -11,6 +11,10 @@
     "./plugins": {
       "import": "./src/plugins/index.ts",
       "types": "./src/plugins/index.ts"
+    },
+    "./plugins/ids": {
+      "import": "./src/plugins/ids.ts",
+      "types": "./src/plugins/ids.ts"
     }
   },
   "scripts": {

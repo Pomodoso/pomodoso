@@ -3,8 +3,10 @@ import { test } from 'node:test';
 
 import type { PluginExport } from '@pomodoso/types/plugins';
 
-import type { PluginRecordRow } from './db.ts';
-import { rowsFromExport, toEngineRecord } from './pluginRows.ts';
+import type { PluginRecordRow, PluginRow } from './db.ts';
+import { dailyRecordId } from '@pomodoso/types/plugins/ids';
+
+import { planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord } from './pluginRows.ts';
 
 test('a stored row becomes the engine record shape', () => {
   const row: PluginRecordRow = {
@@ -51,4 +53,54 @@ test('imported rows are live, dirty and newest, with their original ids', () => 
   assert.equal(records[0]!.day, '2026-10-19');
   assert.equal(records[1]!.occurredAt, '2026-10-19T10:00:00Z');
   assert.equal('day' in records[1]!, false);
+});
+
+test('plugin rows survive the sync mapping both ways, with server timestamps normalized', () => {
+  const plugin: PluginRow = {
+    id: 'p1', slug: 'water', source: 'file', manifest: { id: 'water' } as unknown as PluginRow['manifest'],
+    settings: { 'today:on': true }, enabled: true, autoUpdate: false, installedOn: '2026-10-01',
+    createdAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z',
+  };
+  const meta = { id: 'p1', updatedAt: plugin.updatedAt, deletedAt: null };
+  // The server writes timestamps without milliseconds.
+  const fromServer = { ...pluginSyncData(plugin), created_at: '2026-10-01T12:00:00Z' };
+  assert.deepEqual(pluginFromSync(meta, fromServer), { ...plugin, syncedAt: plugin.updatedAt });
+
+  const rec: PluginRecordRow = {
+    id: 'r1', pluginId: 'p1', collection: 'glass', occurredAt: '2026-10-02T15:00:00.000Z', data: { ml: 250 },
+    createdAt: '2026-10-02T15:00:00.000Z', updatedAt: '2026-10-02T15:00:00.000Z',
+  };
+  const recServer = { ...pluginRecordSyncData(rec), occurred_at: '2026-10-02T15:00:00Z', created_at: '2026-10-02T15:00:00Z' };
+  assert.deepEqual(pluginRecordFromSync({ id: 'r1', updatedAt: rec.updatedAt, deletedAt: '2026-10-03T00:00:00.000Z' }, recServer), {
+    ...rec, syncedAt: rec.updatedAt, deletedAt: '2026-10-03T00:00:00.000Z',
+  });
+});
+
+test('two installs of one plugin fold into the earliest, the same way on every device', () => {
+  const base = { slug: 'pixels', source: 'file' as const, manifest: {} as PluginRow['manifest'], settings: {}, enabled: true, autoUpdate: false, installedOn: '2026-10-01', updatedAt: '2026-10-05T00:00:00.000Z' };
+  const a: PluginRow = { ...base, id: 'aaaa', createdAt: '2026-10-01T09:00:00.000Z' };
+  const b: PluginRow = { ...base, id: 'bbbb', createdAt: '2026-10-01T10:00:00.000Z' };
+  const rec = (id: string, pluginId: string, extra: Partial<PluginRecordRow>): PluginRecordRow => ({ id, pluginId, collection: 'day_state', data: {}, createdAt: '2026-10-02T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', ...extra });
+  const dayA = rec(dailyRecordId('aaaa', 'day_state', '2026-10-02'), 'aaaa', { day: '2026-10-02', data: { state: 'old' }, updatedAt: '2026-10-02T08:00:00.000Z' });
+  const dayB = rec(dailyRecordId('bbbb', 'day_state', '2026-10-02'), 'bbbb', { day: '2026-10-02', data: { state: 'new' }, updatedAt: '2026-10-02T09:00:00.000Z' });
+  const onlyB = rec(dailyRecordId('bbbb', 'day_state', '2026-10-03'), 'bbbb', { day: '2026-10-03', data: { state: 'b' } });
+  const event = rec('e1', 'bbbb', { occurredAt: '2026-10-02T15:00:00.000Z' });
+  const ts = '2026-10-06T00:00:00.000Z';
+
+  const plan = planDuplicateMerge([b, a], [dayA, dayB, onlyB, event], ts);
+  // Same plan whatever order the rows come in.
+  assert.deepEqual(planDuplicateMerge([a, b], [event, onlyB, dayB, dayA], ts).plugins, plan.plugins);
+  assert.deepEqual(plan.plugins.map((p) => [p.id, p.deletedAt]), [['bbbb', ts]]);
+  const byId = new Map(plan.records.map((r) => [r.id, r]));
+  // The day both had: the more recent edit wins, under the keeper's id.
+  assert.equal(byId.get(dayA.id)?.data.state, 'new');
+  assert.equal(byId.get(dayA.id)?.pluginId, 'aaaa');
+  assert.equal(byId.get(dayB.id)?.deletedAt, ts);
+  // A day only B had moves to the keeper's id for that day.
+  assert.equal(byId.get(dailyRecordId('aaaa', 'day_state', '2026-10-03'))?.data.state, 'b');
+  // Events keep their id and change plugin.
+  assert.equal(byId.get('e1')?.pluginId, 'aaaa');
+  // Everything written is dirty, so it pushes.
+  assert.ok(plan.records.every((r) => r.syncedAt === undefined && r.updatedAt === ts));
+  assert.deepEqual(planDuplicateMerge([a], [dayA], ts), { plugins: [], records: [] });
 });

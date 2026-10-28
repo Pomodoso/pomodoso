@@ -16,6 +16,13 @@ export const PLUGIN_SCHEMA_VERSION = 1;
 /** Upper bound on a plugin file, checked before parsing. */
 export const PLUGIN_FILE_MAX_BYTES = 256 * 1024;
 
+/**
+ * Upper bound on a record's data and on a plugin's settings, serialized.
+ * Clients refuse to save past it and the server drops anything larger
+ * (backend sync.rs PLUGIN_VALUES_MAX_BYTES): keep the two equal.
+ */
+export const PLUGIN_VALUES_MAX_BYTES = 64 * 1024;
+
 export const COLLECTION_KINDS = ['event', 'item', 'daily'] as const;
 export type CollectionKind = (typeof COLLECTION_KINDS)[number];
 

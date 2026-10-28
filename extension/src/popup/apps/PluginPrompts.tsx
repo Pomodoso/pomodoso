@@ -18,6 +18,7 @@ import {
   type PromptState,
 } from '../../pluginHooks';
 import { toEngineRecord } from '../../pluginRows';
+import { isSupported } from './supported';
 import { usePluginData } from './usePluginData';
 
 // Plugin questions on Today: the `pomodoro_end` question for the current
@@ -59,8 +60,9 @@ export function PluginPrompts({ timerStatus, sessionId, pomosCompletedToday, tim
   const inBreak = BREAK_STATUSES.has(timerStatus);
   const key = breakKey(sessionId, today, pomosCompletedToday);
 
-  const breakCandidates = useMemo(() => (plugins ? promptHooks(plugins, 'pomodoro_end') : []), [plugins]);
-  const dayEndCandidates = useMemo(() => (plugins ? promptHooks(plugins, 'day_end') : []), [plugins]);
+  const usable = useMemo(() => plugins?.filter(isSupported), [plugins]);
+  const breakCandidates = useMemo(() => (usable ? promptHooks(usable, 'pomodoro_end') : []), [usable]);
+  const dayEndCandidates = useMemo(() => (usable ? promptHooks(usable, 'day_end') : []), [usable]);
   const dayEndPluginIds = dayEndCandidates.map((c) => c.plugin.id).join(',');
   const dayEndRecords = useLiveQuery(
     async () => (dayEndPluginIds ? (await db.pluginRecords.where('pluginId').anyOf(dayEndPluginIds.split(',')).toArray()).map((r) => ({ pluginId: r.pluginId, record: toEngineRecord(r) })) : []),

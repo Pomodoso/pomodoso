@@ -6,6 +6,7 @@ import { TodayWidget } from '@pomodoso/ui/plugins';
 
 import { db, localDate, type PluginRow } from '../../db';
 import { addRecord, setDaily } from '../../plugins';
+import { isSupported } from './supported';
 import { usePluginData } from './usePluginData';
 
 // The "Apps" section of Today: a widget for every app whose file declares
@@ -14,7 +15,7 @@ import { usePluginData } from './usePluginData';
 
 export function TodayApps({ timezone, weekStart, onOpenApp }: { timezone: string; weekStart: number; onOpenApp: (id: string) => void }) {
   const pinned = useLiveQuery(
-    async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt && p.enabled && showsOnToday(p.manifest, p.settings)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt && p.enabled && isSupported(p) && showsOnToday(p.manifest, p.settings)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [],
   );
   if (!pinned || pinned.length === 0) return null;

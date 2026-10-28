@@ -87,6 +87,11 @@ function clean(data: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+// Typing limits, so a single field can't take a record past the stored size
+// limit (PLUGIN_VALUES_MAX_BYTES, 64 KB); the write still checks the total.
+const TEXT_MAX = 2000;
+const LONGTEXT_MAX = 20000;
+
 interface FieldInputProps {
   field: PluginField;
   collection: string;
@@ -108,6 +113,7 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
         <input
           type={f.type === 'text' ? 'text' : 'url'}
           value={str}
+          maxLength={TEXT_MAX}
           disabled={disabled}
           placeholder={f.type === 'text' ? '' : 'https://'}
           onChange={(e) => onChange(e.target.value)}
@@ -115,7 +121,7 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
         />
       );
     case 'longtext':
-      return <textarea value={str} disabled={disabled} rows={3} onChange={(e) => onChange(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />;
+      return <textarea value={str} disabled={disabled} rows={3} maxLength={LONGTEXT_MAX} onChange={(e) => onChange(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />;
     case 'date':
       return <input type="date" value={str} disabled={disabled} onChange={(e) => onChange(e.target.value)} style={inputStyle} />;
     case 'number':
