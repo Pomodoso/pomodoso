@@ -8,6 +8,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 - Read a value anywhere a value goes with `$name`: a setting, a computed value or a built-in (`$today_date`, `$now`, `$tab.url`, `$tab.title`). `$tab.*` only works in an add-button's `prefill`.
 - Put a value inside a label or text with `{$name}`.
 - A one-tap action (counter-button, mini-counter, hook `yes`, day picks) has no form, so every required field of its collection must be optional, have a `default`, or be set by the action.
+- Every record also has built-in fields you can list, sort and filter by without declaring them: `created_at` and `updated_at`, plus `occurred_at` on events and `day` on dailies.
 - Literal values must fit their field: numbers within min/max, select values from `options`.
 - The file is at most 256 KB.
 - Validate against https://pomodoso.com/schema/plugin.v1.json; Pomodoso also checks that every collection, field and `$reference` you name exists, and says what's available when one doesn't.
@@ -339,8 +340,8 @@ A single value with a `format`.
 
 ## Hooks
 
-- `pomodoro_end`: After a pomodoro, during the break: `ask` a question; `yes` adds a record, or `pick` sets a select on today. At most one plugin question per break.
-- `day_end`: The next day: `ask` about yesterday, with `yes` or `pick`.
+- `pomodoro_end`: After a pomodoro, during the break: `ask` a question; `yes` adds a record to an event collection, or `pick` sets a select on today. At most one plugin question per break.
+- `day_end`: The next day: `ask` about yesterday, with `yes` (adds a record to an event collection, dated yesterday) or `pick` (sets a select on yesterday's daily record).
 - `daily_report`: A `line` added to the daily report, with `{$name}` values.
 - `weekly_report`: A `line` added to the weekly report.
 

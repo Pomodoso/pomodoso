@@ -73,8 +73,8 @@ export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
 };
 
 export const HOOK_DOCS: Record<HookEvent, string> = {
-  pomodoro_end: 'After a pomodoro, during the break: `ask` a question; `yes` adds a record, or `pick` sets a select on today. At most one plugin question per break.',
-  day_end: 'The next day: `ask` about yesterday, with `yes` or `pick`.',
+  pomodoro_end: 'After a pomodoro, during the break: `ask` a question; `yes` adds a record to an event collection, or `pick` sets a select on today. At most one plugin question per break.',
+  day_end: 'The next day: `ask` about yesterday, with `yes` (adds a record to an event collection, dated yesterday) or `pick` (sets a select on yesterday\'s daily record).',
   daily_report: "A `line` added to the daily report, with `{$name}` values.",
   weekly_report: 'A `line` added to the weekly report.',
 };
