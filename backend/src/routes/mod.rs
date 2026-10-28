@@ -3,6 +3,7 @@ pub mod habits;
 pub mod health;
 pub mod history;
 pub mod iap;
+pub mod installed_plugins;
 pub mod me;
 pub mod plugin_directory;
 pub mod projects;

@@ -86,3 +86,33 @@ export function takeDownPlugin(client: IApiClient, slug: string): Promise<unknow
 export function reportPlugin(client: IApiClient, slug: string, reason: string): Promise<unknown> {
   return client.post(`/plugins/directory/${encodeURIComponent(slug)}/report`, { reason });
 }
+
+// ─── Installed (the user's own, as synced) ──────────────────────────────────
+
+export interface InstalledRecord {
+  id: string;
+  collection: string;
+  day: string | null;
+  occurred_at: string | null;
+  data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InstalledPlugin {
+  id: string;
+  slug: string;
+  source: 'file' | 'directory';
+  /** The installed plugin file, parsed. Validate it before use. */
+  manifest: unknown;
+  settings: Record<string, unknown>;
+  installed_on: string;
+  created_at: string;
+  updated_at: string;
+  records: InstalledRecord[];
+}
+
+/** The signed-in user's installed apps with their records, as their devices synced them. */
+export function listInstalledPlugins(client: IApiClient): Promise<InstalledPlugin[]> {
+  return client.get('/plugins/installed');
+}
