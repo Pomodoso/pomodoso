@@ -5,7 +5,7 @@ Read `docs/pomodoso-spec-en.md` for the complete product and technical context. 
 ## Stack overview
 
 - **Backend:** Rust + Axum + sqlx + PostgreSQL
-- **Auth:** Supabase (clients get the session via `@pomodoso/api`)
+- **Auth:** Supabase. Each client owns its Supabase client and session (`web/src/lib/supabase.ts`, `extension/src/supabaseClient.ts`, `mobile/hooks/useAuth.ts`); `@pomodoso/api` holds the shared auth helpers (sign in, sign up, magic link, reset)
 - **Frontend (web):** React + Vite (`vite-react-ssg`) + TypeScript — public site and dashboard
 - **Frontend (extension):** Chrome MV3 + React + TypeScript
 - **Mobile:** Expo + React Native + TypeScript
@@ -21,7 +21,6 @@ pomodoso/
 ├── web/                 # React + Vite web app (landing, pricing, dashboard)
 ├── extension/           # Chrome MV3 extension
 ├── mobile/              # Expo app (db/ holds the Drizzle schema)
-├── marketing/           # Landing page
 ├── api/                 # @pomodoso/api — HTTP + WS client, Supabase client
 ├── shared/
 │   ├── types/           # @pomodoso/types — TS types, shared rules, validation
@@ -92,7 +91,7 @@ pomodoso/
 - **Don't** mix Rust and Node tooling in the same directory. Backend lives in `backend/` and uses Cargo only.
 - **Don't** introduce a state management library (Redux, Zustand, etc.) without strong justification. React state + TanStack Query is the default.
 - **Don't** put business logic in components. Components consume hooks; hooks consume `@pomodoso/types`.
-- **Don't** call third-party APIs from the client (extension, web or mobile). All external API calls go through the backend.
+- **Don't** call third-party APIs from the client (extension, web or mobile); new external calls go through the backend. The one exception today is Google Calendar: the extension (`extension/src/calendarSync.ts`) and mobile (`mobile/utils/googleCalendar.ts`) call Google directly with the user's own OAuth token.
 
 ## Extension: IndexedDB schema changes
 
@@ -154,7 +153,8 @@ pnpm --filter mobile start
 
 # Run all tests
 pnpm -r test             # TS packages (shared/types, extension)
-pnpm typecheck           # all workspaces
+pnpm typecheck           # workspaces with a typecheck script (not web)
+pnpm --filter web exec tsc -b   # web (also what its build runs)
 cd backend && cargo test  # backend
 
 # Database migrations
@@ -172,6 +172,6 @@ cd backend && sqlx migrate run
 
 The spec (`docs/pomodoso-spec-en.md`) is the source of truth. When you make a decision that contradicts or extends the spec:
 
-1. Update the spec in the same PR.
+1. Update the spec alongside the change. It lives in `docs/`, which is local only (gitignored, never committed), so the spec update stays on your machine and the PR says what changed.
 2. Bump the version in the spec header.
 3. Add a line to the spec changelog explaining what changed.
