@@ -1,3 +1,5 @@
+import { WEB_URL } from '../webUrl';
+
 interface PopupFooterProps {
   pomosToday: number;
   minutesToday: number;
@@ -42,7 +44,7 @@ export function PopupFooter({ pomosToday, minutesToday }: PopupFooterProps) {
         </button>
         <button
           style={linkStyle}
-          onClick={() => chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' })}
+          onClick={() => chrome.tabs.create({ url: `${WEB_URL}/dashboard` })}
         >
           Open app ↗
         </button>

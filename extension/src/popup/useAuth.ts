@@ -5,6 +5,7 @@ import type { Entitlements, ExtensionResponse } from '@pomodoso/types';
 import { FREE_ENTITLEMENTS } from '@pomodoso/types';
 import { db } from '../db';
 import { getExtensionSupabase } from '../supabaseClient';
+import { WEB_URL } from '../webUrl';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -12,7 +13,6 @@ const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 
 const SESSION_KEY = 'auth_session';
 const ENTITLEMENTS_KEY = 'entitlements';
-const WEB_URL = (import.meta.env.VITE_WEB_URL as string | undefined) ?? 'https://pomodoso.com';
 
 export interface AuthState {
   session: Session | null;

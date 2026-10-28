@@ -49,6 +49,7 @@ import { triggerSync } from '../syncEngine';
 import { INSTALL_REQUEST_KEY, INSTALL_REQUEST_TTL_MS, isPluginSlug, type InstallRequest } from '../installRequest';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
+import { WEB_URL } from '../webUrl';
 // Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
 const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
 const TodayApps = lazy(() => import('./apps/TodayApps').then((m) => ({ default: m.TodayApps })));
@@ -972,8 +973,8 @@ export function HomeState({
                     <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
                   )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
-                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' }); }} />
-                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/support' }); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: `${WEB_URL}/dashboard` }); }} />
+                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: `${WEB_URL}/support` }); }} />
                   {isSignedIn && (<>
                     <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
                     <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
