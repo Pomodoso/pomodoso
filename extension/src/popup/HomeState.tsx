@@ -51,6 +51,7 @@ import { formatRecurrenceLabel } from '../recurrence';
 // Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
 const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
 const TodayApps = lazy(() => import('./apps/TodayApps').then((m) => ({ default: m.TodayApps })));
+const PluginPrompts = lazy(() => import('./apps/PluginPrompts').then((m) => ({ default: m.PluginPrompts })));
 
 marked.use({ breaks: true });
 
@@ -1375,6 +1376,16 @@ export function HomeState({
       <div className="scroll-area">
         {activeTab === 'today' && (
           <>
+            {isSignedIn && hasPlugins && (
+              <Suspense fallback={null}>
+                <PluginPrompts
+                  timerStatus={timerState.status}
+                  pomosCompletedToday={timerState.pomosCompletedToday}
+                  timezone={timezone}
+                  weekStart={weekStart}
+                />
+              </Suspense>
+            )}
             {!isActive && !isPaused && !isBreak && !isPomoDone && !isBreakDone && (
               <div style={{ padding: '8px 14px 0', display: 'flex', justifyContent: 'center' }}>
                 <button

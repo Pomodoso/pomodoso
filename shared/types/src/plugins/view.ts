@@ -127,6 +127,13 @@ export function applyRules(
   return out;
 }
 
+// ─── Reports ─────────────────────────────────────────────────────────────────
+
+/** A plugin's lines for a report: each `daily_report` / `weekly_report` hook's template, filled in. */
+export function reportLines(manifest: PluginManifest, on: 'daily_report' | 'weekly_report', evaluator: PluginEvaluator, now: string): string[] {
+  return (manifest.hooks ?? []).flatMap((h) => ('line' in h && h.on === on ? [evaluator.template(h.line, (v) => formatStat(v, undefined, now))] : []));
+}
+
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
 function plural(n: number, one: string, many: string): string {
