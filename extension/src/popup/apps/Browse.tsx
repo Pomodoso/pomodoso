@@ -16,7 +16,6 @@ export const directoryAvailable = Boolean(API_URL);
 
 export function Browse({ onPick }: { onPick: (text: string, manifest: PluginManifest) => void }) {
   const [q, setQ] = useState('');
-  const [todayOnly, setTodayOnly] = useState(false);
   const [results, setResults] = useState<DirectoryListing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
     if (!API_URL) return;
     let live = true;
     const t = setTimeout(() => {
-      searchDirectory(new PublicApiClient(API_URL), { q: q.trim(), today: todayOnly })
+      searchDirectory(new PublicApiClient(API_URL), { q: q.trim() })
         .then((r) => {
           if (!live) return;
           setResults(r);
@@ -38,7 +37,7 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
       live = false;
       clearTimeout(t);
     };
-  }, [q, todayOnly]);
+  }, [q]);
 
   const open = async (slug: string) => {
     if (!API_URL || opening) return;
@@ -66,10 +65,6 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
         onChange={(e) => setQ(e.target.value)}
         style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'inherit', color: 'var(--color-text)', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none' }}
       />
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-muted)' }}>
-        <input type="checkbox" checked={todayOnly} onChange={(e) => setTodayOnly(e.target.checked)} />
-        Only apps with a Today widget
-      </label>
       {error ? <div style={{ fontSize: 11, color: 'var(--color-accent)' }}>{error}</div> : null}
       {results === null && !error ? <div style={{ fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center', padding: 12 }}>Loading…</div> : null}
       {results?.length === 0 ? (

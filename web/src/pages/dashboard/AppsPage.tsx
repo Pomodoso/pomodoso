@@ -261,7 +261,11 @@ function AppRow({ app, onTakenDown }: { app: DirectoryListing; onTakenDown: () =
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, color: 'var(--text)', fontWeight: 500 }}>
-          {app.name}{' '}
+          {app.visibility === 'public' ? (
+            <Link to={`/apps/${app.slug}`} style={{ color: 'inherit' }}>{app.name}</Link>
+          ) : (
+            app.name
+          )}{' '}
           <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text-tert)' }}>
             v{app.latest_version} · {app.visibility === 'private' ? 'Private' : 'Public'}
             {app.has_today ? ' · Today widget' : ''}
@@ -327,6 +331,7 @@ export default function AppsPage() {
           <div className="pomo-eyebrow">Directory</div>
           <h1 className="pomo-page-title">Your apps</h1>
         </div>
+        <Link to="/apps" className="pomo-link-btn" style={{ fontSize: 13 }}>Browse the directory →</Link>
       </div>
 
       {error && <p style={{ color: 'var(--accent)', fontSize: 13, marginBottom: 12 }}>{error}</p>}

@@ -11,12 +11,14 @@
   "dependencies": {
     "@pomodoso/api": "workspace:^",
     "@pomodoso/types": "workspace:^",
+    "@pomodoso/ui": "workspace:^",
     "@sentry/react": "^10.57.0",
     "@supabase/supabase-js": "^2.49.4",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.26.2",
-    "vite-react-ssg": "^0.9.1"
+    "vite-react-ssg": "^0.9.1",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
