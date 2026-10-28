@@ -13,9 +13,35 @@ import { connectCalendar, syncTodayMeetings } from './calendarSync';
 import { performBackgroundSync } from './syncEngine';
 import { providerRuleAllows } from './ticketRules';
 import { googleSignInFlow } from './authFlow';
+import { INSTALL_REQUEST_KEY, WEB_ORIGINS, isPluginSlug, type InstallRequest } from './installRequest';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
+
+// ─── From the web app ─────────────────────────────────────────────────────────
+// Only pomodoso.com can reach this (externally_connectable), and the origin is
+// checked again here. `ping` tells the page the extension is there; `apps.install`
+// leaves a request for the popup, which shows the install preview.
+
+chrome.runtime.onMessageExternal.addListener((msg: unknown, sender, sendResponse) => {
+  if (!sender.origin || !WEB_ORIGINS.has(sender.origin)) return false;
+  const m = msg as { type?: unknown; slug?: unknown } | null;
+  if (m?.type === 'ping') {
+    sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+    return false;
+  }
+  if (m?.type === 'apps.install' && isPluginSlug(m.slug)) {
+    const request: InstallRequest = { slug: m.slug, at: Date.now() };
+    void chrome.storage.local
+      .set({ [INSTALL_REQUEST_KEY]: request })
+      .then(() => chrome.action.openPopup())
+      .then(() => sendResponse({ ok: true, opened: true }))
+      // No popup without a focused window: the request waits for the next open.
+      .catch(() => sendResponse({ ok: true, opened: false }));
+    return true;
+  }
+  return false;
+});
 
 // ─── Background sync ──────────────────────────────────────────────────────────
 // The popup's debounced sync dies the moment the popup closes (click-away), so

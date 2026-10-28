@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { PublicApiClient, getDirectoryPage } from '@pomodoso/api';
 import { checkUpdate, compareVersions, validatePluginData, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
 
 import type { PluginRow } from '../../db';
+import { openListing } from './directory';
 
 // Newer versions of apps installed from the directory. Asked of the backend
-// (public, no session) at most once an hour per app; the answer is checked
+// (public, or the user's own for a private app) at most once an hour per app; the answer is checked
 // here with checkUpdate, whatever the directory said about it.
 
 const API_URL = import.meta.env.VITE_API_URL as string | undefined;
@@ -25,7 +25,7 @@ async function latest(slug: string): Promise<PluginManifest | null> {
   if (hit && Date.now() - hit.at < TTL_MS) return hit.manifest;
   let manifest: PluginManifest | null = null;
   try {
-    const page = await getDirectoryPage(new PublicApiClient(API_URL!), slug);
+    const page = await openListing(slug);
     const r = validatePluginData(page.manifest);
     manifest = r.ok ? r.manifest : null;
   } catch {
