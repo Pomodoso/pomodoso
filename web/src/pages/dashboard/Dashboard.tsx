@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
@@ -13,6 +13,8 @@ import ProjectsPage from './ProjectsPage.tsx';
 import HabitsPage from './HabitsPage.tsx';
 import HistoryPage from './HistoryPage.tsx';
 import WorkspacesPage from './WorkspacesPage.tsx';
+// Lazy: it brings the plugin validator (zod, yaml), which no other page needs.
+const AppsPage = lazy(() => import('./AppsPage.tsx'));
 
 const ACTIVE_WS_KEY = 'pomodoso:active_ws';
 
@@ -22,7 +24,7 @@ interface WorkspaceInfo {
   color: string;
 }
 
-export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' | 'projects' | 'habits' | 'history' | 'workspaces' }) {
+export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks' | 'projects' | 'habits' | 'history' | 'workspaces' | 'apps' }) {
   const { session, user, entitlements } = useAuth();
   useCrisp({ email: user?.email ?? session?.user.email, name: session?.user.user_metadata?.full_name as string | undefined });
   const navigate = useNavigate();
@@ -182,7 +184,12 @@ export default function Dashboard({ page = 'today' }: { page?: 'today' | 'tasks'
 
       {/* ── Main content ────────────────────────────────────────────────────────── */}
       <main className="pomo-main">
-        {activeWsId ? (
+        {/* Apps are the user's own, not a workspace's: no synced workspace needed. */}
+        {page === 'apps' ? (
+          <Suspense fallback={<div style={{ padding: '60px 0', color: 'var(--text-tert)', fontSize: 13 }}>Loading…</div>}>
+            <AppsPage />
+          </Suspense>
+        ) : activeWsId ? (
           page === 'tasks' ? (
             <TasksPage workspaceId={activeWsId} />
           ) : page === 'projects' ? (
