@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import {
@@ -21,6 +21,8 @@ import {
   importPlugin,
   installPlugin,
   setDaily,
+  applyPluginUpdate,
+  setAutoUpdate,
   uninstallPlugin,
   updatePluginSetting,
   updateRecord,
@@ -28,6 +30,7 @@ import {
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
 import { isSupported } from './supported';
 import { Browse, directoryAvailable } from './Browse';
+import { describeStep, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
@@ -53,6 +56,22 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
   }, [openApp?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const plugins = useLiveQuery(async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), []);
   const readOnly = !isSignedIn;
+  const updates = useDirectoryUpdates(plugins);
+
+  // Small (additive) updates apply on their own for apps that allow it; a
+  // breaking one always waits for the user. Each version is tried once per
+  // popup, so a failing one doesn't retry in a loop.
+  const tried = useRef(new Set<string>());
+  useEffect(() => {
+    if (readOnly || !plugins) return;
+    for (const [id, u] of updates) {
+      const p = plugins.find((x) => x.id === id);
+      const attempt = `${id}@${u.next.version}`;
+      if (!p?.autoUpdate || u.report.kind === 'breaking' || u.report.issues.length > 0 || tried.current.has(attempt)) continue;
+      tried.current.add(attempt);
+      void applyPluginUpdate(id, u.next).catch(() => {});
+    }
+  }, [updates, plugins, readOnly]);
 
   const current = screen.kind === 'app' || screen.kind === 'settings' ? plugins?.find((p) => p.id === screen.id && isSupported(p)) : undefined;
   // An app uninstalled (here or by sync) while open falls back to the list.
@@ -85,9 +104,9 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
           onSettings={() => setScreen({ kind: 'settings', id: current.id })}
         />
       ) : screen.kind === 'settings' && current ? (
-        <AppSettings plugin={current} readOnly={readOnly} onBack={() => setScreen({ kind: 'app', id: current.id })} />
+        <AppSettings plugin={current} update={updates.get(current.id)} readOnly={readOnly} onBack={() => setScreen({ kind: 'app', id: current.id })} />
       ) : (
-        <AppList plugins={plugins} timezone={timezone} weekStart={weekStart} readOnly={readOnly} onOpen={(id) => setScreen({ kind: 'app', id })} onAdd={() => setScreen({ kind: 'add' })} />
+        <AppList plugins={plugins} updates={updates} timezone={timezone} weekStart={weekStart} readOnly={readOnly} onOpen={(id) => setScreen({ kind: 'app', id })} onAdd={() => setScreen({ kind: 'add' })} />
       )}
     </div>
   );
@@ -159,8 +178,9 @@ function readFile(file: File): Promise<string> {
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
-function AppList({ plugins, timezone, weekStart, readOnly, onOpen, onAdd }: {
+function AppList({ plugins, updates, timezone, weekStart, readOnly, onOpen, onAdd }: {
   plugins: PluginRow[];
+  updates: Map<string, AvailableUpdate>;
   timezone: string;
   weekStart: number;
   readOnly: boolean;
@@ -177,7 +197,7 @@ function AppList({ plugins, timezone, weekStart, readOnly, onOpen, onAdd }: {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {plugins.map((p) => (isSupported(p)
-            ? <AppRow key={p.id} plugin={p} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} />
+            ? <AppRow key={p.id} plugin={p} hasUpdate={updates.has(p.id)} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} />
             : <UnsupportedRow key={p.id} plugin={p} />))}
         </div>
       )}
@@ -187,7 +207,7 @@ function AppList({ plugins, timezone, weekStart, readOnly, onOpen, onAdd }: {
 }
 
 /** One installed app, with its Today value as a hint when it declares one. */
-function AppRow({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow; timezone: string; weekStart: number; onOpen: () => void }) {
+function AppRow({ plugin, hasUpdate, timezone, weekStart, onOpen }: { plugin: PluginRow; hasUpdate: boolean; timezone: string; weekStart: number; onOpen: () => void }) {
   const { evaluator } = usePluginData(plugin, timezone, weekStart);
   const w = plugin.manifest.today?.widget;
   const hint = evaluator && w && 'value' in w ? `${w.label}: ${formatStat(evaluator.value(w.value), w.type === 'stat' ? w.format : 'number', new Date().toISOString())}` : plugin.manifest.description;
@@ -198,7 +218,10 @@ function AppRow({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow; ti
     >
       <PluginIcon icon={plugin.manifest.icon} name={plugin.manifest.name} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>{plugin.manifest.name}</span>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>
+          {plugin.manifest.name}
+          {hasUpdate ? <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'var(--color-accent-soft)', color: 'var(--color-accent)', verticalAlign: 'middle' }}>Update</span> : null}
+        </span>
         {hint ? <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hint}</span> : null}
       </span>
       <span style={{ color: 'var(--color-text-faint)' }}>›</span>
@@ -525,7 +548,7 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly: boolean; onBack: () => void }) {
+function AppSettings({ plugin, update, readOnly, onBack }: { plugin: PluginRow; update: AvailableUpdate | undefined; readOnly: boolean; onBack: () => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const m = plugin.manifest;
   // One key at a time, merged over the stored settings: two quick changes can't undo each other.
@@ -537,6 +560,7 @@ function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly
       <Header title={`${m.name} settings`} onBack={onBack} />
       <SettingsFields manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       <EditableOptions manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
+      {plugin.source === 'directory' ? <Updates plugin={plugin} update={update} readOnly={readOnly} /> : null}
       {m.today ? (
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
           <input type="checkbox" disabled={readOnly} checked={plugin.settings[SHOW_ON_TODAY_KEY] === true} onChange={(e) => save(SHOW_ON_TODAY_KEY, e.target.checked)} />
@@ -567,6 +591,67 @@ function AppSettings({ plugin, readOnly, onBack }: { plugin: PluginRow; readOnly
         {m.id} · v{m.version}{m.author ? ` · ${m.author}` : ''}{m.license ? ` · ${m.license}` : ''}
       </div>
     </>
+  );
+}
+
+/**
+ * A directory app's updates: the version available and what it changes,
+ * the button to apply it, and whether small updates apply on their own.
+ * A breaking update spells out what happens to the user's data first.
+ */
+function Updates({ plugin, update, readOnly }: { plugin: PluginRow; update: AvailableUpdate | undefined; readOnly: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const breaking = update?.report.kind === 'breaking';
+  const blocked = (update?.report.issues.length ?? 0) > 0;
+  const steps = update?.report.migrates ? update.next.migrate?.steps ?? [] : [];
+  return (
+    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={sectionTitle}>Updates</div>
+      {update ? (
+        <div style={{ fontSize: 11, color: 'var(--color-text)', lineHeight: 1.5, padding: '8px 10px', border: `1px solid ${breaking ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>
+            <b>Version {update.next.version}</b> is available (you have {plugin.manifest.version}).
+          </div>
+          {blocked ? (
+            <div style={{ color: 'var(--color-accent)' }}>This version can't be applied to your data, so it's skipped.</div>
+          ) : breaking ? (
+            <>
+              <div>It changes how your entries are stored:</div>
+              {steps.map((s, i) => <div key={i}>• {describeStep(s)}</div>)}
+            </>
+          ) : (
+            update.report.changes.slice(0, 5).map((c, i) => <div key={i} style={{ color: 'var(--color-text-muted)' }}>• {c.message}</div>)
+          )}
+          {error ? <div style={{ color: 'var(--color-accent)' }}>{error}</div> : null}
+          {!blocked ? (
+            <button
+              type="button" disabled={readOnly || busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  await applyPluginUpdate(plugin.id, update.next);
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              style={{ ...btn('primary'), alignSelf: 'flex-start', opacity: readOnly ? 0.5 : 1 }}
+            >
+              {breaking ? 'Update and convert my entries' : 'Update'}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>You have the latest version ({plugin.manifest.version}).</div>
+      )}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text)' }}>
+        <input type="checkbox" disabled={readOnly} checked={plugin.autoUpdate} onChange={(e) => void setAutoUpdate(plugin.id, e.target.checked)} />
+        Update automatically (small changes only)
+      </label>
+    </div>
   );
 }
 
