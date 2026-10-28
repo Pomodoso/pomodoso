@@ -4,6 +4,7 @@ name: Movieshelf
 version: 1.0.0
 icon: film
 description: Movies to watch and the ones you've seen.
+author: Pomodoso
 license: MIT
 
 collections:

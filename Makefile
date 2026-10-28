@@ -14,7 +14,7 @@ EXTENSION_ID ?=
 
 WEB_URL := http://localhost:5180
 
-.PHONY: help install up down logs db-reset backend web extension dev test
+.PHONY: help install up down logs db-reset backend web extension dev test seed-apps
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ extension: ## Extension dev build into extension/dist, rebuilt on change; talks 
 
 dev: up ## Postgres, then API, web and extension together (Ctrl-C stops all three)
 	@$(MAKE) --no-print-directory -j3 backend web extension
+
+seed-apps: ## Publish Pomodoso's own apps as the Pomodoso account (POMODOSO_APPS_EMAIL/PASSWORD; API_URL, default :8080)
+	cd shared/types && API_URL=$(or $(API_URL),http://localhost:8080) node --experimental-strip-types scripts/seed-apps.ts
 
 test: ## JS tests and backend tests
 	pnpm -r test

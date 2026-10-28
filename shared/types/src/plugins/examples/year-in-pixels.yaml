@@ -4,6 +4,7 @@ name: Year in Pixels
 version: 1.0.0
 icon: grid
 description: Color every day by how it went. You choose the states and their colors.
+author: Pomodoso
 license: MIT
 
 collections:

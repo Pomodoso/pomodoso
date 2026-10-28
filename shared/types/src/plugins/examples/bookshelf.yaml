@@ -4,6 +4,7 @@ name: Bookshelf
 version: 1.0.0
 icon: book
 description: Books you want to read, are reading and have read.
+author: Pomodoso
 license: MIT
 
 collections:

@@ -4,6 +4,7 @@ name: Quit smoking
 version: 1.0.0
 icon: no-smoking
 description: A daily limit that drops every week. Log each one and watch the trend go down.
+author: Pomodoso
 license: MIT
 
 settings:
