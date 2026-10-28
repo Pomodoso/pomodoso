@@ -20,7 +20,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
-    "gen:plugin-schema": "node --experimental-strip-types scripts/gen-plugin-schema.ts"
+    "gen:plugin-schema": "node --experimental-strip-types scripts/gen-plugin-schema.ts",
+    "gen:llms": "node --experimental-strip-types scripts/gen-llms.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
