@@ -45,6 +45,7 @@ dev: up ## Postgres, then API, web and extension together (Ctrl-C stops all thre
 	@$(MAKE) --no-print-directory -j3 backend web extension
 
 seed-apps: ## Publish Pomodoso's own apps as the Pomodoso account (POMODOSO_APPS_EMAIL/PASSWORD; API_URL, default :8080)
+	@node --experimental-strip-types -e 0 2>/dev/null || { echo "Node $$(node -v) can't run TypeScript scripts: use Node 22.6 or later (nvm use)."; exit 1; }
 	cd shared/types && API_URL=$(or $(API_URL),http://localhost:8080) node --experimental-strip-types scripts/seed-apps.ts
 
 test: ## JS tests and backend tests
