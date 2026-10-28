@@ -526,9 +526,10 @@ body {
   .lp-nav-links { display: none !important; }
 }
 
-/* Public app directory (/apps): the extension's palette, so the shared plugin
-   components (@pomodoso/ui) render here as they do in the popup. */
-.pomo-site {
+/* The extension's palette, so the shared plugin components (@pomodoso/ui)
+   render as they do in the popup: the public app pages (/apps) and the apps
+   inside the dashboard. */
+.pomo-site, .pomo-plugin-scope {
   --color-bg: #FBFAF7;
   --color-surface: #FFFFFF;
   --color-border: #E8E5DD;
@@ -549,6 +550,8 @@ body {
   --radius-md: 8px;
   --radius-lg: 10px;
   --radius-xl: 12px;
+}
+.pomo-site {
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-text);

@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, plugin_id, collection, day, occurred_at, data, created_at, updated_at\n           FROM plugin_record\n           WHERE user_id = $1 AND deleted_at IS NULL\n           ORDER BY created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "collection",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "day",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "occurred_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6564123e27fde47c45bd1d3b8d96c022b246bd6074e774511c7a9817505f9cce"
+}

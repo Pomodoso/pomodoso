@@ -112,6 +112,10 @@ async fn main() -> anyhow::Result<()> {
             post(routes::plugin_directory::publish).route_layer(auth.clone()),
         )
         .route(
+            "/plugins/installed",
+            get(routes::installed_plugins::list).route_layer(auth.clone()),
+        )
+        .route(
             "/plugins/mine",
             get(routes::plugin_directory::mine).route_layer(auth.clone()),
         )

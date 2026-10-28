@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ApiError, getDirectoryPage, getMyPlugin, myPlugins, publishPlugin, takeDownPlugin, type DirectoryListing, type DirectoryVisibility } from '@pomodoso/api';
 import {
   STARTER_PROMPT,
@@ -14,6 +14,7 @@ import {
 import { api } from '../../lib/api.ts';
 import { CHROME_STORE_URL, installInExtension } from '../../lib/extension.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
+import { InstalledApps } from './InstalledApps.tsx';
 
 // Dashboard → Apps: the apps you've published to the directory. Publish a new
 // one or a new version (checked here like the CLI does, and again by the
@@ -327,6 +328,7 @@ function AppRow({ app, onTakenDown }: { app: DirectoryListing; onTakenDown: () =
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AppsPage() {
+  const [params] = useSearchParams();
   const [mine, setMine] = useState<DirectoryListing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -343,15 +345,23 @@ export default function AppsPage() {
     <>
       <div className="pomo-page-header">
         <div>
-          <div className="pomo-eyebrow">Directory</div>
-          <h1 className="pomo-page-title">Your apps</h1>
+          <div className="pomo-eyebrow">Your extension</div>
+          <h1 className="pomo-page-title">Apps</h1>
         </div>
         <Link to="/apps" className="pomo-link-btn" style={{ fontSize: 13 }}>Browse the directory →</Link>
       </div>
 
+      <InstalledApps />
+
+      {/* An open app takes the page; publishing is for the list. */}
+      {params.get('open') ? null : (
+      <>
       {error && <p style={{ color: 'var(--accent)', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
       <div className="pomo-card" style={{ maxWidth: 720, marginBottom: 16 }}>
+        <div className="pomo-card-header">
+          <div className="pomo-card-title"><i className="ti ti-world-upload" /> Published by you</div>
+        </div>
         {mine === null && !error ? (
           <div style={{ color: 'var(--text-tert)', fontSize: 13, padding: '8px 0' }}>Loading…</div>
         ) : mine?.length === 0 ? (
@@ -365,6 +375,8 @@ export default function AppsPage() {
       </div>
 
       <PublishPanel mine={mine ?? []} onPublished={refresh} />
+      </>
+      )}
     </>
   );
 }
