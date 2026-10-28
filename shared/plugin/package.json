@@ -4,21 +4,45 @@
   "description": "Validate Pomodoso plugin files and classify updates, with the same code Pomodoso runs.",
   "type": "module",
   "license": "MIT",
+  "author": "Pomodoso",
+  "homepage": "https://pomodoso.com/apps/build",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pomodoso/pomodoso.git",
+    "directory": "shared/plugin"
+  },
+  "bugs": "https://github.com/Pomodoso/pomodoso/issues",
+  "keywords": [
+    "pomodoso",
+    "plugin",
+    "validator",
+    "cli",
+    "yaml",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "pomodoso-plugin": "./dist/cli.cjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --banner:js=\"#!/usr/bin/env node\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'"
+    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
+    "prepublishOnly": "pnpm build && pnpm test"
   },
   "devDependencies": {
     "@pomodoso/types": "workspace:*",
     "@types/node": "^25.9.1",
     "esbuild": "0.25.12",
     "typescript": "^5.5.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
