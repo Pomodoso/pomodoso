@@ -5,6 +5,7 @@ import { reportLines } from '@pomodoso/types/plugins';
 
 import { db, localDate } from '../db';
 import { evaluatorFor } from '../plugins';
+import { isSupported } from '../popup/apps/supported';
 import { formatReport, type ReportFormat } from '../reportFormat.ts';
 import { buildReport, formatDuration, rangeStartDate, type ReportRange } from '../reports.ts';
 
@@ -64,7 +65,7 @@ export function ReportPage(): React.JSX.Element {
     const on = range === 'today' ? 'daily_report' : range === 'week' ? 'weekly_report' : null;
     if (!on || !signedIn) return [];
     const now = new Date().toISOString();
-    return plugins.flatMap(p => {
+    return plugins.filter(isSupported).flatMap(p => {
       if (!(p.manifest.hooks ?? []).some(h => h.on === on)) return [];
       const ev = evaluatorFor(p, pluginRecords.filter(r => r.pluginId === p.id), { timezone, weekStart });
       return reportLines(p.manifest, on, ev, now);

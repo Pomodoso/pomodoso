@@ -9,6 +9,7 @@ import {
   applyRules,
   createEvaluator,
   dailyRecordId,
+  PLUGIN_VALUES_MAX_BYTES,
   parsePluginExport,
   parsePluginFile,
   serializePluginExport,
@@ -97,8 +98,20 @@ export async function updatePluginSetting(pluginId: string, key: string, value: 
   await db.transaction('rw', db.plugins, async () => {
     const plugin = await db.plugins.get(pluginId);
     if (!plugin || plugin.deletedAt) return;
-    await db.plugins.update(pluginId, { settings: { ...plugin.settings, [key]: value }, updatedAt: now(), syncedAt: undefined });
+    const settings = withinLimit({ ...plugin.settings, [key]: value }, 'These settings');
+    await db.plugins.update(pluginId, { settings, updatedAt: now(), syncedAt: undefined });
   });
+}
+
+/**
+ * `values` if it serializes within PLUGIN_VALUES_MAX_BYTES, else throws. The
+ * server drops anything larger, so it must never be saved locally either.
+ */
+function withinLimit<T extends Record<string, unknown>>(values: T, what: string): T {
+  if (new TextEncoder().encode(JSON.stringify(values)).length > PLUGIN_VALUES_MAX_BYTES) {
+    throw new Error(`${what} are too large to save (limit ${PLUGIN_VALUES_MAX_BYTES / 1024} KB)`);
+  }
+  return values;
 }
 
 // ─── Records ─────────────────────────────────────────────────────────────────
@@ -147,7 +160,7 @@ export async function addRecord(
     updatedAt: ts,
   };
   return db.transaction('rw', db.pluginRecords, async () => {
-    row.data = await withRules(plugin, env, undefined, row);
+    row.data = withinLimit(await withRules(plugin, env, undefined, row), 'These values');
     await db.pluginRecords.add(row);
     return row;
   });
@@ -175,7 +188,7 @@ export async function setDaily(plugin: PluginRow, collection: string, day: strin
       updatedAt: ts,
       deletedAt: null,
     };
-    row.data = await withRules(plugin, env, prev, row);
+    row.data = withinLimit(await withRules(plugin, env, prev, row), 'These values');
     await db.pluginRecords.put(row);
     return row;
   });
@@ -186,7 +199,7 @@ export async function updateRecord(plugin: PluginRow, id: string, data: Record<s
     const existing = await db.pluginRecords.get(id);
     if (!existing || existing.deletedAt) return;
     const ts = now();
-    const next = await withRules(plugin, env, existing, { ...existing, data, updatedAt: ts });
+    const next = withinLimit(await withRules(plugin, env, existing, { ...existing, data, updatedAt: ts }), 'These values');
     await db.pluginRecords.update(id, { data: next, updatedAt: ts, syncedAt: undefined });
   });
 }

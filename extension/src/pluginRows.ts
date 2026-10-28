@@ -3,6 +3,9 @@
 // from plugins.ts so they run in a plain Node test without IndexedDB.
 
 import type { PluginExport, PluginRecord } from '@pomodoso/types/plugins';
+// The ids subpath, not the plugins entry: this module runs in the sync
+// engine, which must not pull the YAML parser and zod into the popup.
+import { dailyRecordId } from '@pomodoso/types/plugins/ids';
 
 import type { PluginRecordRow, PluginRow } from './db.ts';
 
@@ -86,7 +89,7 @@ export function pluginRecordSyncData(r: PluginRecordRow): Record<string, unknown
  * `…T10:00:00Z`, the client `…T10:00:00.000Z`; they sort as text (list order
  * by created_at), so both must have one shape.
  */
-function iso(v: unknown, fallback: string): string {
+export function iso(v: unknown, fallback: string): string {
   const t = typeof v === 'string' ? Date.parse(v) : NaN;
   return Number.isNaN(t) ? fallback : new Date(t).toISOString();
 }
@@ -130,4 +133,59 @@ export function pluginRecordFromSync(meta: RemoteMeta, data: Record<string, unkn
     syncedAt: meta.updatedAt,
     ...(meta.deletedAt ? { deletedAt: meta.deletedAt } : {}),
   };
+}
+
+// ─── Duplicate installs ───────────────────────────────────────────────────────
+
+/**
+ * Two devices can install the same plugin while offline: after sync there
+ * are two live installs of one slug, each with its own records. This plans
+ * folding them into one. Every device computes the same plan, so they
+ * converge without coordinating:
+ *
+ * - the keeper is the earliest install (createdAt, then id);
+ * - the others are tombstoned, and their records move to the keeper — event
+ *   and item records keep their id; daily records take the keeper's daily id
+ *   for that day (and when the keeper already has that day, the more
+ *   recently edited one wins); their old rows are tombstoned.
+ *
+ * Returns the rows to write, all dirty so they push. Empty when nothing is
+ * duplicated.
+ */
+export function planDuplicateMerge(
+  plugins: readonly PluginRow[],
+  records: readonly PluginRecordRow[],
+  ts: string,
+): { plugins: PluginRow[]; records: PluginRecordRow[] } {
+  const bySlug = new Map<string, PluginRow[]>();
+  for (const p of plugins) {
+    if (p.deletedAt) continue;
+    bySlug.set(p.slug, [...(bySlug.get(p.slug) ?? []), p]);
+  }
+  const outPlugins: PluginRow[] = [];
+  const outRecords = new Map<string, PluginRecordRow>();
+  const byId = new Map(records.map((r) => [r.id, r]));
+  const dirty = { updatedAt: ts, syncedAt: undefined };
+
+  for (const group of bySlug.values()) {
+    if (group.length < 2) continue;
+    const [keeper, ...losers] = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    for (const loser of losers) {
+      outPlugins.push({ ...loser, ...dirty, deletedAt: ts });
+      for (const r of records) {
+        if (r.pluginId !== loser.id || r.deletedAt) continue;
+        if (r.day === undefined) {
+          outRecords.set(r.id, { ...r, ...dirty, pluginId: keeper!.id });
+          continue;
+        }
+        const id = dailyRecordId(keeper!.id, r.collection, r.day);
+        const current = outRecords.get(id) ?? byId.get(id);
+        if (!current || current.deletedAt || current.updatedAt < r.updatedAt) {
+          outRecords.set(id, { ...r, ...dirty, id, pluginId: keeper!.id, deletedAt: null });
+        }
+        outRecords.set(r.id, { ...r, ...dirty, deletedAt: ts });
+      }
+    }
+  }
+  return { plugins: outPlugins, records: [...outRecords.values()] };
 }

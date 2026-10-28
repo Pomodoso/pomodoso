@@ -7,6 +7,13 @@
 -- client-generated, and a global key would let one account claim an id it saw
 -- in a shared profile or an exported plugin file.
 --
+-- Two clocks, kept apart. `updated_at` is the client's edit time and only
+-- decides last-write-wins, so it is never overwritten by the server (these
+-- tables don't use set_updated_at, which stamps NOW() over it).
+-- `server_updated_at` is when the row last changed on the server, written by
+-- the trigger below; incremental pulls filter on it, so an offline edit
+-- uploaded late still reaches devices that pulled in between.
+--
 -- The manifest is stored as the client validated it (the same zod schema runs
 -- on every client). The server doesn't interpret it: it only stores and
 -- returns it, so a plugin is data here, never code.
@@ -33,17 +40,26 @@ CREATE TABLE IF NOT EXISTS plugin (
   installed_on         DATE        NOT NULL,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  server_updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at           TIMESTAMPTZ,
   synced_at            TIMESTAMPTZ,
   PRIMARY KEY (user_id, id)
 );
 
-CREATE INDEX IF NOT EXISTS plugin_user_idx ON plugin(user_id);
+CREATE OR REPLACE FUNCTION set_server_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.server_updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS set_updated_at_plugin ON plugin;
-CREATE TRIGGER set_updated_at_plugin
-  BEFORE UPDATE ON plugin
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE INDEX IF NOT EXISTS plugin_pull_idx ON plugin(user_id, server_updated_at);
+
+DROP TRIGGER IF EXISTS set_server_updated_at_plugin ON plugin;
+CREATE TRIGGER set_server_updated_at_plugin
+  BEFORE INSERT OR UPDATE ON plugin
+  FOR EACH ROW EXECUTE FUNCTION set_server_updated_at();
 
 -- One record of one of a plugin's collections: a cigarette, a book, a day's
 -- state. Daily records have a deterministic id (UUIDv5 of plugin, collection
@@ -61,6 +77,7 @@ CREATE TABLE IF NOT EXISTS plugin_record (
   data        JSONB       NOT NULL DEFAULT '{}'::jsonb,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  server_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at  TIMESTAMPTZ,
   synced_at   TIMESTAMPTZ,
   PRIMARY KEY (user_id, id),
@@ -68,10 +85,10 @@ CREATE TABLE IF NOT EXISTS plugin_record (
   FOREIGN KEY (user_id, plugin_id) REFERENCES plugin(user_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS plugin_record_user_idx ON plugin_record(user_id, updated_at);
+CREATE INDEX IF NOT EXISTS plugin_record_pull_idx ON plugin_record(user_id, server_updated_at);
 CREATE INDEX IF NOT EXISTS plugin_record_plugin_idx ON plugin_record(user_id, plugin_id, collection);
 
-DROP TRIGGER IF EXISTS set_updated_at_plugin_record ON plugin_record;
-CREATE TRIGGER set_updated_at_plugin_record
-  BEFORE UPDATE ON plugin_record
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+DROP TRIGGER IF EXISTS set_server_updated_at_plugin_record ON plugin_record;
+CREATE TRIGGER set_server_updated_at_plugin_record
+  BEFORE INSERT OR UPDATE ON plugin_record
+  FOR EACH ROW EXECUTE FUNCTION set_server_updated_at();

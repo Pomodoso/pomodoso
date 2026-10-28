@@ -26,6 +26,7 @@ import {
   updateRecord,
 } from '../../plugins';
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
+import { isSupported } from './supported';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
@@ -52,7 +53,7 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
   const plugins = useLiveQuery(async () => (await db.plugins.toArray()).filter((p) => !p.deletedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), []);
   const readOnly = !isSignedIn;
 
-  const current = screen.kind === 'app' || screen.kind === 'settings' ? plugins?.find((p) => p.id === screen.id) : undefined;
+  const current = screen.kind === 'app' || screen.kind === 'settings' ? plugins?.find((p) => p.id === screen.id && isSupported(p)) : undefined;
   // An app uninstalled (here or by sync) while open falls back to the list.
   // Asks the table rather than trusting `plugins`: right after an install the
   // live query hasn't caught up yet and the new app would look gone.
@@ -174,7 +175,9 @@ function AppList({ plugins, timezone, weekStart, readOnly, onOpen, onAdd }: {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {plugins.map((p) => <AppRow key={p.id} plugin={p} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} />)}
+          {plugins.map((p) => (isSupported(p)
+            ? <AppRow key={p.id} plugin={p} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} />
+            : <UnsupportedRow key={p.id} plugin={p} />))}
         </div>
       )}
       <button type="button" disabled={readOnly} onClick={onAdd} style={{ ...btn('secondary'), opacity: readOnly ? 0.5 : 1 }}>+ Add an app</button>
@@ -199,6 +202,24 @@ function AppRow({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow; ti
       </span>
       <span style={{ color: 'var(--color-text-faint)' }}>›</span>
     </button>
+  );
+}
+
+/**
+ * An app synced from another device whose file this version can't read
+ * (a newer format, or a damaged one). Its data is kept; it opens once this
+ * Pomodoso is updated.
+ */
+function UnsupportedRow({ plugin }: { plugin: PluginRow }) {
+  const name = typeof plugin.manifest?.name === 'string' ? plugin.manifest.name : plugin.slug;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--color-surface)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', opacity: 0.75 }}>
+      <PluginIcon name={name} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>{name}</span>
+        <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)' }}>Needs a newer version of Pomodoso to open</span>
+      </span>
+    </div>
   );
 }
 

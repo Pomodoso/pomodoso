@@ -854,7 +854,9 @@ async fn push_achievement(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity)
 /// Largest manifest the server stores, in serialized bytes: the client's own
 /// file limit (PLUGIN_FILE_MAX_BYTES), so anything a client accepted fits.
 const PLUGIN_MANIFEST_MAX_BYTES: usize = 256 * 1024;
-/// Settings and a record's data are small maps of the user's values.
+/// Settings and a record's data are small maps of the user's values. The
+/// client refuses to save past the same limit (PLUGIN_VALUES_MAX_BYTES in
+/// @pomodoso/types), so a client never stores what the server would drop.
 const PLUGIN_VALUES_MAX_BYTES: usize = 64 * 1024;
 
 /// When the client created the row. It matters for plugins: lists sort by it
@@ -895,8 +897,12 @@ async fn push_plugin(state: &AppState, user_id: uuid::Uuid, e: &SyncEntity) -> R
     let Some(manifest) = bounded_object(&e.data["manifest"], PLUGIN_MANIFEST_MAX_BYTES) else {
         return Ok(());
     };
-    let settings = bounded_object(&e.data["settings"], PLUGIN_VALUES_MAX_BYTES)
-        .unwrap_or_else(|| serde_json::json!({}));
+    // Oversized settings reject the row rather than becoming `{}`: the client
+    // enforces the same limit, so this only stops a misbehaving one, and
+    // must never wipe a user's values.
+    let Some(settings) = bounded_object(&e.data["settings"], PLUGIN_VALUES_MAX_BYTES) else {
+        return Ok(());
+    };
     let Some(installed_on) = e.data["installed_on"]
         .as_str()
         .and_then(|s| s.parse::<NaiveDate>().ok())
@@ -1097,7 +1103,14 @@ pub async fn pull(
     require_sync_entitlement(&state, auth.id).await?;
 
     let mut entities: Vec<SyncEntity> = Vec::new();
-    let server_time = Utc::now();
+    // The cursor comes from the database's clock, not this process's: the
+    // rows it's compared against are stamped by the database (NOW() in the
+    // updated_at / server_updated_at triggers). An app server running ahead
+    // of the database would otherwise hand out a cursor past rows written a
+    // moment earlier, and the next pull would skip them.
+    let server_time: DateTime<Utc> = sqlx::query_scalar!(r#"SELECT NOW() AS "now!""#)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Workspaces — everything the user is a member of (changed since `since`)
     let workspaces = sqlx::query!(
@@ -1209,7 +1222,7 @@ pub async fn pull(
         r#"SELECT id, slug, source, directory_version_id, manifest, settings, enabled,
                   auto_update, installed_on, created_at, updated_at, deleted_at
            FROM plugin
-           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR server_updated_at > $2)"#,
         auth.id,
         q.since,
     )
@@ -1237,7 +1250,7 @@ pub async fn pull(
     for row in sqlx::query!(
         r#"SELECT id, plugin_id, collection, day, occurred_at, data, created_at, updated_at, deleted_at
            FROM plugin_record
-           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)"#,
+           WHERE user_id = $1 AND ($2::timestamptz IS NULL OR server_updated_at > $2)"#,
         auth.id,
         q.since,
     )
