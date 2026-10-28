@@ -1,32 +1,34 @@
 # Pomodoso — Claude Code Instructions
 
-Read `pomodoso-spec.md` for the complete product and technical context. This file contains operational rules and conventions for working on the codebase.
+Read `docs/pomodoso-spec-en.md` for the complete product and technical context. This file contains operational rules and conventions for working on the codebase.
 
 ## Stack overview
 
 - **Backend:** Rust + Axum + sqlx + PostgreSQL
-- **Frontend (web app):** React + Vite + TypeScript
+- **Auth:** Supabase. Each client owns its Supabase client and session (`web/src/lib/supabase.ts`, `extension/src/supabaseClient.ts`, `mobile/hooks/useAuth.ts`); `@pomodoso/api` holds the shared auth helpers (sign in, sign up, magic link, reset)
+- **Frontend (web):** React + Vite (`vite-react-ssg`) + TypeScript — public site and dashboard
 - **Frontend (extension):** Chrome MV3 + React + TypeScript
-- **Local storage on clients:** IndexedDB via Dexie.js
-- **Monorepo:** pnpm workspaces, optionally Turborepo for build orchestration
+- **Mobile:** Expo + React Native + TypeScript
+- **Local storage on clients:** extension → IndexedDB via Dexie.js; mobile → SQLite via `expo-sqlite` + Drizzle
+- **Monorepo:** pnpm workspaces
 - **Real-time:** WebSockets between clients and backend
 
 ## Repository layout
 
 ```
 pomodoso/
-├── apps/
-│   ├── backend/         # Rust, self-contained Cargo project
-│   ├── web/             # React + Vite web app
-│   └── extension/       # Chrome MV3 extension
-├── packages/
-│   ├── shared/          # TS types, sync engine, validation schemas
-│   ├── ui/              # Shared React components
-│   └── api-client/      # HTTP + WS client
-├── docs/
+├── backend/             # Rust, self-contained Cargo project (migrations in backend/migrations)
+├── web/                 # React + Vite web app (landing, pricing, dashboard)
+├── extension/           # Chrome MV3 extension
+├── mobile/              # Expo app (db/ holds the Drizzle schema)
+├── api/                 # @pomodoso/api — HTTP + WS client, Supabase client
+├── shared/
+│   ├── types/           # @pomodoso/types — TS types, shared rules, validation
+│   └── ui/              # @pomodoso/ui — shared React components
+├── docs/                # Local only: gitignored on purpose (the repo is public). Never commit it.
+│   ├── pomodoso-spec-en.md
 │   ├── decisions/       # ADRs (architectural decision records)
 │   └── mockups/
-├── infra/
 └── .github/workflows/
 ```
 
@@ -36,7 +38,7 @@ pomodoso/
 
 - `strict: true` always. No `any` unless explicitly justified with a comment.
 - Prefer named exports over default exports for shared code.
-- Types live in `packages/shared/src/types`. Apps consume from there.
+- Types live in `shared/types/src/types` (`@pomodoso/types`). Apps consume from there.
 
 ### Rust
 
@@ -86,10 +88,10 @@ pomodoso/
 
 - **Don't** add new top-level dependencies without checking they're necessary. Prefer standard library and existing deps.
 - **Don't** write generic abstractions before duplication appears. WET (Write Everything Twice) before refactoring.
-- **Don't** mix Rust and Node tooling in the same directory. Backend lives in `apps/backend` and uses Cargo only.
+- **Don't** mix Rust and Node tooling in the same directory. Backend lives in `backend/` and uses Cargo only.
 - **Don't** introduce a state management library (Redux, Zustand, etc.) without strong justification. React state + TanStack Query is the default.
-- **Don't** put business logic in components. Components consume hooks; hooks consume `@pomodoso/shared`.
-- **Don't** call third-party APIs from the client (extension or web app). All external API calls go through the backend.
+- **Don't** put business logic in components. Components consume hooks; hooks consume `@pomodoso/types`.
+- **Don't** call third-party APIs from the client (extension, web or mobile); new external calls go through the backend. The one exception today is Google Calendar: the extension (`extension/src/calendarSync.ts`) and mobile (`mobile/utils/googleCalendar.ts`) call Google directly with the user's own OAuth token.
 
 ## Extension: IndexedDB schema changes
 
@@ -104,8 +106,8 @@ The extension uses Dexie.js (`extension/src/db.ts`). When adding or removing a t
 When implementing a feature from the spec:
 
 1. **Read the relevant spec section first.** Don't infer from the code; the spec is source of truth.
-2. **Update the schema before the code.** New tables go in `apps/backend/migrations/` with a numbered SQL file.
-3. **Define types in `packages/shared` first.** Both apps consume from there.
+2. **Update the schema before the code.** New tables go in `backend/migrations/` with a numbered SQL file.
+3. **Define types in `shared/types` first.** Every client (extension, web, mobile) consumes from there.
 4. **Backend endpoint before frontend integration.** Get the API working with `curl` before wiring UI.
 5. **Add to entitlements if it's a paid feature.** Default to `false` for the free tier.
 6. **Test the sync path.** Any new entity must round-trip through push/pull correctly.
@@ -134,21 +136,29 @@ The product is built in three phases (spec section 5):
 # Install all dependencies
 pnpm install
 
-# Run backend (from apps/backend)
-cd apps/backend && cargo run
+# Run backend
+cd backend && cargo run
 
 # Run web app dev server
 pnpm --filter web dev
 
+# Run extension dev build
+pnpm dev:extension
+
 # Build extension for side-loading
 pnpm --filter extension build
 
+# Run mobile app
+pnpm --filter mobile start
+
 # Run all tests
-pnpm test                  # frontend
-cd apps/backend && cargo test  # backend
+pnpm -r test             # TS packages (shared/types, extension)
+pnpm typecheck           # workspaces with a typecheck script (not web)
+pnpm --filter web exec tsc -b   # web (also what its build runs)
+cd backend && cargo test  # backend
 
 # Database migrations
-cd apps/backend && sqlx migrate run
+cd backend && sqlx migrate run
 ```
 
 ## When in doubt
@@ -160,8 +170,8 @@ cd apps/backend && sqlx migrate run
 
 ## Spec versioning
 
-The spec (`pomodoso-spec.md`) is the source of truth. When you make a decision that contradicts or extends the spec:
+The spec (`docs/pomodoso-spec-en.md`) is the source of truth. When you make a decision that contradicts or extends the spec:
 
-1. Update the spec in the same PR.
+1. Update the spec alongside the change. It lives in `docs/`, which is local only (gitignored, never committed), so the spec update stays on your machine and the PR says what changed.
 2. Bump the version in the spec header.
 3. Add a line to the spec changelog explaining what changed.
