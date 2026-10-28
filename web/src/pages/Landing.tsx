@@ -261,6 +261,12 @@ function FeatureCarousel() {
 
 const APP_EXAMPLES = ['Water', 'Reading list', 'Year in pixels', 'Quit smoking', 'Workouts', 'Sleep', 'Gratitude journal', 'Movies to watch']
 
+const APP_STEPS = [
+  { n: '01', title: 'Create it', desc: 'Describe what you want to track to your AI assistant, or pick one from the directory.' },
+  { n: '02', title: 'Make it yours', desc: 'Ask for a new field, a chart or a goal and paste the new version. Your entries carry over.' },
+  { n: '03', title: 'Share it', desc: 'Publish it to the directory so anyone can install and remix it, or keep it private.' },
+]
+
 const APP_HOOKS = [
   { icon: 'ti-layout-dashboard', title: 'On your Today tab', desc: 'A counter, a quick pick or a number, one tap away from your timer.' },
   { icon: 'ti-coffee', title: 'Asks during breaks', desc: '“Did you stretch?” One question per break, answered in a tap.' },
@@ -280,8 +286,18 @@ function Apps() {
             <span style={{ color: ACCENT }}>Just describe it.</span>
           </h2>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', maxWidth: 560, margin: '0 auto', lineHeight: 1.7 }}>
-            Ask ChatGPT, Claude or any AI assistant for the tracker you want. Paste what it writes into Pomodoso and it becomes an app, right next to your timer. Or install one from the directory.
+            Ask ChatGPT, Claude or any AI assistant for the tracker you want. Paste what it writes into Pomodoso and it becomes an app, right next to your timer. Change it whenever you like, and share it with everyone.
           </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10, marginBottom: 12 }}>
+          {APP_STEPS.map(s => (
+            <div key={s.n} style={{ ...card, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: ACCENT, fontFamily: 'monospace', marginBottom: 8, letterSpacing: '0.08em' }}>{s.n}</div>
+              <div style={{ fontSize: 14, fontWeight: 650, color: '#fff', marginBottom: 5 }}>{s.title}</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.42)', lineHeight: 1.6 }}>{s.desc}</div>
+            </div>
+          ))}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, alignItems: 'stretch' }}>
