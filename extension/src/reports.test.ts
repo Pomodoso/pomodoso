@@ -235,3 +235,12 @@ test('a title containing a pipe cannot break the markdown table', () => {
   const structural = row.replace(/\\\|/g, '').split('|').length - 1;
   assert.equal(structural, 5, 'a raw pipe in the title would add a phantom column');
 });
+
+test('app report lines go in their own section, in both formats', () => {
+  const apps = ['Cigarettes: 61 this week (-12% vs last week)'];
+  const md = formatReport(SAMPLE, 'markdown', apps);
+  assert.ok(md.endsWith('### Apps\n\n- Cigarettes: 61 this week (-12% vs last week)'), md);
+  const slack = formatReport(SAMPLE, 'slack', apps);
+  assert.ok(slack.endsWith('*Apps*\n• Cigarettes: 61 this week (-12% vs last week)'), slack);
+  assert.ok(!formatReport(SAMPLE, 'markdown').includes('Apps'));
+});

@@ -127,6 +127,25 @@ export function applyRules(
   return out;
 }
 
+// ─── Reports ─────────────────────────────────────────────────────────────────
+
+/**
+ * How a `{$name}` reads inside a template. A `delta` is a fraction, so it
+ * reads as a signed percent ("-12%"); everything else as a plain value.
+ */
+export function templateFormat(manifest: PluginManifest, now: string): (v: PluginValue, name: string) => string {
+  return (v, name) => {
+    const expr = manifest.computed?.[name];
+    return formatStat(v, expr && 'delta' in expr ? 'percent' : undefined, now);
+  };
+}
+
+/** A plugin's lines for a report: each `daily_report` / `weekly_report` hook's template, filled in. */
+export function reportLines(manifest: PluginManifest, on: 'daily_report' | 'weekly_report', evaluator: PluginEvaluator, now: string): string[] {
+  const format = templateFormat(manifest, now);
+  return (manifest.hooks ?? []).flatMap((h) => ('line' in h && h.on === on ? [evaluator.template(h.line, format)] : []));
+}
+
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
 function plural(n: number, one: string, many: string): string {

@@ -4,6 +4,7 @@ import {
   fieldOptions,
   formatStat,
   initialRecordData,
+  templateFormat,
   type PluginEvaluator,
   type PluginManifest,
   type PluginValue,
@@ -36,7 +37,7 @@ export function TodayWidget(props: TodayWidgetProps) {
   const { manifest, evaluator, now } = props;
   const w = manifest.today?.widget;
   if (!w) return null;
-  const label = evaluator.template(w.label, (v) => formatStat(v, undefined, now));
+  const label = evaluator.template(w.label, templateFormat(manifest, now));
 
   switch (w.type) {
     case 'mini-counter': {

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
+import { reportLines } from '@pomodoso/types/plugins';
+
 import { db, localDate } from '../db';
+import { evaluatorFor } from '../plugins';
 import { formatReport, type ReportFormat } from '../reportFormat.ts';
 import { buildReport, formatDuration, rangeStartDate, type ReportRange } from '../reports.ts';
 
@@ -52,7 +55,23 @@ export function ReportPage(): React.JSX.Element {
     return buildReport({ tasks: inWs(tasks), projects, meetings: inWs(meetings), range, from, to });
   }, [tasks, projects, meetings, range, timezone, weekStart, activeWsId]);
 
-  const text = useMemo(() => formatReport(report, format), [report, format]);
+  // Lines from the user's apps: daily_report hooks on Today, weekly_report on
+  // This week. Signed out, app hooks are off (plugins-plan §11).
+  const signedIn = useSetting<unknown>('auth_session', null) !== null;
+  const plugins = useLiveQuery(() => db.plugins.filter(p => !p.deletedAt && p.enabled).sortBy('createdAt')) ?? [];
+  const pluginRecords = useLiveQuery(() => db.pluginRecords.filter(r => !r.deletedAt).toArray()) ?? [];
+  const appLines = useMemo(() => {
+    const on = range === 'today' ? 'daily_report' : range === 'week' ? 'weekly_report' : null;
+    if (!on || !signedIn) return [];
+    const now = new Date().toISOString();
+    return plugins.flatMap(p => {
+      if (!(p.manifest.hooks ?? []).some(h => h.on === on)) return [];
+      const ev = evaluatorFor(p, pluginRecords.filter(r => r.pluginId === p.id), { timezone, weekStart });
+      return reportLines(p.manifest, on, ev, now);
+    });
+  }, [plugins, pluginRecords, range, signedIn, timezone, weekStart]);
+
+  const text = useMemo(() => formatReport(report, format, appLines), [report, format, appLines]);
 
   // Reset on any change to what's being copied, so the confirmation can't
   // linger next to a payload it no longer describes.
@@ -135,6 +154,14 @@ export function ReportPage(): React.JSX.Element {
             ))}
           </Section>
         </>
+      )}
+
+      {appLines.length > 0 && (
+        <Section title="Apps">
+          {appLines.map((l, i) => (
+            <p key={i} style={{ fontSize: 13, margin: '0 0 6px' }}>{l}</p>
+          ))}
+        </Section>
       )}
 
       <Section title="Export">

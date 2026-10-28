@@ -42,12 +42,12 @@ function cell(value: string): string {
   return value.replace(/\|/g, '\\|');
 }
 
-function toMarkdown(report: ReportModel): string {
+function toMarkdown(report: ReportModel, apps: readonly string[]): string {
   const out: string[] = [`## Pomodoso — ${rangeLabel(report)}`, '', headline(report), ''];
 
   if (report.lines.length === 0) {
     out.push('_No time logged in this range._');
-    return out.join('\n');
+    return [...out, ...markdownApps(apps)].join('\n');
   }
 
   // Skipped for a single-day report: one project heading over the whole list
@@ -66,15 +66,24 @@ function toMarkdown(report: ReportModel): string {
   for (const line of report.lines) {
     out.push(`| ${cell(lineLabel(line))} | ${line.status} | ${formatDuration(line.focusSeconds)} | ${line.pomos} |`);
   }
-  return out.join('\n');
+  return [...out, ...markdownApps(apps)].join('\n');
 }
 
-function toSlack(report: ReportModel): string {
+/** Lines the user's apps add through their report hooks, after the work. */
+function markdownApps(apps: readonly string[]): string[] {
+  return apps.length === 0 ? [] : ['', '### Apps', '', ...apps.map((l) => `- ${l}`)];
+}
+
+function slackApps(apps: readonly string[]): string[] {
+  return apps.length === 0 ? [] : ['', '*Apps*', ...apps.map((l) => `• ${l}`)];
+}
+
+function toSlack(report: ReportModel, apps: readonly string[]): string {
   const out: string[] = [`*Pomodoso — ${rangeLabel(report)}*`, headline(report), ''];
 
   if (report.lines.length === 0) {
     out.push('_No time logged in this range._');
-    return out.join('\n');
+    return [...out, ...slackApps(apps)].join('\n');
   }
 
   if (report.range !== 'today' && report.byProject.length > 0) {
@@ -89,9 +98,10 @@ function toSlack(report: ReportModel): string {
   for (const line of report.lines) {
     out.push(`• ${lineLabel(line)} — ${formatDuration(line.focusSeconds)} · ${line.status}`);
   }
-  return out.join('\n');
+  return [...out, ...slackApps(apps)].join('\n');
 }
 
-export function formatReport(report: ReportModel, format: ReportFormat): string {
-  return format === 'slack' ? toSlack(report) : toMarkdown(report);
+/** `apps`: lines from the user's apps (report hooks), already filled in. */
+export function formatReport(report: ReportModel, format: ReportFormat, apps: readonly string[] = []): string {
+  return format === 'slack' ? toSlack(report, apps) : toMarkdown(report, apps);
 }

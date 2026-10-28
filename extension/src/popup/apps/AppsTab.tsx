@@ -274,6 +274,8 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
 }) {
   const [settings, setSettings] = useState<Record<string, unknown>>(() => defaultSettings(manifest));
   const [showOnToday, setShowOnToday] = useState(manifest.today?.default_on ?? false);
+  const prompts = (manifest.hooks ?? []).flatMap((h) => ('ask' in h ? [h.ask] : []));
+  const reports = (manifest.hooks ?? []).filter((h) => !('ask' in h)).length;
   const [issues, setIssues] = useState<PluginIssue[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -294,6 +296,8 @@ function InstallPreview({ text, manifest, timezone, readOnly, onBack, onInstalle
         <div style={sectionTitle}>What it adds</div>
         <div>• {manifest.views.length === 1 ? 'A screen' : `${manifest.views.length} screens`} in Apps</div>
         {manifest.today ? <div>• A widget for Today: “{manifest.today.widget.label}”</div> : null}
+        {prompts.map((q) => <div key={q}>• Asks: “{q}”</div>)}
+        {reports > 0 ? <div>• Adds a line to your reports</div> : null}
         <div>• Stores: {manifest.collections.map((c) => c.key.replace(/_/g, ' ')).join(', ')} — only in this browser{' '}(and your account, with sync)</div>
         <div style={{ color: 'var(--color-text-faint)', marginTop: 4 }}>Apps only see their own data. They can't read your tasks or run code.</div>
       </div>

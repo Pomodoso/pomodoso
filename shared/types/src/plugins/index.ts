@@ -14,4 +14,4 @@ export * from './manifest.ts';
 export { applyMigration, type MigrationResult } from './migrate.ts';
 export { parsePluginFile, validatePluginData, type PluginParseResult } from './parse.ts';
 export { addDays, localDayOf } from './dates.ts';
-export { applyRules, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, showsOnToday, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';
+export { applyRules, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, templateFormat, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';

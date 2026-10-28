@@ -124,15 +124,24 @@ async function withRules(plugin: PluginRow, env: PluginEnv, prev: PluginRecordRo
   });
 }
 
-/** Adds a record to an event or item collection. Events happen now. */
-export async function addRecord(plugin: PluginRow, collection: string, data: Record<string, unknown>, env: PluginEnv): Promise<PluginRecordRow> {
+/**
+ * Adds a record to an event or item collection. Events happen now, unless
+ * `occurredAt` says otherwise (an answer about yesterday counts yesterday).
+ */
+export async function addRecord(
+  plugin: PluginRow,
+  collection: string,
+  data: Record<string, unknown>,
+  env: PluginEnv,
+  opts: { occurredAt?: string } = {},
+): Promise<PluginRecordRow> {
   const ts = now();
   const kind = plugin.manifest.collections.find((c) => c.key === collection)?.kind;
   const row: PluginRecordRow = {
     id: crypto.randomUUID(),
     pluginId: plugin.id,
     collection,
-    ...(kind === 'event' ? { occurredAt: ts } : {}),
+    ...(kind === 'event' ? { occurredAt: opts.occurredAt ?? ts } : {}),
     data,
     createdAt: ts,
     updatedAt: ts,
