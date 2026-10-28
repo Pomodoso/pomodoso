@@ -5,6 +5,22 @@ import { useCrisp } from '../lib/useCrisp.ts'
 import { Seo } from '../seo.tsx'
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/pomodoso/kloaflkoffpkpldhaipegeabhhkijhbj'
+const EDGE_URL = 'https://microsoftedge.microsoft.com/addons/detail/efkjbpejobbkcngnabdmnoeabhaajblm'
+
+type Store = { url: string; browser: 'Chrome' | 'Edge' }
+const CHROME_STORE: Store = { url: CHROME_URL, browser: 'Chrome' }
+const EDGE_STORE: Store = { url: EDGE_URL, browser: 'Edge' }
+
+// Chrome by default (that's what gets prerendered); Edge visitors are switched
+// after mount so the prerendered HTML and the first client render match.
+function useStore(): Store {
+  const [store, setStore] = useState(CHROME_STORE)
+  useEffect(() => {
+    if (navigator.userAgent.includes('Edg/')) setStore(EDGE_STORE)
+  }, [])
+  return store
+}
+
 const ACCENT = '#f97316'
 const CONTACT = 'hello@pomodoso.com'
 
@@ -28,6 +44,7 @@ function Logo({ size = 20 }: { size?: number }) {
 export default function Landing() {
   const { session, loading } = useAuth()
   const authed = !loading && !!session
+  const store = useStore()
   useCrisp()
   return (
     <div style={{ background: 'linear-gradient(175deg, #111118 0%, #0a0a0e 60%, #08080b 100%)', color: '#f1f1f2', fontFamily: 'system-ui,-apple-system,sans-serif', minHeight: '100vh' }}>
@@ -36,11 +53,11 @@ export default function Landing() {
         description="Chrome extension that auto-detects Linear and GitHub tickets, integrates a Pomodoro timer, tracks habits, and connects to Google Calendar."
         path="/"
       />
-      <Nav authed={authed} />
-      <Hero authed={authed} />
+      <Nav authed={authed} store={store} />
+      <Hero authed={authed} store={store} />
       <FeatureCarousel />
       <HowItWorks />
-      <Pricing authed={authed} />
+      <Pricing authed={authed} store={store} />
       <FAQ />
       <PageFooter />
     </div>
@@ -49,7 +66,7 @@ export default function Landing() {
 
 // ─── Nav ─────────────────────────────────────────────────────────────────────
 
-function Nav({ authed }: { authed: boolean }) {
+function Nav({ authed, store }: { authed: boolean; store: Store }) {
   const lnk = (e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.color = '#fff')
   const lnkOut = (e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)')
   return (
@@ -73,7 +90,7 @@ function Nav({ authed }: { authed: boolean }) {
             <>
               <Link to="/login" style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', padding: '6px 12px', textDecoration: 'none' }}>Sign in</Link>
               <Link to="/login?mode=signup" style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: `1px solid ${ACCENT}`, color: '#fff', textDecoration: 'none' }}>Sign up</Link>
-              <a href={CHROME_URL} style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', boxShadow: `0 2px 10px ${ACCENT}40` }}>Add to Chrome</a>
+              <a href={store.url} style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: ACCENT, color: '#fff', textDecoration: 'none', boxShadow: `0 2px 10px ${ACCENT}40` }}>Add to {store.browser}</a>
             </>
           )}
         </div>
@@ -84,7 +101,7 @@ function Nav({ authed }: { authed: boolean }) {
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────
 
-function Hero({ authed }: { authed: boolean }) {
+function Hero({ authed, store }: { authed: boolean; store: Store }) {
   const gridBg = {
     backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
     backgroundSize: '52px 52px',
@@ -110,12 +127,16 @@ function Hero({ authed }: { authed: boolean }) {
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <a href={CHROME_URL} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', borderRadius: 10, background: ACCENT, color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none', boxShadow: `0 0 0 1px ${ACCENT}90, 0 6px 20px ${ACCENT}35` }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-              <circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.9" />
-              <path d="M12 8h8.5M12 8a4 4 0 0 0-4 4m4-4H3.5M8 12a4 4 0 0 0 4 4m-4-4H3.5a8.5 8.5 0 0 0 4.74 7.53M16 12a4 4 0 0 1-4 4m4-4h4.5a8.5 8.5 0 0 1-4.74 7.53M12 16l-3.26 5.53" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            Add to Chrome - It's free
+          <a href={store.url} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', borderRadius: 10, background: ACCENT, color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none', boxShadow: `0 0 0 1px ${ACCENT}90, 0 6px 20px ${ACCENT}35` }}>
+            {store.browser === 'Edge' ? (
+              <i className="ti ti-brand-edge" style={{ fontSize: 16, flexShrink: 0 }} aria-hidden="true" />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.9" />
+                <path d="M12 8h8.5M12 8a4 4 0 0 0-4 4m4-4H3.5M8 12a4 4 0 0 0 4 4m-4-4H3.5a8.5 8.5 0 0 0 4.74 7.53M16 12a4 4 0 0 1-4 4m4-4h4.5a8.5 8.5 0 0 1-4.74 7.53M12 16l-3.26 5.53" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            )}
+            Add to {store.browser} - It's free
           </a>
           {authed ? (
             <Link to="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '11px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.8)', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>
@@ -131,16 +152,22 @@ function Hero({ authed }: { authed: boolean }) {
         {/* Browser strip */}
         <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
           {[
-            { name: 'Chrome', icon: 'ti-brand-chrome', available: true },
-            { name: 'Edge', icon: 'ti-brand-edge', available: true },
-            { name: 'Firefox', icon: 'ti-brand-firefox', available: false },
-            { name: 'Safari', icon: 'ti-brand-safari', available: false },
-          ].map(b => (
-            <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: b.available ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.2)' }}>
-              <i className={`ti ${b.icon}`} style={{ fontSize: 16 }} aria-hidden="true" />
-              {b.name}{!b.available && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}> soon</span>}
-            </div>
-          ))}
+            { name: 'Chrome', icon: 'ti-brand-chrome', url: CHROME_URL },
+            { name: 'Edge', icon: 'ti-brand-edge', url: EDGE_URL },
+            { name: 'Firefox', icon: 'ti-brand-firefox', url: null },
+            { name: 'Safari', icon: 'ti-brand-safari', url: null },
+          ].map(b => {
+            const style: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: b.url ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.2)', textDecoration: 'none' }
+            const content = (
+              <>
+                <i className={`ti ${b.icon}`} style={{ fontSize: 16 }} aria-hidden="true" />
+                {b.name}{!b.url && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}> soon</span>}
+              </>
+            )
+            return b.url
+              ? <a key={b.name} href={b.url} style={style}>{content}</a>
+              : <div key={b.name} style={style}>{content}</div>
+          })}
         </div>
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 10 }}>100% local by default · No account required · Open source</p>
       </div>
@@ -308,7 +335,7 @@ const PRO_FEATURES = [
   'No upgrade prompts',
 ]
 
-function Pricing({ authed }: { authed: boolean }) {
+function Pricing({ authed, store }: { authed: boolean; store: Store }) {
   const [annual, setAnnual] = useState(true)
 
   const btnBase: React.CSSProperties = { display: 'block', textAlign: 'center', padding: '11px', borderRadius: 9, fontSize: 13, fontWeight: 700, textDecoration: 'none', cursor: 'pointer', border: 'none', width: '100%' }
@@ -349,8 +376,8 @@ function Pricing({ authed }: { authed: boolean }) {
               </li>
             ))}
           </ul>
-          <a href={CHROME_URL} style={{ ...btnBase, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
-            Add to Chrome
+          <a href={store.url} style={{ ...btnBase, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
+            Add to {store.browser}
           </a>
         </div>
 
