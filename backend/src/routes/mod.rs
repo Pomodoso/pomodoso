@@ -4,6 +4,7 @@ pub mod health;
 pub mod history;
 pub mod iap;
 pub mod me;
+pub mod plugin_directory;
 pub mod projects;
 pub mod sync;
 pub mod today;

@@ -10,7 +10,7 @@ mod routes;
 
 use axum::{
     middleware as axum_middleware,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use jsonwebtoken::jwk::JwkSet;
@@ -91,12 +91,38 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         // Public routes — no auth
         .route("/health", get(routes::health::health))
+        // Plugin directory: browsing is public, like the web directory.
+        .route("/plugins/directory", get(routes::plugin_directory::search))
+        .route(
+            "/plugins/directory/{slug}",
+            get(routes::plugin_directory::get_listing),
+        )
+        .route(
+            "/plugins/directory/{slug}/versions/{version}",
+            get(routes::plugin_directory::get_version),
+        )
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
         // App Store Server Notifications. No auth layer and none needed: the
         // body is a JWS signed by Apple, and the signature is the credential.
         .route("/webhooks/app-store", post(routes::iap::app_store_webhook))
         // Protected routes — auth applied per-route to avoid affecting public routes after merge
         .route("/me", get(routes::me::get_me).route_layer(auth.clone()))
+        .route(
+            "/plugins/publish",
+            post(routes::plugin_directory::publish).route_layer(auth.clone()),
+        )
+        .route(
+            "/plugins/mine",
+            get(routes::plugin_directory::mine).route_layer(auth.clone()),
+        )
+        .route(
+            "/plugins/mine/{slug}",
+            delete(routes::plugin_directory::take_down).route_layer(auth.clone()),
+        )
+        .route(
+            "/plugins/directory/{slug}/report",
+            post(routes::plugin_directory::report).route_layer(auth.clone()),
+        )
         .route(
             "/iap/verify",
             post(routes::iap::verify_transaction).route_layer(auth.clone()),

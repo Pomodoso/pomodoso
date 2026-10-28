@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM plugin_report\n           WHERE reporter_user_id = $1 AND created_at > NOW() - INTERVAL '1 day'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bb87aae4d6bd37cc8e7fe1b816fc553d28718dff7e274da00a2bdcf1f84425b8"
+}

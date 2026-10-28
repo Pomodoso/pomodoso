@@ -4,9 +4,11 @@ import { test } from 'node:test';
 
 import { pluginJsonSchema } from './json-schema.ts';
 
-test('schema/plugin.v1.json is up to date (run gen:plugin-schema)', () => {
-  const committed = JSON.parse(readFileSync(new URL('../../schema/plugin.v1.json', import.meta.url), 'utf8'));
-  assert.deepEqual(committed, JSON.parse(JSON.stringify(pluginJsonSchema())));
+test('schema/plugin.v1.json and the backend copy are up to date (run gen:plugin-schema)', () => {
+  const generated = JSON.parse(JSON.stringify(pluginJsonSchema()));
+  for (const path of ['../../schema/plugin.v1.json', '../../../../backend/schema/plugin.v1.json']) {
+    assert.deepEqual(JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')), generated, path);
+  }
 });
 
 test('the recursive computed value is a named definition', () => {
