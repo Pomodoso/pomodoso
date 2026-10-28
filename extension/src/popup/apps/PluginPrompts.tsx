@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
-import { addDays, fieldOptions, formatStat, initialRecordData } from '@pomodoso/types/plugins';
+import { addDays, fieldOptions, initialRecordData, templateFormat } from '@pomodoso/types/plugins';
 import { PluginIcon } from '@pomodoso/ui/plugins';
 
 import { db, localDate } from '../../db';
@@ -42,8 +42,10 @@ async function updateState(change: (s: PromptState) => PromptState): Promise<voi
 
 const BREAK_STATUSES = new Set(['pomo-done', 'break']);
 
-export function PluginPrompts({ timerStatus, pomosCompletedToday, timezone, weekStart }: {
+export function PluginPrompts({ timerStatus, sessionId, pomosCompletedToday, timezone, weekStart }: {
   timerStatus: string;
+  /** The pomodoro session the break follows: what identifies the break. */
+  sessionId: string | null;
   pomosCompletedToday: number;
   timezone: string;
   weekStart: number;
@@ -54,7 +56,7 @@ export function PluginPrompts({ timerStatus, pomosCompletedToday, timezone, week
   const today = localDate(timezone);
   const yesterday = addDays(today, -1);
   const inBreak = BREAK_STATUSES.has(timerStatus);
-  const key = breakKey(today, pomosCompletedToday);
+  const key = breakKey(sessionId, today, pomosCompletedToday);
 
   const breakCandidates = useMemo(() => (plugins ? promptHooks(plugins, 'pomodoro_end') : []), [plugins]);
   const dayEndCandidates = useMemo(() => (plugins ? promptHooks(plugins, 'day_end') : []), [plugins]);
@@ -107,14 +109,25 @@ function PromptCard({ candidate, day, today, timezone, weekStart, close }: {
 }) {
   const { plugin, hook } = candidate;
   const { evaluator } = usePluginData(plugin, timezone, weekStart);
+  // One answer per question: controls lock on the first click until the write and close land.
+  const [busy, setBusy] = useState(false);
   if (!evaluator) return null;
   const env = { timezone, weekStart };
   const now = new Date().toISOString();
-  const question = evaluator.template(hook.ask, (v) => formatStat(v, undefined, now));
-  const answer = async (write: () => Promise<unknown>) => {
-    await write();
-    await close();
+  const question = evaluator.template(hook.ask, templateFormat(plugin.manifest, now));
+  const settle = async (work: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await work();
+      await close();
+    } finally {
+      setBusy(false);
+    }
   };
+  const dismiss = () => void settle(async () => {});
+  // A yes about yesterday is an event of yesterday, not of now.
+  const occurredAt = day === today ? undefined : new Date(Date.now() - 86_400_000).toISOString();
 
   let actions: React.ReactNode = null;
   if (hook.yes) {
@@ -122,11 +135,12 @@ function PromptCard({ candidate, day, today, timezone, weekStart, close }: {
     const c = plugin.manifest.collections.find((x) => x.key === yes.add);
     actions = (
       <>
-        <button type="button" onClick={() => void close()} style={chip(false)}>No</button>
+        <button type="button" disabled={busy} onClick={dismiss} style={chip(false)}>No</button>
         {c ? (
           <button
             type="button"
-            onClick={() => void answer(() => addRecord(plugin, c.key, initialRecordData(c, resolveSet(yes.set, (v) => evaluator.value(v))), env))}
+            disabled={busy}
+            onClick={() => void settle(() => addRecord(plugin, c.key, initialRecordData(c, resolveSet(yes.set, (v) => evaluator.value(v))), env, occurredAt ? { occurredAt } : {}))}
             style={chip(true)}
           >
             Yes
@@ -140,7 +154,7 @@ function PromptCard({ candidate, day, today, timezone, weekStart, close }: {
     const field = c?.fields.find((f) => f.key === p.field);
     if (c && field) {
       actions = fieldOptions(c.key, field, plugin.settings).map((o) => (
-        <button key={o.value} type="button" onClick={() => void answer(() => setDaily(plugin, c.key, day, { [field.key]: o.value }, env))} style={chip(false, o.color)}>
+        <button key={o.value} type="button" disabled={busy} onClick={() => void settle(() => setDaily(plugin, c.key, day, { [field.key]: o.value }, env))} style={chip(false, o.color)}>
           {o.color ? <span style={{ width: 8, height: 8, borderRadius: 2, background: o.color, marginRight: 5 }} /> : null}
           {o.label}
         </button>
@@ -159,7 +173,7 @@ function PromptCard({ candidate, day, today, timezone, weekStart, close }: {
           </span>
           <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>{question}</span>
         </span>
-        <button type="button" aria-label="Dismiss" onClick={() => void close()} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-faint)', fontSize: 14 }}>
+        <button type="button" aria-label="Dismiss" disabled={busy} onClick={dismiss} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-faint)', fontSize: 14 }}>
           ×
         </button>
       </div>

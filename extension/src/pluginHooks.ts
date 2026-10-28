@@ -26,11 +26,13 @@ export interface PromptState {
   break?: { key: string; hook: string | null; done: boolean } | undefined;
   /** hook id → `seq` of the break it was last asked in. */
   lastShown: Record<string, number>;
+  /** plugin id → `seq` of the break one of its questions was last asked in: turns go by app, not by hook. */
+  lastShownApp: Record<string, number>;
   /** hook id → the day a `day_end` question was answered or dismissed for. */
   dayEnd: Record<string, string>;
 }
 
-export const EMPTY_PROMPT_STATE: PromptState = { seq: 0, lastShown: {}, dayEnd: {} };
+export const EMPTY_PROMPT_STATE: PromptState = { seq: 0, lastShown: {}, lastShownApp: {}, dayEnd: {} };
 
 export const hookId = (pluginId: string, index: number) => `${pluginId}#${index}`;
 
@@ -46,22 +48,32 @@ export function promptHooks(plugins: readonly PluginRow[], on: PromptHook['on'])
     );
 }
 
-/** A break's key: one per completed pomodoro. */
-export const breakKey = (today: string, pomosCompletedToday: number) => `${today}#${pomosCompletedToday}`;
+/**
+ * A break's key: the pomodoro session it follows, which the timer keeps
+ * through pomo-done and the break (and survives midnight, unlike the daily
+ * count). Without a session, the day and count stand in.
+ */
+export const breakKey = (sessionId: string | null, today: string, pomosCompletedToday: number) =>
+  sessionId ? `session:${sessionId}` : `${today}#${pomosCompletedToday}`;
 
 /**
  * The `pomodoro_end` question for this break. The first call for a new break
- * picks the hook asked least recently (never asked first, then install
- * order) and returns the state to persist; later calls for the same break
- * return the same pick, so reopening the popup doesn't rotate it.
+ * picks the app asked least recently (never asked first, then install
+ * order), then that app's question asked least recently, and returns the
+ * state to persist. Later calls for the same break return the same pick, so
+ * reopening the popup doesn't rotate it. Turns go by app: one with three
+ * questions doesn't get three turns for every one of another app.
  */
 export function pickBreakPrompt(candidates: readonly PromptCandidate[], state: PromptState, key: string): PromptState {
   if (state.break?.key === key) return state;
   const seq = state.seq + 1;
+  const lastApp = state.lastShownApp ?? {};
+  let app: string | undefined;
+  for (const c of candidates) if (app === undefined || (lastApp[c.plugin.id] ?? 0) < (lastApp[app] ?? 0)) app = c.plugin.id;
   let best: PromptCandidate | undefined;
   for (const c of candidates) {
-    const id = hookId(c.plugin.id, c.index);
-    if (!best || (state.lastShown[id] ?? 0) < (state.lastShown[hookId(best.plugin.id, best.index)] ?? 0)) best = c;
+    if (c.plugin.id !== app) continue;
+    if (!best || (state.lastShown[hookId(c.plugin.id, c.index)] ?? 0) < (state.lastShown[hookId(best.plugin.id, best.index)] ?? 0)) best = c;
   }
   const id = best ? hookId(best.plugin.id, best.index) : null;
   return {
@@ -69,6 +81,7 @@ export function pickBreakPrompt(candidates: readonly PromptCandidate[], state: P
     seq,
     break: { key, hook: id, done: false },
     lastShown: id ? { ...state.lastShown, [id]: seq } : state.lastShown,
+    lastShownApp: app ? { ...lastApp, [app]: seq } : lastApp,
   };
 }
 

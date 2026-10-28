@@ -7,6 +7,7 @@ import {
   fieldOptions,
   formatStat,
   initialRecordData,
+  templateFormat,
   type PluginBlock,
   type PluginCollection,
   type PluginEvaluator,
@@ -82,7 +83,7 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
     collection: (key) => collections.get(key),
     resolve: (v) => (typeof v === 'string' && v.startsWith('$') ? env.evaluator.value(v) : v),
     stat: (v, format) => formatStat(v, format, env.now),
-    text: (label) => env.evaluator.template(label, (v) => formatStat(v, undefined, env.now)),
+    text: (label) => env.evaluator.template(label, templateFormat(env.manifest, env.now)),
     tagFilters,
     setTagFilter: (c, field, tag) => setTagFilters((s) => ({ ...s, [c]: { ...s[c], [field]: tag } })),
     filtered: (c, where) => {
@@ -331,7 +332,7 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
     case 'text':
       return (
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap' }}>
-          {ctx.evaluator.template(b.text, (v) => ctx.stat(v))}
+          {ctx.text(b.text)}
         </p>
       );
   }

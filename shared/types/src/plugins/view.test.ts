@@ -168,5 +168,10 @@ test('report hooks fill their templates', () => {
   const lines = reportLines(m, 'weekly_report', ev, ctx.now);
   assert.equal(lines.length, 1);
   assert.ok(!lines[0]!.includes('{$'), lines[0]);
+  // week_change is a delta: it reads as a percent. 100 last week, 88 this week → -12%.
+  const lastWeek = Array.from({ length: 100 }, (_, i) => ({ id: `l${i}`, collection: 'cigarette', occurred_at: '2026-10-14T15:00:00Z', created_at: '2026-10-14T15:00:00Z', data: {} }));
+  const thisWeek = Array.from({ length: 88 }, (_, i) => ({ id: `t${i}`, collection: 'cigarette', occurred_at: '2026-10-20T15:00:00Z', created_at: '2026-10-20T15:00:00Z', data: {} }));
+  const withData = createEvaluator(m, { ...ctx, records: [...lastWeek, ...thisWeek] });
+  assert.equal(reportLines(m, 'weekly_report', withData, ctx.now)[0], 'Cigarettes: 88 this week (-12% vs last week)');
   assert.deepEqual(reportLines(m, 'daily_report', ev, ctx.now), []);
 });

@@ -1380,6 +1380,7 @@ export function HomeState({
               <Suspense fallback={null}>
                 <PluginPrompts
                   timerStatus={timerState.status}
+                  sessionId={timerState.sessionId}
                   pomosCompletedToday={timerState.pomosCompletedToday}
                   timezone={timezone}
                   weekStart={weekStart}

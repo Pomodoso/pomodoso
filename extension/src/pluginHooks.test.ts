@@ -38,19 +38,19 @@ test('prompt hooks come from live, enabled plugins for that event only', () => {
 
 test('one question per break, rotating between plugins, stable within a break', () => {
   const cands = promptHooks([smoke, water], 'pomodoro_end');
-  let s = pickBreakPrompt(cands, EMPTY_PROMPT_STATE, breakKey('2026-10-28', 1));
+  let s = pickBreakPrompt(cands, EMPTY_PROMPT_STATE, breakKey(null, '2026-10-28', 1));
   assert.equal(s.break?.hook, hookId('a', 0));
   // Reopening the popup in the same break keeps the same question.
-  assert.equal(pickBreakPrompt(cands, s, breakKey('2026-10-28', 1)), s);
-  s = pickBreakPrompt(cands, { ...s, break: { ...s.break!, done: true } }, breakKey('2026-10-28', 2));
+  assert.equal(pickBreakPrompt(cands, s, breakKey(null, '2026-10-28', 1)), s);
+  s = pickBreakPrompt(cands, { ...s, break: { ...s.break!, done: true } }, breakKey(null, '2026-10-28', 2));
   assert.equal(s.break?.hook, hookId('bb', 0));
   assert.equal(s.break?.done, false);
-  s = pickBreakPrompt(cands, s, breakKey('2026-10-28', 3));
+  s = pickBreakPrompt(cands, s, breakKey(null, '2026-10-28', 3));
   assert.equal(s.break?.hook, hookId('a', 0));
 });
 
 test('a break with no plugin questions records no hook', () => {
-  const s = pickBreakPrompt([], EMPTY_PROMPT_STATE, breakKey('2026-10-28', 1));
+  const s = pickBreakPrompt([], EMPTY_PROMPT_STATE, breakKey(null, '2026-10-28', 1));
   assert.equal(s.break?.hook, null);
 });
 
@@ -65,4 +65,24 @@ test('day_end asks about yesterday until it is answered or dismissed', () => {
   // Installed today: there's no yesterday to ask about.
   const fresh = promptHooks([{ ...pixels, installedOn: '2026-10-28' }], 'day_end');
   assert.equal(pendingDayEnd(fresh, EMPTY_PROMPT_STATE, '2026-10-27', () => []), undefined);
+});
+
+test('turns go by app: an app with two questions alternates them in its own turns', () => {
+  const two = plugin('a', [
+    { on: 'pomodoro_end', ask: 'Q1?', yes: { add: 'x' } },
+    { on: 'pomodoro_end', ask: 'Q2?', yes: { add: 'x' } },
+  ]);
+  const cands = promptHooks([two, water], 'pomodoro_end');
+  let s = EMPTY_PROMPT_STATE;
+  const asked: string[] = [];
+  for (let i = 1; i <= 4; i++) {
+    s = pickBreakPrompt(cands, s, `k${i}`);
+    asked.push(cands.find((c) => hookId(c.plugin.id, c.index) === s.break?.hook)!.hook.ask);
+  }
+  assert.deepEqual(asked, ['Q1?', 'Water?', 'Q2?', 'Water?']);
+});
+
+test('the break key follows the pomodoro session, so midnight does not start a new break', () => {
+  assert.equal(breakKey('s1', '2026-10-28', 5), breakKey('s1', '2026-10-29', 0));
+  assert.notEqual(breakKey('s1', '2026-10-28', 5), breakKey('s2', '2026-10-28', 5));
 });
