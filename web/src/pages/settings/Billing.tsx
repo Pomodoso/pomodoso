@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { signOut } from '@pomodoso/api';
 import { supabase } from '../../lib/supabase.ts';
 import { api } from '../../lib/api.ts';
@@ -177,7 +177,7 @@ function PriceCard({ title, price, period, sub, badge, features, onSelect, disab
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Billing() {
-  const { session, entitlements } = useAuth();
+  const { session, user, entitlements } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -206,6 +206,20 @@ export default function Billing() {
       setLoading(false);
     }
   };
+
+  // ?checkout=annual|monthly|lifetime: a plan picked on /pricing or the landing,
+  // often before signing in. Its checkout starts once the account is loaded
+  // (`user` comes with the real entitlements; until then plan reads "free")
+  // and only for a free account. The parameter is dropped so coming back here
+  // doesn't start it again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const startCheckout = searchParams.get('checkout');
+  useEffect(() => {
+    if (startCheckout !== 'annual' && startCheckout !== 'monthly' && startCheckout !== 'lifetime') return;
+    if (!session || !user) return;
+    setSearchParams({}, { replace: true });
+    if (plan === 'free') void handleCheckout(startCheckout);
+  }, [startCheckout, session?.access_token, user, plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePortal = async () => {
     setLoading(true);

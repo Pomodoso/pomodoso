@@ -8,7 +8,11 @@ export default function Login() {
   const { session } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const next = searchParams.get('next') ?? '/dashboard';
+  // Where to go after signing in, for every way of signing in (password, Google,
+  // magic link, sign-up confirmation). Only a path on this site: anything else
+  // ('//evil.com', 'https://…') falls back to the dashboard.
+  const asked = searchParams.get('next');
+  const next = asked && asked.startsWith('/') && !asked.startsWith('//') ? asked : '/dashboard';
   // Allow deep-linking straight to the sign-up form (e.g. ?mode=signup from the extension).
   const [mode, setMode] = useState<'signin' | 'signup'>(searchParams.get('mode') === 'signup' ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
@@ -24,7 +28,7 @@ export default function Login() {
     setError('');
     setMagicState('sending');
     try {
-      await sendMagicLink(getSupabase(), email.trim(), `${window.location.origin}/dashboard`);
+      await sendMagicLink(getSupabase(), email.trim(), `${window.location.origin}${next}`);
       setMagicState('sent');
     } catch (err) {
       setMagicState('idle');
@@ -64,7 +68,7 @@ export default function Login() {
 
   const handleOAuth = async (provider: 'google') => {
     setError('');
-    await signInWithProvider(getSupabase(), provider, `${window.location.origin}/dashboard`);
+    await signInWithProvider(getSupabase(), provider, `${window.location.origin}${next}`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,7 +77,7 @@ export default function Login() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signUpWithEmail(getSupabase(), email, password, `${window.location.origin}/dashboard`);
+        await signUpWithEmail(getSupabase(), email, password, `${window.location.origin}${next}`);
         setSignupDone(true);
       } else {
         await signInWithEmail(getSupabase(), email, password);
