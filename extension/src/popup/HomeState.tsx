@@ -50,6 +50,7 @@ import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
 // Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
 const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
+const TodayApps = lazy(() => import('./apps/TodayApps').then((m) => ({ default: m.TodayApps })));
 
 marked.use({ breaks: true });
 
@@ -314,6 +315,14 @@ export function HomeState({
   const achievements = useLiveQuery(() => db.achievements.filter(a => !a.deletedAt).toArray()) ?? [];
 
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
+  // Today's Apps section loads the plugin engine only when there are apps to show.
+  const hasPlugins = (useLiveQuery(() => db.plugins.filter(p => !p.deletedAt).count()) ?? 0) > 0;
+  // A widget tapped on Today opens its app in the Apps tab.
+  const [openApp, setOpenApp] = useState<{ id: string; nonce: number } | null>(null);
+  // The request is consumed by the visit it opened: a later visit to Apps starts at the list.
+  useEffect(() => {
+    if (activeTab !== 'apps') setOpenApp(null);
+  }, [activeTab]);
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
   const today = localDate(timezone);
@@ -1559,6 +1568,18 @@ export function HomeState({
                 />
               </div>
             )}
+            {isSignedIn && hasPlugins && (
+              <Suspense fallback={null}>
+                <TodayApps
+                  timezone={timezone}
+                  weekStart={weekStart}
+                  onOpenApp={(id) => {
+                    setOpenApp((o) => ({ id, nonce: (o?.nonce ?? 0) + 1 }));
+                    setActiveTab('apps');
+                  }}
+                />
+              </Suspense>
+            )}
             <TodayFooter
               pomosToday={timerState.pomosCompletedToday}
               trackedMinutesToday={Math.floor(
@@ -1822,6 +1843,7 @@ export function HomeState({
               isSignedIn={isSignedIn}
               tab={{ url: currentUrl ?? '', title: currentTitle ?? '' }}
               onSignIn={onOpenAccount}
+              openApp={openApp}
             />
           </Suspense>
         )}
