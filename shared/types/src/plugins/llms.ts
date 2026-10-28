@@ -209,3 +209,29 @@ Ranges: ${NAMED_RANGES.map((r) => `\`${r}\``).join(', ')}, or a rolling window l
   }
   return out.join('\n');
 }
+
+// ─── Prompts ─────────────────────────────────────────────────────────────────
+// Copy buttons in the docs and on each directory page. Both point the model
+// at the full reference and the validator, which is what makes the first
+// answer valid.
+
+/** For "Build a plugin": the user fills in the idea. */
+export const STARTER_PROMPT = `Write a Pomodoso plugin: one YAML file that becomes a small app inside Pomodoso.
+
+What I want it to do: <describe what you want to track or keep>
+
+Before writing, read https://pomodoso.com/llms-full.txt and use only the blocks, field types and computed values it lists. Start from the closest of its examples. Write the whole file, then check it with \`npx @pomodoso/plugin validate <file>\` (or against https://pomodoso.com/schema/plugin.v1.json) and fix every problem it reports. Give me the final file and a short summary of what it shows and stores.`;
+
+/** For a directory page: change an existing plugin into the user's own. */
+export function remixPrompt(file: string): string {
+  return `Here is a Pomodoso plugin. I want to adapt it.
+
+What I want to change: <describe the change>
+
+Keep the format: read https://pomodoso.com/llms-full.txt and use only what it lists. Give the result a new \`id\` and \`name\` (it's a new plugin, not an update), keep \`license\` and credit the original author in \`description\`. Validate the result with \`npx @pomodoso/plugin validate <file>\` and fix every problem before giving me the file.
+
+\`\`\`yaml
+${file.trimEnd()}
+\`\`\`
+`;
+}
