@@ -10,6 +10,7 @@ import {
   EMPTY_PROMPT_STATE,
   breakKey,
   hookId,
+  localNoon,
   pendingDayEnd,
   pickBreakPrompt,
   promptHooks,
@@ -126,8 +127,8 @@ function PromptCard({ candidate, day, today, timezone, weekStart, close }: {
     }
   };
   const dismiss = () => void settle(async () => {});
-  // A yes about yesterday is an event of yesterday, not of now.
-  const occurredAt = day === today ? undefined : new Date(Date.now() - 86_400_000).toISOString();
+  // A yes about yesterday is an event of yesterday (its local noon), not of now.
+  const occurredAt = day === today ? undefined : localNoon(day, timezone);
 
   let actions: React.ReactNode = null;
   if (hook.yes) {

@@ -106,3 +106,17 @@ export function pendingDayEnd(
     return v === undefined || v === null || v === '';
   });
 }
+
+/**
+ * Noon of `day` in `timeZone`, as an ISO timestamp: an instant that is on
+ * that local day whatever daylight saving does (changes happen at night).
+ */
+export function localNoon(day: string, timeZone: string): string {
+  const guess = Date.parse(`${day}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date(guess));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const offset = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute')) - guess;
+  return new Date(guess - offset).toISOString();
+}

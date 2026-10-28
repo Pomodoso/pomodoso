@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import type { PluginHook, PluginManifest, PluginRecord } from '@pomodoso/types/plugins';
 
 import type { PluginRow } from './db.ts';
-import { EMPTY_PROMPT_STATE, breakKey, hookId, pendingDayEnd, pickBreakPrompt, promptHooks } from './pluginHooks.ts';
+import { localDayOf } from '@pomodoso/types/plugins';
+
+import { EMPTY_PROMPT_STATE, breakKey, hookId, localNoon, pendingDayEnd, pickBreakPrompt, promptHooks } from './pluginHooks.ts';
 
 function plugin(id: string, hooks: PluginHook[], extra: Partial<PluginRow> = {}): PluginRow {
   return {
@@ -85,4 +87,10 @@ test('turns go by app: an app with two questions alternates them in its own turn
 test('the break key follows the pomodoro session, so midnight does not start a new break', () => {
   assert.equal(breakKey('s1', '2026-10-28', 5), breakKey('s1', '2026-10-29', 0));
   assert.notEqual(breakKey('s1', '2026-10-28', 5), breakKey('s2', '2026-10-28', 5));
+});
+
+test('an answer about yesterday lands on yesterday, across daylight-saving changes', () => {
+  for (const [day, tz] of [['2026-03-08', 'America/New_York'], ['2026-11-01', 'America/New_York'], ['2026-10-04', 'Australia/Sydney'], ['2026-10-27', 'America/Argentina/Buenos_Aires'], ['2026-10-27', 'Pacific/Kiritimati']]) {
+    assert.equal(localDayOf(localNoon(day!, tz!), tz!), day, `${day} ${tz}`);
+  }
 });
