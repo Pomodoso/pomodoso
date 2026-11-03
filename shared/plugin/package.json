@@ -1,6 +1,6 @@
 {
   "name": "@pomodoso/plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Validate Pomodoso plugin files and classify updates, with the same code Pomodoso runs.",
   "type": "module",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --banner:js=\"#!/usr/bin/env node\"",
+    "build": "esbuild src/bin.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --banner:js=\"#!/usr/bin/env node\"",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
     "prepublishOnly": "pnpm build && pnpm test"

@@ -94,8 +94,3 @@ export async function main(argv: string[]): Promise<number> {
   console.log(json ? JSON.stringify(result, null, 2) : format(file, result));
   return result.ok ? 0 : 1;
 }
-
-// Run when executed (bin or `node src/cli.ts`), not when imported by tests.
-if (process.argv[1] && /cli\.(ts|cjs)$/.test(process.argv[1])) {
-  void main(process.argv.slice(2)).then((code) => process.exit(code));
-}
