@@ -3,17 +3,19 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#0a0a0f] px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-        <p className="text-zinc-500 text-sm mb-10">Last updated: July 2026</p>
+        <p className="text-zinc-500 text-sm mb-10">Last updated: November 2026</p>
 
         <div className="space-y-8 text-zinc-400 leading-relaxed text-sm">
           <section>
-            <h2 className="text-white font-semibold text-lg mb-3">Local-only operation</h2>
+            <h2 className="text-white font-semibold text-lg mb-3">Local-first operation</h2>
             <p>
-              Pomodoso operates entirely on your device.{' '}
-              <strong className="text-zinc-300">No data is transmitted to any Pomodoso server.</strong>{' '}
-              All tasks, habits, sessions, and settings are stored in your browser's local storage (
+              All tasks, habits, sessions, apps, and settings are stored in your browser's local storage (
               <code className="bg-white/5 px-1.5 py-0.5 rounded text-zinc-300">IndexedDB</code>
-              ). Uninstalling the extension permanently removes this data.
+              ). Uninstalling the extension permanently removes this data.{' '}
+              <strong className="text-zinc-300">Without an account, none of it is transmitted to any Pomodoso server.</strong>{' '}
+              Your content reaches our servers only if you sign in and enable sync. Signing in, browsing the app
+              directory and publishing an app involve the limited requests described under{' '}
+              <a href="#apps" className="text-orange-400 hover:text-orange-300 underline">Apps</a> and Third-party services.
             </p>
           </section>
 
@@ -53,6 +55,11 @@ export default function Privacy() {
                     <td className="py-2.5 pr-4">Selected text</td>
                     <td className="py-2.5 pr-4">Quick task creation from any page</td>
                     <td className="py-2.5 text-zinc-500">Never — stored locally as a task</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 pr-4">Active tab URL and title, when you add an entry to an app that asks for them</td>
+                    <td className="py-2.5 pr-4">Pre-fill the entry (for example, a link in a reading list)</td>
+                    <td className="py-2.5 text-zinc-500">Stored locally as your entry; on Pomodoso's backend only if you enable sync</td>
                   </tr>
                 </tbody>
               </table>
@@ -192,12 +199,49 @@ export default function Privacy() {
                 </a>
                 .
               </li>
-              <li><strong className="text-zinc-300">Supabase</strong> — authentication for Pro (cloud sync) accounts. <strong className="text-zinc-300">Stripe</strong> — payment processing for paid plans.</li>
+              <li><strong className="text-zinc-300">Supabase</strong> — authentication for Pomodoso accounts. <strong className="text-zinc-300">Stripe</strong> — payment processing for paid plans.</li>
               <li><strong className="text-zinc-300">Sentry</strong> — error monitoring and crash reporting on the web app.</li>
               <li><strong className="text-zinc-300">Google Analytics</strong> — anonymous usage analytics for the web app. <strong className="text-zinc-300">Vercel</strong> — web app hosting.</li>
               <li><strong className="text-zinc-300">Crisp</strong> — support chat on the website; receives your email and name when you start a conversation.</li>
             </ul>
-            <p className="mt-3">The browser extension itself contains no analytics, crash-reporting, or advertising SDK, and transmits nothing to Pomodoso on the free tier. The services above apply to the Pomodoso web app and dashboard (and, for Supabase/Stripe, to Pro accounts).</p>
+            <p className="mt-3">The browser extension itself contains no analytics, crash-reporting, or advertising SDK. Without an account it transmits nothing to Pomodoso, except the app directory requests described under Apps if you browse the directory. With a free account it also signs you in and checks your plan; your content is transmitted only if you enable sync or publish an app. The services above apply to the Pomodoso web app and dashboard (and, for Supabase, to any account; for Stripe, to paid plans).</p>
+          </section>
+
+          <section id="apps">
+            <h2 className="text-white font-semibold text-lg mb-3">Apps</h2>
+            <p>
+              Apps are small trackers you add to Pomodoso. An app is a data file, not code: it can't run scripts
+              or send your data anywhere, and it only sees its own entries. Using apps requires a free account.
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-2">
+              <li>
+                <strong className="text-zinc-300">Your entries</strong> stay on your device. If you sign in and
+                enable sync, they are stored on Pomodoso's backend so they appear across your devices and in your
+                dashboard. Apps can hold whatever you choose to enter, which may include sensitive information such
+                as health notes. App authors never receive your entries.
+              </li>
+              <li>
+                <strong className="text-zinc-300">The directory:</strong> browsing it, installing from it and the
+                periodic check for updates to apps you installed from it are requests to{' '}
+                <code className="bg-white/5 px-1.5 py-0.5 rounded text-zinc-300">api.pomodoso.com</code>. They carry
+                no entries; like any web request, they reveal your IP address to our servers.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Publishing:</strong> an app you publish is uploaded to our servers
+                and linked to your account. A public app, including any author name in its file, is visible to
+                anyone. Private apps are visible only to you. Taking an app down removes it from the directory;
+                copies people already installed keep working.
+              </li>
+              <li>
+                <strong className="text-zinc-300">Reports:</strong> if you report an app, we store your reason and
+                your account with the report.
+              </li>
+              <li>
+                <strong className="text-zinc-300">On pomodoso.com</strong> the extension runs a small script, on that
+                site only, so "Install in Pomodoso" can open the app's install preview. It passes the app's id and
+                nothing else; you confirm inside the extension.
+              </li>
+            </ul>
           </section>
 
           <section>

@@ -24,7 +24,8 @@ pomodoso/
 ├── api/                 # @pomodoso/api — HTTP + WS client, Supabase client
 ├── shared/
 │   ├── types/           # @pomodoso/types — TS types, shared rules, validation
-│   └── ui/              # @pomodoso/ui — shared React components
+│   ├── ui/              # @pomodoso/ui — shared React components
+│   └── plugin/          # @pomodoso/plugin — app file validator CLI (published to npm)
 ├── docs/                # Local only: gitignored on purpose (the repo is public). Never commit it.
 │   ├── pomodoso-spec-en.md
 │   ├── decisions/       # ADRs (architectural decision records)
@@ -74,7 +75,7 @@ pomodoso/
 
 5. **Every syncable entity has `created_at`, `updated_at`, `deleted_at` (nullable), `synced_at` (nullable).**
 
-6. **Workspaces own work-context data.** Tasks, projects, pomodoro sessions and task orders carry a `workspace_id` FK. The exceptions are: `user`, `workspace`, `workspace_member`, `subscription`, and the **user-scoped** entities `user_setting`, `device`, `detection_rule`, `habit`, `habit_log` — these are keyed by `user_id` and sync globally (habits are personal, not per-work-context; see spec v0.10). User-scoped entities are pushed/pulled outside the workspace loop in `sync.rs`.
+6. **Workspaces own work-context data.** Tasks, projects, pomodoro sessions and task orders carry a `workspace_id` FK. The exceptions are: `user`, `workspace`, `workspace_member`, `subscription`, and the **user-scoped** entities `user_setting`, `device`, `detection_rule`, `habit`, `habit_log`, `plugin`, `plugin_record` — these are keyed by `user_id` and sync globally (habits are personal, not per-work-context; see spec v0.10). User-scoped entities are pushed/pulled outside the workspace loop in `sync.rs`.
 
 7. **Last-Write-Wins (LWW) at the record level.** Conflicts resolve by comparing `updated_at`. No field-level merging.
 
@@ -100,6 +101,19 @@ The extension uses Dexie.js (`extension/src/db.ts`). When adding or removing a t
 1. **Add a new Dexie version** with the schema migration.
 2. **Update `extension/src/backup.ts`** — add the new table to `EXPECTED_TABLES`, the `exportDb()` reads, and the `importDb()` clears/bulkPuts. Omitting a table silently breaks import/export for that data.
 3. If the table contains sensitive data (e.g. OAuth tokens), add its key to `EXCLUDED_SETTINGS` instead of including it in the backup.
+
+## Apps (plugins)
+
+Apps are single YAML files rendered from a closed catalog (`shared/types/src/plugins/`). See the README's Apps section for the map.
+
+- **The format never becomes a language.** No expressions, scripts, HTML or remote code: Chrome Web Store policy (MV3 remote code) and a public directory both depend on it. New power means a new catalog entry, not an escape hatch. zod runs jitless for the same reason.
+- **The catalog is the source of truth.** A new block, field type, computed value or hook needs its entry in `docs.ts` (the typecheck fails without it). Then regenerate: `pnpm --filter @pomodoso/types gen:plugin-schema` and `gen:llms`; a test fails if they're stale. The schema is copied to `backend/schema/`, which the server validates against.
+- **The server validates every publish**; client checks only give feedback.
+- **An `id` belongs to its first publisher for good,** taken down or not, and reserved slugs stay blocked. A breaking update needs a new major and a `migrate` block.
+- **Sync:** `plugin` and `plugin_record` are user-scoped, keyed `(user_id, id)`. `updated_at` is the client's edit time (LWW); `server_updated_at` is trigger-set and drives pull. A daily record's id is derived (`dailyRecordId`), so devices converge.
+- **Private listings are a paid feature:** `entitlements.features.private_plugins`, enforced on the server.
+- **Web and extension talk through** `content-scripts/web-bridge.ts`, on Pomodoso's site only; the background re-checks the origin.
+- **`extension/e2e` doesn't cover apps yet.** Exercise app changes in a browser.
 
 ## Working on features
 
