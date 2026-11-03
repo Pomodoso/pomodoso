@@ -39,7 +39,7 @@ test('the bin exits 0, 1 and 2, and --json prints the result', () => {
   writeFileSync(bad, 'schema_version: 1\nid: x\n');
   const run = (...args: string[]) => {
     try {
-      return { code: 0, out: execFileSync('node', ['--experimental-strip-types', new URL('./cli.ts', import.meta.url).pathname, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
+      return { code: 0, out: execFileSync('node', ['--experimental-strip-types', new URL('./bin.ts', import.meta.url).pathname, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
     } catch (e) {
       const err = e as { status: number; stdout: string };
       return { code: err.status, out: err.stdout };
