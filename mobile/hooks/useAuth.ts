@@ -24,6 +24,7 @@ const FREE_ENTITLEMENTS: Entitlements = {
     ai_summary: false,
     history_unlimited: false,
     api_integrations: false,
+    private_plugins: false,
     max_devices: 1,
     max_workspaces: 1,
     history_days: 30,

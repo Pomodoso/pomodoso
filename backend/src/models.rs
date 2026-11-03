@@ -59,6 +59,8 @@ pub struct EntitlementFeatures {
     pub ai_summary: bool,
     pub history_unlimited: bool,
     pub api_integrations: bool,
+    /// Publishing a plugin to the directory as private (only its owner sees it).
+    pub private_plugins: bool,
     pub max_devices: i32,
     pub max_workspaces: i32,
     pub history_days: i32,
@@ -74,6 +76,7 @@ impl EntitlementFeatures {
             ai_summary: false,
             history_unlimited: false,
             api_integrations: false,
+            private_plugins: false,
             max_devices: 1,
             max_workspaces: 1,
             history_days: 30,
@@ -89,6 +92,7 @@ impl EntitlementFeatures {
             ai_summary: false,
             history_unlimited: true,
             api_integrations: false,
+            private_plugins: true,
             max_devices: 10,
             max_workspaces: 999,
             history_days: 9999,
@@ -141,6 +145,9 @@ fn apply_overrides(
     }
     if let Some(v) = overrides.get("calendar").and_then(|v| v.as_bool()) {
         features.calendar = v;
+    }
+    if let Some(v) = overrides.get("private_plugins").and_then(|v| v.as_bool()) {
+        features.private_plugins = v;
     }
     if let Some(v) = overrides.get("max_workspaces").and_then(|v| v.as_i64()) {
         features.max_workspaces = v as i32;

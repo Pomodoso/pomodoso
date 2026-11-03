@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM plugin_version v\n           JOIN plugin_listing l ON l.id = v.listing_id\n           WHERE l.owner_user_id = $1 AND v.created_at > NOW() - INTERVAL '1 hour'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a98f9a92e6689ceec4db5c8324dcaf49e2a8fbd91a79ef14964f3bc110040dfb"
+}

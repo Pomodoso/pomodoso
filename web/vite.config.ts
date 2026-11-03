@@ -34,9 +34,9 @@ export default defineConfig({
   },
   ssgOptions: {
     dirStyle: 'nested',
-    // Prerender the landing page only — dashboard/login/settings stay a
+    // Prerender the public pages — dashboard/login/settings stay a
     // client-only SPA, served through the app-shell fallback below.
-    includedRoutes: () => ['/'],
+    includedRoutes: () => ['/', '/apps', '/apps/build'],
     onFinished: () => {
       writeAppShell()
     },

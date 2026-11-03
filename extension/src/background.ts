@@ -13,9 +13,43 @@ import { connectCalendar, syncTodayMeetings } from './calendarSync';
 import { performBackgroundSync } from './syncEngine';
 import { providerRuleAllows } from './ticketRules';
 import { googleSignInFlow } from './authFlow';
+import { INSTALL_REQUEST_KEY, WEB_ORIGINS, isPluginSlug, type InstallRequest } from './installRequest';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
+
+// ─── From the web app ─────────────────────────────────────────────────────────
+// Relayed by content-scripts/web-bridge.ts, which only runs on Pomodoso's site;
+// the tab's origin is checked again here. `web.ping` tells the page the
+// extension is there; `web.apps.install` leaves a request for the popup, which
+// shows the install preview.
+
+function handleWebMessage(
+  msg: { type?: unknown; slug?: unknown },
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: unknown) => void,
+): boolean {
+  if (!sender.origin || !WEB_ORIGINS.has(sender.origin)) {
+    sendResponse(null);
+    return false;
+  }
+  if (msg.type === 'web.ping') {
+    sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+    return false;
+  }
+  if (msg.type === 'web.apps.install' && isPluginSlug(msg.slug)) {
+    const request: InstallRequest = { slug: msg.slug, at: Date.now() };
+    void chrome.storage.local
+      .set({ [INSTALL_REQUEST_KEY]: request })
+      .then(() => chrome.action.openPopup())
+      .then(() => sendResponse({ ok: true, opened: true }))
+      // No popup without a focused window: the request waits for the next open.
+      .catch(() => sendResponse({ ok: true, opened: false }));
+    return true;
+  }
+  sendResponse(null);
+  return false;
+}
 
 // ─── Background sync ──────────────────────────────────────────────────────────
 // The popup's debounced sync dies the moment the popup closes (click-away), so
@@ -308,6 +342,8 @@ function handleMessage(
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: ExtensionResponse) => void,
 ): boolean {
+  const type = (message as { type?: unknown }).type;
+  if (typeof type === 'string' && type.startsWith('web.')) return handleWebMessage(message as { type?: unknown }, _sender, sendResponse as (response: unknown) => void);
   handleMessageAsync(message)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((err: unknown) =>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   DndContext,
@@ -46,12 +46,18 @@ import {
   type MeetingTrackMode,
 } from '../db';
 import { triggerSync } from '../syncEngine';
+import { INSTALL_REQUEST_KEY, INSTALL_REQUEST_TTL_MS, isPluginSlug, type InstallRequest } from '../installRequest';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { formatRecurrenceLabel } from '../recurrence';
+import { WEB_URL } from '../webUrl';
+// Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
+const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
+const TodayApps = lazy(() => import('./apps/TodayApps').then((m) => ({ default: m.TodayApps })));
+const PluginPrompts = lazy(() => import('./apps/PluginPrompts').then((m) => ({ default: m.PluginPrompts })));
 
 marked.use({ breaks: true });
 
-export type Tab = 'today' | 'habits' | 'tasks' | 'schedule';
+export type Tab = 'today' | 'habits' | 'tasks' | 'schedule' | 'apps';
 
 interface HomeStateProps {
   timerState: TimerState;
@@ -91,6 +97,7 @@ interface HomeStateProps {
   onOpenSettings: () => void;
   onOpenCalendarSettings: () => void;
   currentUrl?: string;
+  currentTitle?: string;
   urlMatchesRule?: boolean;
   onAddDetectionRule?: (name: string, urlPattern: string) => void;
   onOpenAccount: () => void;
@@ -251,7 +258,7 @@ export function HomeState({
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
   onUpdateTaskStatus, onAddToBacklog, onLinkToTask, onOpenSettings, onOpenCalendarSettings, onOpenAccount, onSignOut, onSyncNow,
-  currentUrl, urlMatchesRule, onAddDetectionRule,
+  currentUrl, currentTitle, urlMatchesRule, onAddDetectionRule,
   selectedText, onCreateFromText, onAddTextToNotes, onCreateTask, onCreateFollowup, onReorderToday, onReorderBacklog,
   weekStart, workDays, activeTab, onSetActiveTab: setActiveTab, isSignedIn, syncStatus,
 }: HomeStateProps) {
@@ -311,6 +318,38 @@ export function HomeState({
   const achievements = useLiveQuery(() => db.achievements.filter(a => !a.deletedAt).toArray()) ?? [];
 
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
+  // Today's Apps section loads the plugin engine only when there are apps to show.
+  const hasPlugins = (useLiveQuery(() => db.plugins.filter(p => !p.deletedAt).count()) ?? 0) > 0;
+  // A widget tapped on Today opens its app in the Apps tab.
+  const [openApp, setOpenApp] = useState<{ id: string; nonce: number } | null>(null);
+  // An app the web app asked to install (installRequest.ts): taken once, it
+  // opens Apps on its install preview.
+  const [installSlug, setInstallSlug] = useState<{ slug: string; nonce: number } | null>(null);
+  useEffect(() => {
+    const take = () => {
+      void chrome.storage.local.get(INSTALL_REQUEST_KEY).then((r) => {
+        const req = r[INSTALL_REQUEST_KEY] as InstallRequest | undefined;
+        if (!req) return;
+        void chrome.storage.local.remove(INSTALL_REQUEST_KEY);
+        if (Date.now() - req.at > INSTALL_REQUEST_TTL_MS || !isPluginSlug(req.slug)) return;
+        setActiveTab('apps');
+        setInstallSlug({ slug: req.slug, nonce: req.at });
+      });
+    };
+    take();
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && changes[INSTALL_REQUEST_KEY]?.newValue) take();
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The request is consumed by the visit it opened: a later visit to Apps starts at the list.
+  useEffect(() => {
+    if (activeTab !== 'apps') {
+      setOpenApp(null);
+      setInstallSlug(null);
+    }
+  }, [activeTab]);
   const remoteTimerRow = useLiveQuery(() => db.settings.get('active_timer_remote'));
   const remoteBeacon = remoteTimerRow?.value as RemoteBeacon | undefined;
   const today = localDate(timezone);
@@ -934,8 +973,8 @@ export function HomeState({
                     <MenuRow icon="↺" label={syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'} onClick={() => { setShowMenu(false); onSyncNow(); }} />
                   )}
                   <MenuRow icon="⚙" label="Settings" onClick={() => { setShowMenu(false); onOpenSettings(); }} />
-                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/dashboard' }); }} />
-                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: 'https://pomodoso.com/support' }); }} />
+                  <MenuRow icon="↗" label="Open web app" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: `${WEB_URL}/dashboard` }); }} />
+                  <MenuRow icon="?" label="Support" onClick={() => { setShowMenu(false); chrome.tabs.create({ url: `${WEB_URL}/support` }); }} />
                   {isSignedIn && (<>
                     <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0' }} />
                     <MenuRow icon="→" label="Account & Sync" onClick={() => { setShowMenu(false); onOpenAccount(); }} />
@@ -1363,6 +1402,17 @@ export function HomeState({
       <div className="scroll-area">
         {activeTab === 'today' && (
           <>
+            {isSignedIn && hasPlugins && (
+              <Suspense fallback={null}>
+                <PluginPrompts
+                  timerStatus={timerState.status}
+                  sessionId={timerState.sessionId}
+                  pomosCompletedToday={timerState.pomosCompletedToday}
+                  timezone={timezone}
+                  weekStart={weekStart}
+                />
+              </Suspense>
+            )}
             {!isActive && !isPaused && !isBreak && !isPomoDone && !isBreakDone && (
               <div style={{ padding: '8px 14px 0', display: 'flex', justifyContent: 'center' }}>
                 <button
@@ -1555,6 +1605,18 @@ export function HomeState({
                   compact
                 />
               </div>
+            )}
+            {isSignedIn && hasPlugins && (
+              <Suspense fallback={null}>
+                <TodayApps
+                  timezone={timezone}
+                  weekStart={weekStart}
+                  onOpenApp={(id) => {
+                    setOpenApp((o) => ({ id, nonce: (o?.nonce ?? 0) + 1 }));
+                    setActiveTab('apps');
+                  }}
+                />
+              </Suspense>
             )}
             <TodayFooter
               pomosToday={timerState.pomosCompletedToday}
@@ -1811,6 +1873,20 @@ export function HomeState({
           </>
         )}
 
+        {activeTab === 'apps' && (
+          <Suspense fallback={null}>
+            <AppsTab
+              timezone={timezone}
+              weekStart={weekStart}
+              isSignedIn={isSignedIn}
+              tab={{ url: currentUrl ?? '', title: currentTitle ?? '' }}
+              onSignIn={onOpenAccount}
+              openApp={openApp}
+              installSlug={installSlug}
+            />
+          </Suspense>
+        )}
+
         {activeTab === 'schedule' && (
           selectedMeeting ? (
             <MeetingDetailState
@@ -1869,6 +1945,7 @@ export function HomeState({
           { key: 'tasks' as Tab, label: 'Tasks', icon: <TasksIcon /> },
           { key: 'habits' as Tab, label: 'Habits', icon: <HabitsIcon /> },
           { key: 'schedule' as Tab, label: 'Schedule', icon: <ScheduleIcon /> },
+          { key: 'apps' as Tab, label: 'Apps', icon: <AppsIcon /> },
         ]).map(({ key, label, icon }) => (
           <button
             key={key}
@@ -5907,6 +5984,17 @@ function FormLabel({ children, style }: { children: React.ReactNode; style?: Rea
 }
 
 // ── Tab icons ─────────────────────────────────────────────────────────────────
+
+function AppsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="5" height="5" rx="1.2" />
+      <rect x="9" y="2" width="5" height="5" rx="1.2" />
+      <rect x="2" y="9" width="5" height="5" rx="1.2" />
+      <circle cx="11.5" cy="11.5" r="2.5" />
+    </svg>
+  );
+}
 
 function TodayIcon() {
   return (

@@ -67,6 +67,8 @@ export interface EntitlementFeatures {
   ai_summary: boolean;
   history_unlimited: boolean;
   api_integrations: boolean;
+  /** Publishing a plugin to the directory as private. */
+  private_plugins: boolean;
   max_devices: number;
   max_workspaces: number;
   history_days: number;
@@ -102,6 +104,7 @@ export const FREE_ENTITLEMENTS: Entitlements = {
     ai_summary: false,
     history_unlimited: false,
     api_integrations: false,
+    private_plugins: false,
     max_devices: 1,
     max_workspaces: 1,
     history_days: 30,
@@ -118,6 +121,7 @@ export const PRO_ENTITLEMENTS: Entitlements = {
     ai_summary: false,
     history_unlimited: true,
     api_integrations: false,
+    private_plugins: true,
     max_devices: 10,
     max_workspaces: 999,
     history_days: 9999,

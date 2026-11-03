@@ -39,6 +39,18 @@ export async function sendMagicLink(
   if (error) throw error;
 }
 
+/** Sends the sign-up confirmation email again, for an account that hasn't
+ *  confirmed its address yet ("Email not confirmed" on sign-in). Supabase
+ *  rate-limits it; the error says when to try again. */
+export async function resendSignupConfirmation(
+  supabase: SupabaseClient,
+  email: string,
+  redirectTo: string,
+): Promise<void> {
+  const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirectTo } });
+  if (error) throw error;
+}
+
 /** Email OTP (extension): emails a 6-digit code; complete with `verifyEmailOtp`.
  *  Used instead of a magic link in the extension, where a link redirect can't
  *  hand the session back to the popup. */

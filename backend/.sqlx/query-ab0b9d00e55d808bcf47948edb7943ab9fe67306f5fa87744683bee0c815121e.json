@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugin_report (listing_id, reporter_user_id, reason)\n           SELECT $1, $2, $3\n           WHERE NOT EXISTS (\n             SELECT 1 FROM plugin_report\n             WHERE listing_id = $1 AND reporter_user_id = $2 AND resolved_at IS NULL\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ab0b9d00e55d808bcf47948edb7943ab9fe67306f5fa87744683bee0c815121e"
+}

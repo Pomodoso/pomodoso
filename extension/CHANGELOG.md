@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.4.0 (In progress)
+
+### Apps
+
+- **New Apps tab** — Small tools that live inside Pomodoso, each one a single YAML file: a quit-smoking tracker, a year in pixels, a reading list, a bookshelf… Install one from **Apps → Add an app** by choosing the file or pasting it. Before installing you see what it adds, its settings, and whether to show it on Today.
+- **Each app has its own settings** — Change its values, edit the states and colors of lists that allow it (Year in Pixels), and turn Today on or off.
+- **Apps on Today** — Apps that offer it get a small card in a new Apps section of Today: tap + on a counter, pick today's state, or glance at a number. Tap the card to open the app. Turn it on when installing or from the app's settings.
+- **Apps can ask a quick question** — After a pomodoro, during the break, one app may ask something like "Did you smoke during this break?" (one question per break, taking turns between apps). Apps that track your days ask about yesterday the next morning. Every question can be dismissed.
+- **App lines in your reports** — Apps can add a line to the daily or weekly report, like "Cigarettes: 61 this week (−12% vs last week)".
+- **Browse apps** — Apps → Add an app opens a directory of published apps: search by name and install one in two taps. Choosing a file or pasting it is still there, under From a file.
+- **Install from the web** — On pomodoso.com/apps and in your dashboard, Install in Pomodoso opens the app's install preview here; you confirm in the extension.
+- **App updates** — Apps installed from the directory show **Update** when a new version is out. Small changes can apply on their own (turn it on in the app's settings); a version that changes how your entries are stored always asks first and says what it will do. An app taken down from the directory keeps working, without updates, and says so in its settings.
+- **Make an app yours** — Add a newer file of an app you already have (with a higher version) and it updates in place: you see what changes, and your entries stay.
+- **Export and restore an app with its data** — One file per app, from the app's settings. Restore it from Add an app, here or on another browser.
+- **Signed out, apps are read-only** — You still see your apps and their numbers, with a banner to sign in.
+
 ## v1.3.12 (In progress)
 
 

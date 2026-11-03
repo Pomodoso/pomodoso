@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugin_listing SET deleted_at = NOW() WHERE slug = $1 AND owner_user_id = $2 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ed0b59df5282a3d62b12d42fcfd921f6898361b2b4bf5919cfe5a4d4ec6ffdba"
+}

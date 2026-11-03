@@ -23,7 +23,7 @@ const isExcludedSetting = (key: string) =>
 // Tables a backup must contain to be considered valid. Tables added in newer
 // versions are imported when present but don't invalidate older backups.
 const REQUIRED_TABLES = ['tasks', 'projects', 'workspaces', 'habits'] as const;
-const ALL_TABLES = ['tasks', 'taskOrders', 'projects', 'workspaces', 'habits', 'habitHistory', 'meetings', 'detectionRules', 'achievements', 'settings'] as const;
+const ALL_TABLES = ['tasks', 'taskOrders', 'projects', 'workspaces', 'habits', 'habitHistory', 'meetings', 'detectionRules', 'achievements', 'plugins', 'pluginRecords', 'settings'] as const;
 
 export interface BackupEnvelope {
   version: '1';
@@ -50,7 +50,10 @@ function refreshSyncMeta<T extends { syncedAt?: string; updatedAt?: string }>(ro
 }
 
 export async function exportDb(): Promise<string> {
-  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, allSettings] = await Promise.all([
+  // One read transaction: the backup is a consistent snapshot, so a plugin
+  // uninstalled mid-export can't come out live with its records deleted.
+  const tables = [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.achievements, db.plugins, db.pluginRecords, db.settings];
+  const [tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, plugins, pluginRecords, allSettings] = await db.transaction('r', tables, () => Promise.all([
     db.tasks.toArray(),
     db.taskOrders.toArray(),
     db.projects.toArray(),
@@ -60,15 +63,17 @@ export async function exportDb(): Promise<string> {
     db.meetings.toArray(),
     db.detectionRules.toArray(),
     db.achievements.toArray(),
+    db.plugins.toArray(),
+    db.pluginRecords.toArray(),
     db.settings.toArray(),
-  ]);
+  ]));
 
   const settings = allSettings.filter(s => !isExcludedSetting(s.key));
 
   const envelope: BackupEnvelope = {
     version: '1',
     exportedAt: new Date().toISOString(),
-    data: { tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, settings },
+    data: { tasks, taskOrders, projects, workspaces, habits, habitHistory, meetings, detectionRules, achievements, plugins, pluginRecords, settings },
   };
 
   return JSON.stringify(envelope, null, 2);
@@ -91,7 +96,7 @@ export async function importDb(json: string): Promise<void> {
   const rows = (table: (typeof ALL_TABLES)[number]): unknown[] =>
     Array.isArray(data[table]) ? data[table] : [];
 
-  await db.transaction('rw', [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.achievements, db.settings], async () => {
+  await db.transaction('rw', [db.tasks, db.taskOrders, db.projects, db.workspaces, db.habits, db.habitHistory, db.meetings, db.detectionRules, db.achievements, db.plugins, db.pluginRecords, db.settings], async () => {
     await Promise.all([
       db.tasks.clear(),
       db.taskOrders.clear(),
@@ -102,6 +107,8 @@ export async function importDb(json: string): Promise<void> {
       db.meetings.clear(),
       db.detectionRules.clear(),
       db.achievements.clear(),
+      db.plugins.clear(),
+      db.pluginRecords.clear(),
     ]);
 
     // Settings: clear non-excluded keys, plus local sync state — after an import
@@ -137,6 +144,9 @@ export async function importDb(json: string): Promise<void> {
       db.meetings.bulkPut(refreshSyncMeta(rows('meetings') as never[])),
       db.detectionRules.bulkPut(refreshSyncMeta(rows('detectionRules') as never[])),
       db.achievements.bulkPut(refreshSyncMeta(rows('achievements') as never[])),
+      // Without the sync plan this backup is the only copy of a plugin's data.
+      db.plugins.bulkPut(refreshSyncMeta(rows('plugins') as never[])),
+      db.pluginRecords.bulkPut(refreshSyncMeta(rows('pluginRecords') as never[])),
       db.settings.bulkPut((rows('settings') as { key: string }[]).filter(s => !isExcludedSetting(s.key)) as never[]),
     ]);
   });

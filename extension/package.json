@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite build --watch --mode development",
     "dev:popup": "vite --config vite.popup.config.ts",
-    "build": "vite build --mode production",
+    "build": "vite build --mode development",
     "build:dev": "vite build --mode development",
     "build:prod": "vite build --mode production",
     "typecheck": "tsc --noEmit",

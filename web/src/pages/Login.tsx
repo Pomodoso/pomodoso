@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { signInWithProvider, signInWithEmail, signUpWithEmail, resetPasswordForEmail, sendMagicLink } from '@pomodoso/api';
+import { signInWithProvider, signInWithEmail, signUpWithEmail, resetPasswordForEmail, sendMagicLink, resendSignupConfirmation } from '@pomodoso/api';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { useAuth } from '../lib/AuthContext.tsx';
 
@@ -8,7 +8,11 @@ export default function Login() {
   const { session } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const next = searchParams.get('next') ?? '/dashboard';
+  // Where to go after signing in, for every way of signing in (password, Google,
+  // magic link, sign-up confirmation). Only a path on this site: anything else
+  // ('//evil.com', 'https://…') falls back to the dashboard.
+  const asked = searchParams.get('next');
+  const next = asked && asked.startsWith('/') && !asked.startsWith('//') ? asked : '/dashboard';
   // Allow deep-linking straight to the sign-up form (e.g. ?mode=signup from the extension).
   const [mode, setMode] = useState<'signin' | 'signup'>(searchParams.get('mode') === 'signup' ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
@@ -18,13 +22,43 @@ export default function Login() {
   const [signupDone, setSignupDone] = useState(false);
   const [resetState, setResetState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [magicState, setMagicState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  // Signing in before confirming the address: offer the confirmation email again.
+  const unconfirmed = /not confirmed/i.test(error);
+
+  const handleResend = async () => {
+    if (!email.trim()) return;
+    setResendState('sending');
+    try {
+      await resendSignupConfirmation(getSupabase(), email.trim(), `${window.location.origin}${next}`);
+      setError('');
+      setResendState('sent');
+    } catch (err) {
+      setResendState('idle');
+      setError(err instanceof Error ? err.message : 'Could not resend the confirmation email');
+    }
+  };
+
+  const resendButton = (label: string) =>
+    resendState === 'sent' ? (
+      <p className="text-center text-xs text-neutral-400">✓ Confirmation email sent to {email.trim()}. Check your inbox and spam.</p>
+    ) : (
+      <button
+        type="button"
+        onClick={() => void handleResend()}
+        disabled={resendState === 'sending'}
+        className="w-full py-2.5 rounded-lg border border-neutral-700 text-sm font-medium text-neutral-200 hover:bg-neutral-900 transition-colors disabled:opacity-60"
+      >
+        {resendState === 'sending' ? 'Sending…' : label}
+      </button>
+    );
 
   const handleMagicLink = async () => {
     if (!email.trim()) { setError('Enter your email first, then request a magic link'); return; }
     setError('');
     setMagicState('sending');
     try {
-      await sendMagicLink(getSupabase(), email.trim(), `${window.location.origin}/dashboard`);
+      await sendMagicLink(getSupabase(), email.trim(), `${window.location.origin}${next}`);
       setMagicState('sent');
     } catch (err) {
       setMagicState('idle');
@@ -64,7 +98,7 @@ export default function Login() {
 
   const handleOAuth = async (provider: 'google') => {
     setError('');
-    await signInWithProvider(getSupabase(), provider, `${window.location.origin}/dashboard`);
+    await signInWithProvider(getSupabase(), provider, `${window.location.origin}${next}`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,7 +107,7 @@ export default function Login() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signUpWithEmail(getSupabase(), email, password, `${window.location.origin}/dashboard`);
+        await signUpWithEmail(getSupabase(), email, password, `${window.location.origin}${next}`);
         setSignupDone(true);
       } else {
         await signInWithEmail(getSupabase(), email, password);
@@ -92,7 +126,9 @@ export default function Login() {
         <div className="max-w-sm w-full text-center">
           <div className="text-2xl mb-3">✉</div>
           <h1 className="text-lg font-semibold mb-2">Check your email</h1>
-          <p className="text-sm text-neutral-400">We sent a confirmation link to <strong>{email}</strong>.</p>
+          <p className="text-sm text-neutral-400 mb-6">We sent a confirmation link to <strong>{email}</strong>.</p>
+          {resendButton("Didn't get it? Send it again")}
+          {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
         </div>
       </div>
     );
@@ -150,6 +186,7 @@ export default function Login() {
             className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-neutral-700 text-sm placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
           />
           {error && <p className="text-xs text-red-400">{error}</p>}
+          {unconfirmed || resendState === 'sent' ? resendButton('Resend confirmation email') : null}
           <button
             type="submit"
             disabled={loading}

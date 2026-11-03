@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { TimerMode, DetectionRule, SoundSettings, TimerSettings, RecurrenceRule } from '@pomodoso/types';
 import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS } from '@pomodoso/types';
+import type { PluginManifest } from '@pomodoso/types/plugins';
 export type { RecurrenceRule };
 
 // ─── Sync meta ────────────────────────────────────────────────────────────────
@@ -190,6 +191,37 @@ export interface DetectionRuleRow extends SyncMeta {
   presetId?: string;
 }
 
+// ─── Plugin types ──────────────────────────────────────────────────────────────
+// A plugin is a declarative YAML mini-app (@pomodoso/types/plugins). The row
+// keeps the parsed, validated manifest — never the YAML text, which is only
+// an input format. Personal like habits: no workspaceId.
+export interface PluginRow extends SyncMeta {
+  id: string;                 // client-generated UUID
+  slug: string;               // manifest.id; one live install per slug
+  source: 'file' | 'directory';
+  directoryVersionId?: string | undefined;
+  manifest: PluginManifest;
+  // The user's values for manifest.settings, plus per-user state that must
+  // survive updates of the file (edited select options, Today on/off).
+  settings: Record<string, unknown>;
+  enabled: boolean;
+  autoUpdate: boolean;
+  installedOn: string;        // YYYY-MM-DD local — where taper starts, how far back streak looks
+  createdAt: string;
+}
+
+// One record of one of a plugin's collections. Same shape as the engine's
+// PluginRecord, in this file's camelCase; see toEngineRecord in plugins.ts.
+export interface PluginRecordRow extends SyncMeta {
+  id: string;                 // UUID; for daily collections derived by dailyRecordId()
+  pluginId: string;
+  collection: string;
+  day?: string | undefined;          // daily collections, YYYY-MM-DD
+  occurredAt?: string | undefined;   // event collections, ISO
+  data: Record<string, unknown>;
+  createdAt: string;
+}
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 export interface SettingRow {
   key: string;
@@ -208,6 +240,8 @@ export class PomoDB extends Dexie {
   meetings!:       Table<MeetingRow>;
   detectionRules!: Table<DetectionRuleRow>;
   achievements!:   Table<AchievementRow>;
+  plugins!:        Table<PluginRow>;
+  pluginRecords!:  Table<PluginRecordRow>;
   settings!:       Table<SettingRow>;
 
   constructor() {
@@ -399,6 +433,12 @@ export class PomoDB extends Dexie {
     // its places, or export/import silently drops every earned badge.
     this.version(17).stores({
       achievements: 'id, kind, earnedOn',
+    });
+    // v18: plugins. Two new stores — and like v17, backup.ts and syncChoice.ts
+    // must list them, or export/import and "use my account only" skip them.
+    this.version(18).stores({
+      plugins:       'id, slug',
+      pluginRecords: 'id, pluginId, [pluginId+collection], [pluginId+collection+day]',
     });
   }
 }

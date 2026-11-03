@@ -11,6 +11,8 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && SQLX_OFFLINE=true cargo bu
 COPY src ./src
 COPY migrations ./migrations
 COPY .sqlx ./.sqlx
+# The plugin file schema, embedded with include_str! (generated in @pomodoso/types)
+COPY schema ./schema
 
 RUN touch src/main.rs && SQLX_OFFLINE=true cargo build --release
 

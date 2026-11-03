@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
-import { copyFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 
 const root = resolve(__dirname, 'src');
 
@@ -13,15 +13,28 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    {
-      name: 'copy-manifest',
-      closeBundle() {
-        copyFileSync(
-          resolve(__dirname, 'manifest.json'),
-          resolve(__dirname, 'dist/manifest.json'),
-        );
-      },
-    },
+    (() => {
+      // A local web app (VITE_WEB_URL, e.g. http://localhost:5180) gets the
+      // web-bridge content script in that build only; the store build keeps
+      // pomodoso.com alone.
+      let webUrl: string | undefined;
+      let outDir = resolve(__dirname, 'dist');
+      return {
+        name: 'copy-manifest',
+        configResolved(config) {
+          webUrl = config.env.VITE_WEB_URL as string | undefined;
+          outDir = config.build.outDir;
+        },
+        closeBundle() {
+          const manifest = JSON.parse(readFileSync(resolve(__dirname, 'manifest.json'), 'utf8'));
+          const bridge = manifest.content_scripts.find((c: { js: string[] }) => c.js.includes('content-scripts/web-bridge.js'));
+          const matches: string[] = bridge.matches;
+          const extra = webUrl ? `${new URL(webUrl).origin}/*` : null;
+          if (extra && !matches.includes(extra)) matches.push(extra);
+          writeFileSync(resolve(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+        },
+      };
+    })(),
     {
       // Wrap content scripts in IIFEs so their minified top-level vars
       // don't collide when Chrome loads multiple scripts in the same global scope.
@@ -60,6 +73,7 @@ export default defineConfig({
         'content-scripts/selection': resolve(root, 'content-scripts/selection.ts'),
         'content-scripts/break-overlay': resolve(root, 'content-scripts/break-overlay.ts'),
         'content-scripts/arxiv': resolve(root, 'content-scripts/arxiv.ts'),
+        'content-scripts/web-bridge': resolve(root, 'content-scripts/web-bridge.ts'),
       },
       output: {
         entryFileNames: (chunk) => {

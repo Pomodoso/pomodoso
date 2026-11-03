@@ -5,10 +5,10 @@ ZIP_DEV := releases/pomodoso-$(VERSION)-dev.zip
 .PHONY: dev prod zip zip_dev
 
 dev:
-	pnpm exec vite build --watch
+	pnpm exec vite build --watch --mode development
 
 prod:
-	pnpm exec vite build
+	pnpm exec vite build --mode production
 
 # Packages the Web Store zip, then puts dist/ back on a dev build.
 #

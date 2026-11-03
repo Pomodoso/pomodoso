@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugin_listing SET\n                     name = $2, description = $3, icon = $4, author = $5, has_today = $6,\n                     latest_version = $7, visibility = COALESCE($8, visibility), deleted_at = NULL\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "71aeacb22b2ad01b89b28c228ca6cdfe19c26b998e6319c45077c901077bfd0c"
+}

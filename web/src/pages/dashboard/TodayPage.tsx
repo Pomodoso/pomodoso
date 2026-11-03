@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.ts';
 import { habitIconClass, habitIconColor } from '../../lib/habitIcons.ts';
@@ -7,6 +7,9 @@ import { trackEvent } from '../../lib/analytics.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { TaskDetailModal } from '../../components/TaskDetailModal.tsx';
 import { ReportModal } from '../../components/ReportModal.tsx';
+
+// Lazy: it brings the plugin engine and components, only for users with apps.
+const TodayAppsCard = lazy(() => import('./InstalledApps.tsx'));
 import type { TaskStatusConfig } from '@pomodoso/types';
 import { customStatusLabel, useTaskStatuses } from '../../lib/useTaskStatuses.ts';
 
@@ -873,6 +876,12 @@ export default function TodayPage({ workspaceId }: { workspaceId: string }) {
           <MeetingsCard meetings={data.meetings} />
           <TimeCard workLog={data.work_log} meetings={data.meetings} />
           <HabitsCard habits={data.habits} date={date} />
+          {/* Widgets show today's state only, like the extension's Today. */}
+          {isToday ? (
+            <Suspense fallback={null}>
+              <TodayAppsCard onOpen={(id) => navigate(`/dashboard/apps?open=${id}`)} />
+            </Suspense>
+          ) : null}
           <ChallengesCard challenges={data.challenges ?? []} />
           <StatsCard stats={data.stats} />
         </div>
