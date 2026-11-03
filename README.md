@@ -4,22 +4,29 @@ Unified daily work tracking — pomodoro timer, tasks & priorities, habits, and 
 Calendar — as a Chrome extension with a companion web dashboard. Local-first, with
 real-time sync across devices for paid users.
 
+**[Apps](#apps)** let anyone add their own trackers: a single YAML file, usually written by
+an AI assistant, becomes a small app inside Pomodoso.
+
 ## Stack
 
 - **Backend:** Rust · Axum · sqlx · PostgreSQL
 - **Extension / Web:** React · Vite · TypeScript
 - **Local storage (clients):** IndexedDB via Dexie
 - **Monorepo:** pnpm workspaces
-- **Auth:** Supabase · **Email:** Resend · **Billing:** Stripe
+- **Auth:** Supabase · **Email:** Postmark · **Billing:** Stripe
 
 ## Layout
 
 ```
 backend/      Rust API (self-contained Cargo project)
 extension/    Chrome MV3 extension (React + Vite)
-web/          Landing (pomodoso.com) + web dashboard (React + Vite)
+web/          Landing (pomodoso.com), public app directory + web dashboard (React + Vite)
+mobile/       Expo app
 api/          Shared TS HTTP/WS client (@pomodoso/api)
-shared/       Shared TS types/utils
+shared/
+  types/      Shared TS types and rules, including the app format (@pomodoso/types)
+  ui/         Shared React components (@pomodoso/ui)
+  plugin/     App file validator CLI, published to npm (@pomodoso/plugin)
 docs/         Spec, ADRs, logos
 ```
 
@@ -41,9 +48,13 @@ cd backend && sqlx migrate run && cd ..
 
 Client env files are committed with dev/prod values:
 `extension/.env.development` + `extension/.env.production`, and `web/.env.local`.
-Dev points at `http://localhost:8080` and the dev Supabase project.
+Dev points at `http://localhost:8080`, with the same Supabase project as production: sign-in emails are real.
 
 ## Run locally
+
+`make dev` starts Postgres (Docker or Podman), the API, the web app and the extension's
+watch build together; `make help` lists the targets. Load `extension/dist` unpacked in
+`chrome://extensions`, and reload it there after the manifest changes. One by one:
 
 ```bash
 # Backend (port 8080)
@@ -62,7 +73,7 @@ pnpm --filter extension dev        # watch-rebuild on change
 
 ## Extension: dev vs. production build
 
-**Every normal build is dev** (loads `.env.development` → `localhost:8080`, dev Supabase).
+**Every normal build is dev** (loads `.env.development` → `localhost:8080`).
 Production only happens when packaging the store zip — and it flips back to dev afterward,
 so you can never accidentally load a prod-pointing build locally.
 
@@ -85,6 +96,48 @@ path (`pnpm --filter extension zip`) that produced the same artifact under a dif
 name — `pomodoso-extension-v<version>.zip` against the Makefile's `pomodoso-<version>.zip`
 — and every release from 1.1.2 on used the Makefile's. Two ways to build one thing is
 how you end up uploading the wrong file.
+
+## Apps
+
+An app (a "plugin" in the code) is one YAML file: its data, what it computes and which of
+Pomodoso's built-in components to show. It's never code: the file is validated against a
+closed catalog and rendered with components that ship in the clients, which is what keeps
+it within Chrome's MV3 remote-code rules and makes a public directory safe.
+
+**Using them:** browse at [pomodoso.com/apps](https://pomodoso.com/apps), or in the extension
+under Apps → Add an app.
+
+**Writing one:** start at [pomodoso.com/apps/build](https://pomodoso.com/apps/build). Point an AI
+assistant at [`llms-full.txt`](https://pomodoso.com/llms-full.txt) and check the result:
+
+```bash
+npx @pomodoso/plugin validate my-app.yaml
+```
+
+To update an app, keep its `id` and raise its `version`. Add the new file in the extension, or
+publish it from Dashboard → Apps; entries carry over.
+
+**In this repo:**
+
+| Where | What |
+|---|---|
+| `shared/types/src/plugins/` | The format: schema, validation, computed values, update checks, migrations, docs for LLMs, example apps |
+| `shared/ui/src/plugins/` | The components an app renders with |
+| `shared/plugin/` | The CLI (`shared/plugin/skill/` has the agent skill) |
+| `extension/src/popup/apps/`, `extension/src/plugins.ts` | Apps tab, storage, hooks, install and updates |
+| `web/src/pages/apps/`, `web/src/pages/dashboard/AppsPage.tsx` | Public directory, publishing, installed apps |
+| `backend/src/routes/plugin_directory.rs`, `installed_plugins.rs` | Directory API, installed apps; sync lives in `sync.rs` |
+
+The JSON Schema and `llms.txt` / `llms-full.txt` are generated from the catalog, and a test
+fails if they go stale:
+
+```bash
+pnpm --filter @pomodoso/types gen:plugin-schema
+pnpm --filter @pomodoso/types gen:llms
+```
+
+`make seed-apps` publishes the example apps as the Pomodoso account
+(`POMODOSO_APPS_EMAIL`, `POMODOSO_APPS_PASSWORD`, `API_URL`).
 
 ## Mobile: local builds
 

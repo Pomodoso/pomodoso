@@ -106,6 +106,10 @@ export default function BuildPage() {
           <p style={{ margin: 0, color: '#44423C' }}>
             Paste the file into Pomodoso: in the extension, Apps → Add an app → From a file, or in your <Link to="/dashboard/apps">dashboard → Apps</Link> to publish it. Both run the same checks as the directory, say exactly what to fix, and show the app before anything is saved.
           </p>
+          <p style={{ margin: 0, color: '#44423C' }}>
+            Or from a terminal, with the same validator. It's what agents run to fix their own mistakes:
+          </p>
+          <pre style={dark}>npx @pomodoso/plugin validate my-app.yaml</pre>
         </section>
       </main>
     </div>
