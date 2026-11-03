@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.4.0 (In progress)
+## v1.4.0
 
 ### Apps
 
