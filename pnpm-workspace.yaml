@@ -1,7 +1,6 @@
 packages:
   - 'extension'
   - 'web'
-  - 'marketing'
   - 'mobile'
   - 'api'
   - 'shared/*'
