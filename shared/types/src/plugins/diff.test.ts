@@ -49,7 +49,7 @@ test('wording and new optional things are additive and publishable', () => {
     next((m) => {
       m.version = '1.1.0';
       m.description = 'Your reading, organized.';
-      book(m).fields.push({ key: 'pages', type: 'number', optional: true });
+      book(m).fields.push({ key: 'reread', type: 'boolean', optional: true });
       fieldOf(m, 'status').options.push('abandoned');
       fieldOf(m, 'title').label = 'Book title';
     }),

@@ -48,10 +48,10 @@ const BLOCKS: Record<BlockType, string> = {
   list: '0.1', 'tag-filter': '0.1', board: '0.1', 'year-grid': '0.1', 'day-picker': '0.1', breakdown: '0.1', text: '0.1',
 };
 const WIDGETS: Record<TodayWidgetType, string> = {
-  'mini-counter': '0.1', 'select-today': '0.1', 'count-badge': '0.1', stat: '0.1', stats: '0.2', progress: '0.2',
+  'mini-counter': '0.1', 'select-today': '0.1', 'count-badge': '0.1', stat: '0.1', stats: '0.2', progress: '0.2', record: '0.2',
 };
 const OPS: Record<ComputedOp, string> = {
-  count: '0.1', sum: '0.1', avg: '0.1', min: '0.1', max: '0.1', last: '0.1', first: '0.1', streak: '0.1', taper: '0.1', delta: '0.1', calendar: '0.2',
+  count: '0.1', sum: '0.1', avg: '0.1', min: '0.1', max: '0.1', last: '0.1', first: '0.1', streak: '0.1', taper: '0.1', delta: '0.1', calendar: '0.2', ratio: '0.2',
 };
 const FORMATS: Record<StatFormat, string> = {
   number: '0.1', time_ago: '0.1', days: '0.1', percent: '0.1', share: '0.2', duration: '0.1', date: '0.1',
@@ -86,6 +86,7 @@ export function requiredAppsVersion(m: PluginManifest): string {
     at(OPS[op]);
     if ('taper' in e) for (const x of Object.values(e.taper)) values(x as ValueRef | undefined);
     if ('delta' in e) e.delta.forEach(values);
+    if ('ratio' in e) e.ratio.forEach(values);
     if ('streak' in e) {
       values(e.at_least);
       values(e.at_most);
@@ -170,6 +171,8 @@ export function requiredAppsVersion(m: PluginManifest): string {
         values(w.value);
         values(w.max);
         format(w.format);
+        break;
+      case 'record':
         break;
     }
   }

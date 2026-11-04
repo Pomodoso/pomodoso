@@ -107,7 +107,7 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
           {manifest.today ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>On Today</div>
-              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} timeZone={timeZone} weekStart={0} readOnly={false} add={add} remove={remove} setDay={setDay} onOpen={() => setViewId(manifest.views[0]!.id)} />
+              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} timeZone={timeZone} weekStart={0} readOnly={false} add={add} remove={remove} update={env.actions.update} setDay={setDay} onOpen={() => setViewId(manifest.views[0]!.id)} />
             </div>
           ) : null}
           {asks.map((h, i) => (

@@ -11,7 +11,8 @@
 - **Log one you forgot** — Forms for things that happen at a moment (a cigarette, a glass of water) now ask **When**, so you can log it at the time it happened, on an earlier day too. Editing one lets you move it.
 - **Undo a tap** — Apps can show a **−** next to their counter, on Today and in the app, that removes the last one from today. Quit smoking has it.
 - **Save the page you're on** — Bookshelf and Movieshelf can add the book or movie on the current page, with its title, link and cover image.
-- **Several numbers on Today** — An app's Today card can show up to four numbers. Reading list shows what's left to read and what you read this week, month and year.
+- **Several numbers on Today** — An app's Today card can show up to four numbers, two per row, in half the width like the other cards. Reading list shows what's left to read and what you read this week, month and year.
+- **Pages in Bookshelf** — Note a book's pages and the page you're on. Its Today card shows the book you're reading: type the page you're on right there, with a bar against its pages and what you finished this month and year. Stats show the pages you read this year, pages a day, and how far you are into your current books.
 - **Year in Pixels, twice** — Year in Pixels is now about happiness; productivity has its own app, Year in Pixels: Productivity. Updating moves your productivity states to the closest mood. Once you pick today's state, its Today card shows your year in pixels (tap **Change** to pick again).
 - **New app: Year progress** — How much of the year has gone by, on Today and in its own screen with the month and week too. Choose in its settings how it looks: a bar, a ring, or one dot per day.
 - **Installed and Browse apps, side by side** — The Apps tab has two tabs: your installed apps, and Browse apps to search the directory and install more (already installed ones say so and open directly). Installing from a file is a link under Browse.

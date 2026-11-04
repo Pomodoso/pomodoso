@@ -1,7 +1,7 @@
 schema_version: 1
 id: reading-list
 name: Reading list
-version: 1.1.0
+version: 1.2.0
 icon: bookmark
 description: Articles, videos and papers to get to later, organized with tags.
 author: Pomodoso
@@ -64,9 +64,9 @@ today:
     label: Reading list
     items:
       - { label: To read, value: $to_read }
-      - { label: Read this week, value: $read_week }
-      - { label: Month, value: $read_month }
-      - { label: Year, value: $read_year }
+      - { label: This week, value: $read_week }
+      - { label: This month, value: $read_month }
+      - { label: This year, value: $read_year }
 
 rules:
   - collection: link

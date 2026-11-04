@@ -281,6 +281,12 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         value([...path, 'delta', 1], b);
         return;
       }
+      case 'ratio': {
+        const [a, b] = (e as Extract<ComputedExpr, { ratio: unknown }>).ratio;
+        value([...path, 'ratio', 0], a);
+        value([...path, 'ratio', 1], b);
+        return;
+      }
       case 'calendar':
         return;
     }
@@ -467,6 +473,15 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         if (w.caption !== undefined) template([...path, 'caption'], w.caption);
         if (w.style !== undefined) progressStyle([...path, 'style'], w.style);
         break;
+      case 'record': {
+        const c = collection([...path, 'collection'], w.collection, ['item'], 'record');
+        if (w.where) where([...path, 'where'], c, w.where);
+        field([...path, 'title'], c, w.title);
+        field([...path, 'field'], c, w.field, NUMERIC_TYPES, 'record');
+        if (w.max !== undefined) field([...path, 'max'], c, w.max, NUMERIC_TYPES, 'record');
+        if (w.caption !== undefined) template([...path, 'caption'], w.caption);
+        break;
+      }
       case 'stats':
         w.items.forEach((it, i) => {
           template([...path, 'items', i, 'label'], it.label);

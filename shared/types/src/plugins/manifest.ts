@@ -130,7 +130,10 @@ export interface CalendarExpr {
   calendar: (typeof CALENDAR_PERIODS)[number];
   show?: (typeof CALENDAR_SHOWS)[number] | undefined;
 }
-export type ComputedExpr = CountExpr | AggExpr | PickExpr | StreakExpr | TaperExpr | DeltaExpr | CalendarExpr;
+export interface RatioExpr {
+  ratio: [ValueRef, ValueRef];
+}
+export type ComputedExpr = CountExpr | AggExpr | PickExpr | StreakExpr | TaperExpr | DeltaExpr | CalendarExpr | RatioExpr;
 export type ValueRef = number | string | ComputedExpr;
 
 const group = z.enum(GROUP_PERIODS);
@@ -192,12 +195,13 @@ export const computedSchema: z.ZodType<ComputedExpr> = z.lazy(() =>
     }),
     z.strictObject({ delta: z.tuple([valueRefSchema, valueRefSchema]) }),
     z.strictObject({ calendar: z.enum(CALENDAR_PERIODS), show: z.enum(CALENDAR_SHOWS).optional() }),
-  ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta or calendar.' }),
+    z.strictObject({ ratio: z.tuple([valueRefSchema, valueRefSchema]) }),
+  ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta, calendar or ratio.' }),
 );
 
 // Compile-time guard: the union above must list one branch per operator.
 const _opsCovered: Record<(typeof COMPUTED_OPS)[number], true> = {
-  count: true, sum: true, avg: true, min: true, max: true, last: true, first: true, streak: true, taper: true, delta: true, calendar: true,
+  count: true, sum: true, avg: true, min: true, max: true, last: true, first: true, streak: true, taper: true, delta: true, calendar: true, ratio: true,
 };
 void _opsCovered;
 
@@ -380,6 +384,19 @@ const widgetSchemas = {
     format: statFormat.optional(),
     caption: label.optional(),
     style: progressStyle.optional(),
+  }),
+  record: z.strictObject({
+    type: z.literal('record'),
+    label,
+    collection: key,
+    where: whereSchema.optional(),
+    /** The field that names the record (its title). */
+    title: key,
+    /** A number field edited right on the card. */
+    field: key,
+    /** A number field of the same record it's measured against (a bar). */
+    max: key.optional(),
+    caption: label.optional(),
   }),
   stats: z.strictObject({
     type: z.literal('stats'),
