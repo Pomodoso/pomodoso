@@ -182,6 +182,7 @@ export function requiredAppsVersion(m: PluginManifest): string {
         break;
       case 'list':
         values(w.badge);
+        values(w.badge_of);
         values(w.more?.badge);
         break;
     }

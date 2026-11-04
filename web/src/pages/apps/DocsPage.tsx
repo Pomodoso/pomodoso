@@ -35,7 +35,7 @@ import {
   type PluginRecord,
 } from '@pomodoso/types/plugins';
 import { Seo } from '../../seo.tsx';
-import issuesFile from '../../../../shared/types/src/plugins/examples/issues.yaml?raw';
+import kanbanFile from '../../../../shared/types/src/plugins/examples/kanban.yaml?raw';
 import { AppChecker } from './AppChecker.tsx';
 import { LivePreview } from './LivePreview.tsx';
 import { SiteHeader } from './SiteHeader.tsx';
@@ -137,21 +137,21 @@ function Example({ id, name, doc, yaml, part, seed }: { id: string; name: string
   );
 }
 
-const ISSUE_SAMPLES: PluginRecord[] = [
-  { id: 'doc-issue-1', collection: 'issue', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Publish the app', state: 'open', task: 'sample-task-1' } },
-  { id: 'doc-issue-2', collection: 'issue', created_at: '2026-01-01T10:00:00.000Z', data: { title: 'Landing page refresh', state: 'open' } },
-  { id: 'doc-card-1', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Store screenshots', issue: 'doc-issue-1', status: 'doing' } },
-  { id: 'doc-card-2', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Write the listing copy', issue: 'doc-issue-1', status: 'todo' } },
-  { id: 'doc-card-3', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Bump the version', issue: 'doc-issue-1', status: 'done' } },
+const KANBAN_SAMPLES: PluginRecord[] = [
+  { id: 'doc-board-1', collection: 'board', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Publish the app', state: 'open', task: 'sample-task-1' } },
+  { id: 'doc-board-2', collection: 'board', created_at: '2026-01-01T10:00:00.000Z', data: { title: 'Landing page refresh', state: 'open' } },
+  { id: 'doc-card-1', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Store screenshots', board: 'doc-board-1', status: 'doing' } },
+  { id: 'doc-card-2', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Write the listing copy', board: 'doc-board-1', status: 'todo' } },
+  { id: 'doc-card-3', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Bump the version', board: 'doc-board-1', status: 'done' } },
 ];
 
-function IssuesPreview() {
+function KanbanPreview() {
   const mounted = useMounted();
   const manifest = useMemo(() => {
-    const r = parsePluginFile(issuesFile);
+    const r = parsePluginFile(kanbanFile);
     return r.ok ? r.manifest : null;
   }, []);
-  return mounted && manifest ? <LivePreview manifest={manifest} initialRecords={ISSUE_SAMPLES} /> : null;
+  return mounted && manifest ? <LivePreview manifest={manifest} initialRecords={KANBAN_SAMPLES} /> : null;
 }
 
 export default function DocsPage() {
@@ -265,31 +265,31 @@ export default function DocsPage() {
 
         <Section id="records" title="Records inside records">
           <p style={muted}>
-            Some apps need things that belong to other things: the tasks of an issue, the notes of a book. Three pieces do it, shown here with the Issues app, where every issue opens its own kanban board.
+            Some apps need things that belong to other things: the cards of a board, the notes of a book. Three pieces do it, shown here with the Kanban app, where every board opens with its own columns.
           </p>
           <ul style={{ ...muted, paddingLeft: 20, lineHeight: 1.7, listStyle: 'disc' }}>
             <li>
-              A <b><code>ref</code> field</b> points to a record of another item collection: <code>{'{ key: issue, type: ref, collection: issue }'}</code>. The form lets you pick one by its title. Deleting an issue deletes its cards too.
+              A <b><code>ref</code> field</b> points to a record of another item collection: <code>{'{ key: board, type: ref, collection: board }'}</code>. The form lets you search and pick one by its title. Deleting a board deletes its cards too.
             </li>
             <li>
-              A <b>record's screen</b> is a view with <code>of: issue</code>. It isn't one of the app's tabs: it opens when you tap a row of a <code>list</code> or a card of a <code>board</code> that says <code>opens: board</code>. Its blocks read the record as <code>$record</code> (its id) and <code>$record.title</code> (any of its fields), so <code>{'filter: { issue: $record }'}</code> shows only its cards and <code>{'prefill: { issue: $record }'}</code> adds new ones to it.
+              A <b>record's screen</b> is a view with <code>of: board</code>. It isn't one of the app's tabs: it opens when you tap a row of a <code>list</code> or a card of a <code>board</code> that says <code>opens: kanban</code>. Its blocks read the record as <code>$record</code> (its id) and <code>$record.title</code> (any of its fields), so <code>{'filter: { board: $record }'}</code> shows only its cards and <code>{'prefill: { board: $record }'}</code> adds new ones to it.
             </li>
             <li>
               <code>layout: wide</code> opens a view full width, in its own browser tab from the extension. There a <code>board</code> shows its columns side by side: drag a card to another column or use its ‹ › buttons, and add straight into a column. The columns are the options of its <code>group_by</code> field; with <code>user_editable: true</code> each user renames them and adds their own, in the app's settings.
             </li>
           </ul>
           <p style={muted}>
-            On Today, the <b><code>list</code> widget</b> shows the records as rows that open their screens (every open issue, with how many cards it has left), plus one <code>more</code> row for another view (the cards with no issue).
+            On Today, the <b><code>list</code> widget</b> shows the records as rows that open their screens: every open board, with its cards done out of all of them (<code>badge</code> and <code>badge_of</code>, read with <code>$record</code> as the row). An optional <code>more</code> row opens another view.
           </p>
           <p style={muted}>
             A <b><code>task</code> field</b> links a record to one of your Pomodoso tasks. You pick the task from your list; the app keeps only its id and shows its title, and the task shows the record back, with a button to open it. The app can't read or change your tasks.
           </p>
           <details style={card}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>The Issues app's file</summary>
-            <pre style={{ ...code, border: 'none', padding: '12px 0 0' }}>{issuesFile}</pre>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>The Kanban app's file</summary>
+            <pre style={{ ...code, border: 'none', padding: '12px 0 0' }}>{kanbanFile}</pre>
           </details>
-          <IssuesPreview />
-          <p style={{ ...muted, fontSize: 14 }}>In the preview, tap an issue to open its board. The tasks you can link are samples.</p>
+          <KanbanPreview />
+          <p style={{ ...muted, fontSize: 14 }}>In the preview, tap a board to open it, and move its cards with ‹ ›. The tasks you can link are samples.</p>
         </Section>
 
         <Section id="today" title="Today widget">

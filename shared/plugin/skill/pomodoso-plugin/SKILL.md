@@ -9,7 +9,7 @@ A Pomodoso plugin is one YAML file. Pomodoso validates it and renders it with bu
 
 ## 1. Read the reference first
 
-Fetch https://pomodoso.com/llms-full.txt before writing anything. It lists every block, field type, computed value, Today widget and hook with their properties, the rules that trip people up, and complete examples (trackers, shelves, an issues app with a kanban per issue). Copy the patterns of the closest example; they are known to be valid.
+Fetch https://pomodoso.com/llms-full.txt before writing anything. It lists every block, field type, computed value, Today widget and hook with their properties, the rules that trip people up, and complete examples (trackers, shelves, a kanban app with boards linked to tasks). Copy the patterns of the closest example; they are known to be valid.
 
 ## 2. Write the whole file
 

@@ -141,7 +141,12 @@ export function TodayWidget(props: TodayWidgetProps) {
         // Names need the width: the card takes the row.
         <Card {...props} label={label} wide>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {shown.map((r) => row(r.id, recordTitle(manifest, r), w.badge === undefined ? '' : fmt(evaluator.forRecord(r.id).value(w.badge)), () => props.open?.(w.opens, r.id)))}
+            {shown.map((r) => {
+              const one = evaluator.forRecord(r.id);
+              const badge = w.badge === undefined ? '' : fmt(one.value(w.badge));
+              const of = w.badge_of === undefined ? '' : fmt(one.value(w.badge_of));
+              return row(r.id, recordTitle(manifest, r), badge && of ? `${badge}/${of}` : badge, () => props.open?.(w.opens, r.id));
+            })}
             {w.more ? row('more', evaluator.template(w.more.label, templateFormat(manifest, now)), w.more.badge === undefined ? '' : fmt(evaluator.value(w.more.badge)), () => props.open?.(w.more!.view)) : null}
             {rows.length > shown.length ? <span style={{ fontSize: 10, color: 'var(--color-text-faint)', padding: '0 6px' }}>+{rows.length - shown.length} more in the app</span> : null}
             {rows.length === 0 && !w.more ? <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>Nothing here yet.</span> : null}

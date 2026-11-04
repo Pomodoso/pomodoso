@@ -1,18 +1,18 @@
 schema_version: 1
-id: issues
-name: Issues
-version: 1.1.0
+id: kanban
+name: Kanban
+version: 1.0.0
 icon: check
-description: Each issue opens its own kanban board, and tasks with no issue share one more. Link an issue to a task to open it from there.
+description: Boards with To do, In progress and Done. Link a board to a task to open it from there.
 author: Pomodoso
 license: MIT
 
 collections:
-  - key: issue
+  - key: board
     kind: item
     title_field: title
     fields:
-      - { key: title, type: text }
+      - { key: title, type: text, label: Name }
       - { key: task, type: task, label: Linked task, optional: true }
       - { key: notes, type: longtext, optional: true }
       - key: state
@@ -24,7 +24,7 @@ collections:
     title_field: title
     fields:
       - { key: title, type: text }
-      - { key: issue, type: ref, collection: issue, optional: true }
+      - { key: board, type: ref, collection: board }
       - key: status
         type: select
         user_editable: true
@@ -35,49 +35,36 @@ collections:
         default: todo
       - { key: notes, type: longtext, optional: true }
 
-computed:
-  open_issues: { count: issue, where: { state: open } }
-  loose_open: { count: card, where: { issue: { exists: false }, status: { not_in: [done] } } }
-
 views:
   - id: main
+    label: Boards
     blocks:
-      - { type: add-button, label: New issue, adds: issue }
+      - { type: add-button, label: New board, adds: board }
       - type: list
-        collection: issue
+        collection: board
         filter: { state: open }
         primary: title
         secondary: [task]
         sort: { field: created_at, order: desc }
-        opens: board
+        opens: kanban
         swipe: { label: Close, set: { state: closed } }
   - id: closed
     label: Closed
     blocks:
       - type: list
-        collection: issue
+        collection: board
         filter: { state: closed }
         primary: title
-        opens: board
+        opens: kanban
         swipe: { label: Reopen, set: { state: open } }
-  - id: loose
-    label: No issue
+  - id: kanban
+    of: board
     layout: wide
     blocks:
-      - { type: add-button, label: Add a task, adds: card }
+      - { type: add-button, label: Add a task, adds: card, prefill: { board: $record } }
       - type: board
         collection: card
-        filter: { issue: { exists: false } }
-        group_by: status
-        card: { title: title }
-  - id: board
-    of: issue
-    layout: wide
-    blocks:
-      - { type: add-button, label: Add a task, adds: card, prefill: { issue: $record } }
-      - type: board
-        collection: card
-        filter: { issue: $record }
+        filter: { board: $record }
         group_by: status
         card: { title: title }
 
@@ -85,10 +72,10 @@ today:
   default_on: true
   widget:
     type: list
-    label: Issues
-    collection: issue
+    label: Kanban
+    collection: board
     where: { state: open }
-    opens: board
-    # Per issue: the cards not done yet (whatever columns the user added).
-    badge: { count: card, where: { issue: $record, status: { not_in: [done] } } }
-    more: { label: No issue, view: loose, badge: $loose_open }
+    opens: kanban
+    # Per board: its cards done, out of all of them (in progress counts as not done).
+    badge: { count: card, where: { board: $record, status: done } }
+    badge_of: { count: card, where: { board: $record } }

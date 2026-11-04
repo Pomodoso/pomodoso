@@ -421,8 +421,10 @@ const widgetSchemas = {
     where: whereSchema.optional(),
     /** A view with `of` this collection: tapping a row opens that record's screen. */
     opens: key,
-    /** A value per row, read with `$record` as that row (its open tasks). */
+    /** A value per row, read with `$record` as that row (its cards done). */
     badge: valueRefSchema.optional(),
+    /** With badge: what it's out of, shown as "badge/badge_of" (done of all its cards). */
+    badge_of: valueRefSchema.optional(),
     /** One more row, after the records, opening a view of the app (the cards with no issue). */
     more: z.strictObject({ label, view: key, badge: valueRefSchema.optional() }).optional(),
   }),

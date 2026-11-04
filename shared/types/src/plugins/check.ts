@@ -526,11 +526,13 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         const c = collection([...path, 'collection'], w.collection, ['item'], 'list');
         if (w.where) where([...path, 'where'], c, w.where);
         opens([...path, 'opens'], w.opens, w.collection);
-        if (w.badge !== undefined) {
-          recordScope = c;
-          value([...path, 'badge'], w.badge);
-          recordScope = undefined;
+        recordScope = c;
+        if (w.badge !== undefined) value([...path, 'badge'], w.badge);
+        if (w.badge_of !== undefined) {
+          if (w.badge === undefined) add([...path, 'badge_of'], 'badge_of goes with a badge: it says what the badge is out of');
+          value([...path, 'badge_of'], w.badge_of);
         }
+        recordScope = undefined;
         if (w.more) {
           template([...path, 'more', 'label'], w.more.label);
           const v = m.views.find((x) => x.id === w.more!.view);
