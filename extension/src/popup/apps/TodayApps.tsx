@@ -8,6 +8,7 @@ import { db, localDate, type PluginRow } from '../../db';
 import { addRecord, deleteRecord, setDaily, updateRecord } from '../../plugins';
 import { useLocalStorage } from '../useStorage';
 import { TodaySectionHeader } from '../TodaySectionHeader';
+import { appPageUrl } from './appEnv';
 import { isSupported } from './supported';
 import { usePluginData } from './usePluginData';
 
@@ -56,6 +57,8 @@ function PinnedApp({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow;
       update={(r, data) => updateRecord(plugin, r.id, data, env)}
       setDay={(c, day, data) => setDaily(plugin, c, day, data, env)}
       onOpen={onOpen}
+      // A record's screen or another view: in the app's own tab, where boards have room.
+      open={(view, record) => void chrome.tabs.create({ url: appPageUrl(plugin.id, view, record) })}
     />
   );
 }

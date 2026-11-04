@@ -864,6 +864,24 @@
                                   ]
                                 }
                               },
+                              "not_in": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              },
                               "exists": {
                                 "type": "boolean"
                               },
@@ -1061,6 +1079,24 @@
                             "type": "object",
                             "properties": {
                               "in": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              },
+                              "not_in": {
                                 "minItems": 1,
                                 "type": "array",
                                 "items": {
@@ -1613,6 +1649,24 @@
                               ]
                             }
                           },
+                          "not_in": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
                           "exists": {
                             "type": "boolean"
                           },
@@ -1691,6 +1745,197 @@
                 "collection",
                 "title",
                 "field"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "list"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "collection": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                },
+                "where": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "in": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "not_in": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "lt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                              }
+                            ]
+                          },
+                          "lte": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                              }
+                            ]
+                          },
+                          "gt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                              }
+                            ]
+                          },
+                          "gte": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                              }
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "minProperties": 1
+                      }
+                    ]
+                  }
+                },
+                "opens": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                },
+                "badge": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  ]
+                },
+                "more": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "view": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    "badge": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "view"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "label",
+                "collection",
+                "opens"
               ],
               "additionalProperties": false
             },
@@ -1920,6 +2165,24 @@
                   "type": "object",
                   "properties": {
                     "in": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    },
+                    "not_in": {
                       "minItems": 1,
                       "type": "array",
                       "items": {
@@ -2238,6 +2501,24 @@
                           ]
                         }
                       },
+                      "not_in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
                       "exists": {
                         "type": "boolean"
                       },
@@ -2367,6 +2648,24 @@
                     "type": "object",
                     "properties": {
                       "in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "not_in": {
                         "minItems": 1,
                         "type": "array",
                         "items": {
@@ -2531,6 +2830,24 @@
                           ]
                         }
                       },
+                      "not_in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
                       "exists": {
                         "type": "boolean"
                       },
@@ -2661,6 +2978,24 @@
                     "type": "object",
                     "properties": {
                       "in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "not_in": {
                         "minItems": 1,
                         "type": "array",
                         "items": {
@@ -2825,6 +3160,24 @@
                           ]
                         }
                       },
+                      "not_in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
                       "exists": {
                         "type": "boolean"
                       },
@@ -2968,6 +3321,24 @@
                           ]
                         }
                       },
+                      "not_in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
                       "exists": {
                         "type": "boolean"
                       },
@@ -3082,6 +3453,24 @@
                           ]
                         }
                       },
+                      "not_in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
                       "exists": {
                         "type": "boolean"
                       },
@@ -3179,6 +3568,24 @@
                     "type": "object",
                     "properties": {
                       "in": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "not_in": {
                         "minItems": 1,
                         "type": "array",
                         "items": {

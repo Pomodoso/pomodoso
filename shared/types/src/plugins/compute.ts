@@ -160,6 +160,11 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
           const hit = Array.isArray(v) ? v.some((x) => options.includes(x)) : options.includes(v as never);
           if (!hit) return false;
         }
+        if (cond.not_in !== undefined) {
+          const options = cond.not_in.map((x) => resolveLiteral(x, asOf));
+          const hit = Array.isArray(v) ? v.some((x) => options.includes(x)) : options.includes(v as never);
+          if (hit) return false;
+        }
         const checks: [unknown, (d: number) => boolean][] = [
           [cond.lt, (d) => d < 0],
           [cond.lte, (d) => d <= 0],

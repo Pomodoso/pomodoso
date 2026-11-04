@@ -157,6 +157,19 @@ today:
     title: title
     field: current_page       # edited right on the card
     max: pages`,
+  list: `today:
+  widget:
+    type: list
+    label: Reading
+    collection: book
+    where: { status: reading }
+    opens: book_page              # a view with \`of: book\`
+    badge: $record.current_page   # per row: the page you're on
+views:
+  - id: book_page
+    of: book
+    blocks:
+      - { type: text, text: "{$record.title}, on page {$record.current_page}" }`,
   stats: `today:
   widget:
     type: stats
@@ -270,10 +283,12 @@ export function guideManifestData(part: { blocks?: string; today?: string; hooks
   const data = parse(GUIDE_PLAYGROUND) as Record<string, unknown>;
   data.views = [{ id: 'main', blocks: part.blocks ? parse(part.blocks) : DEFAULT_VIEW }];
   // A snippet may bring computed values of its own: they join the playground's.
+  // Views it brings (a record's screen) go after the main one.
   const merge = (snippet: string) => {
-    const { computed, ...rest } = parse(snippet) as Record<string, unknown>;
+    const { computed, views, ...rest } = parse(snippet) as Record<string, unknown>;
     Object.assign(data, rest);
     if (computed) data.computed = { ...(data.computed as Record<string, unknown>), ...(computed as Record<string, unknown>) };
+    if (views) data.views = [...(data.views as unknown[]), ...(views as unknown[])];
   };
   if (part.today) merge(part.today);
   if (part.hooks) merge(part.hooks);

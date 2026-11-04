@@ -4,6 +4,7 @@ import {
   fieldOptions,
   formatStat,
   initialRecordData,
+  recordTitle,
   templateFormat,
   type PluginEvaluator,
   type PluginManifest,
@@ -41,6 +42,8 @@ export interface TodayWidgetProps {
   setDay(collection: string, day: string, data: Record<string, unknown>): void | Promise<unknown>;
   /** Opens the app's own screen. */
   onOpen(): void;
+  /** Opens one of the app's views, or a record's screen (the `list` widget's rows). */
+  open?: ((view: string, record?: string) => void) | undefined;
 }
 
 /**
@@ -113,6 +116,40 @@ export function TodayWidget(props: TodayWidgetProps) {
     case 'record':
       return <RecordCard {...props} widget={w} label={label} />;
 
+    case 'list': {
+      const c = manifest.collections.find((x) => x.key === w.collection);
+      const rows = c ? evaluator.records(c.key, w.where) : [];
+      const shown = rows.slice(0, LIST_ROWS);
+      const fmt = (v: PluginValue) => (v === null || v === undefined || v === '' ? '' : formatStat(v, 'number', now));
+      const row = (key: string, title: string, badge: string, onClick: () => void) => (
+        <button
+          key={key}
+          type="button"
+          disabled={!props.open}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 6px', border: 'none', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+        >
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+          {badge ? <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{badge}</span> : null}
+          <span style={{ color: 'var(--color-text-faint)', fontSize: 11 }}>›</span>
+        </button>
+      );
+      return (
+        // Names need the width: the card takes the row.
+        <Card {...props} label={label} wide>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {shown.map((r) => row(r.id, recordTitle(manifest, r), w.badge === undefined ? '' : fmt(evaluator.forRecord(r.id).value(w.badge)), () => props.open?.(w.opens, r.id)))}
+            {w.more ? row('more', evaluator.template(w.more.label, templateFormat(manifest, now)), w.more.badge === undefined ? '' : fmt(evaluator.value(w.more.badge)), () => props.open?.(w.more!.view)) : null}
+            {rows.length > shown.length ? <span style={{ fontSize: 10, color: 'var(--color-text-faint)', padding: '0 6px' }}>+{rows.length - shown.length} more in the app</span> : null}
+            {rows.length === 0 && !w.more ? <span style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>Nothing here yet.</span> : null}
+          </div>
+        </Card>
+      );
+    }
+
     case 'count-badge':
     case 'stat': {
       const v = evaluator.value(w.value);
@@ -181,6 +218,9 @@ export function TodayWidget(props: TodayWidgetProps) {
     }
   }
 }
+
+/** Rows a `list` widget shows before "+N more". */
+const LIST_ROWS = 6;
 
 type RecordSpec = Extract<NonNullable<PluginManifest['today']>['widget'], { type: 'record' }>;
 

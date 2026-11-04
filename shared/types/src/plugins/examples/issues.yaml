@@ -1,9 +1,9 @@
 schema_version: 1
 id: issues
 name: Issues
-version: 1.0.0
+version: 1.1.0
 icon: check
-description: Each issue opens its own kanban board. Link one to a task to open it from there.
+description: Each issue opens its own kanban board, and tasks with no issue share one more. Link an issue to a task to open it from there.
 author: Pomodoso
 license: MIT
 
@@ -24,19 +24,20 @@ collections:
     title_field: title
     fields:
       - { key: title, type: text }
-      - { key: issue, type: ref, collection: issue }
+      - { key: issue, type: ref, collection: issue, optional: true }
       - key: status
         type: select
         user_editable: true
         options:
           - { value: todo, label: To do, color: "#B9B4A7" }
-          - { value: doing, label: Doing, color: "#E0B04A" }
+          - { value: doing, label: In progress, color: "#E0B04A" }
           - { value: done, label: Done, color: "#2D8A7A" }
         default: todo
       - { key: notes, type: longtext, optional: true }
 
 computed:
   open_issues: { count: issue, where: { state: open } }
+  loose_open: { count: card, where: { issue: { exists: false }, status: { not_in: [done] } } }
 
 views:
   - id: main
@@ -59,6 +60,16 @@ views:
         primary: title
         opens: board
         swipe: { label: Reopen, set: { state: open } }
+  - id: loose
+    label: No issue
+    layout: wide
+    blocks:
+      - { type: add-button, label: Add a task, adds: card }
+      - type: board
+        collection: card
+        filter: { issue: { exists: false } }
+        group_by: status
+        card: { title: title }
   - id: board
     of: issue
     layout: wide
@@ -72,4 +83,12 @@ views:
 
 today:
   default_on: true
-  widget: { type: count-badge, label: Open issues, value: $open_issues }
+  widget:
+    type: list
+    label: Issues
+    collection: issue
+    where: { state: open }
+    opens: board
+    # Per issue: the cards not done yet (whatever columns the user added).
+    badge: { count: card, where: { issue: $record, status: { not_in: [done] } } }
+    more: { label: No issue, view: loose, badge: $loose_open }

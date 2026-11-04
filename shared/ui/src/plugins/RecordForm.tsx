@@ -273,18 +273,80 @@ export function FieldInput({ field: f, collection, settings, value, disabled, ch
           </select>
         );
       }
-      const list = choices ?? [];
-      // A value no longer among the choices (a deleted task) stays shown until changed.
-      const missing = str && !list.some((c) => c.value === str);
-      return (
-        <select value={str} disabled={disabled || list.length === 0 && !str} onChange={(e) => onChange(e.target.value || undefined)} style={inputStyle}>
-          <option value="">{list.length === 0 ? (f.type === 'task' ? 'No tasks to link' : 'Nothing to pick yet') : f.optional ? '—' : 'Pick one'}</option>
-          {missing ? <option value={str}>{f.type === 'task' ? 'Task deleted' : 'Deleted'}</option> : null}
-          {list.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-      );
+      return <SearchSelect value={str} choices={choices ?? []} optional={f.optional === true} disabled={disabled} gone={f.type === 'task' ? 'Task deleted' : 'Deleted'} empty={f.type === 'task' ? 'No tasks to link' : 'Nothing to pick yet'} onChange={onChange} />;
     }
   }
+}
+
+/**
+ * A pick from a long list (a task among dozens): type to filter, pick a
+ * match. Shows the picked one's label while not searching.
+ */
+function SearchSelect({ value, choices, optional, disabled, gone, empty, onChange }: {
+  value: string;
+  choices: FieldChoice[];
+  optional: boolean;
+  disabled?: boolean | undefined;
+  /** Shown for a value no longer among the choices (a deleted task). */
+  gone: string;
+  empty: string;
+  onChange: (v: unknown) => void;
+}) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const picked = choices.find((c) => c.value === value);
+  const needle = q.trim().toLowerCase();
+  const matches = (needle ? choices.filter((c) => c.label.toLowerCase().includes(needle)) : choices).slice(0, 8);
+  const pick = (v: string | undefined) => {
+    onChange(v);
+    setQ('');
+    setOpen(false);
+  };
+  if (choices.length === 0 && !value) return <input type="text" disabled placeholder={empty} style={inputStyle} />;
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={open ? q : picked?.label ?? (value ? gone : '')}
+        placeholder={open ? 'Search…' : optional ? 'None' : 'Pick one'}
+        disabled={disabled}
+        onFocus={() => setOpen(true)}
+        // Late enough for a click on a match to land first.
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (matches[0]) pick(matches[0].value);
+          }
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        style={inputStyle}
+      />
+      {open ? (
+        <div role="listbox" style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 6px 18px rgba(0,0,0,0.12)' }}>
+          {optional && value ? (
+            <div role="option" aria-selected={false} onMouseDown={(e) => { e.preventDefault(); pick(undefined); }} style={optionStyle(false)}>
+              <span style={{ color: 'var(--color-text-muted)' }}>None</span>
+            </div>
+          ) : null}
+          {matches.map((c) => (
+            <div key={c.value} role="option" aria-selected={c.value === value} onMouseDown={(e) => { e.preventDefault(); pick(c.value); }} style={optionStyle(c.value === value)}>
+              {c.label}
+            </div>
+          ))}
+          {matches.length === 0 ? <div style={{ ...optionStyle(false), color: 'var(--color-text-faint)', cursor: 'default' }}>No matches</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function optionStyle(on: boolean): CSSProperties {
+  return { padding: '6px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--color-text)', background: on ? 'var(--color-accent-soft)' : 'transparent', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 }
 
 /**

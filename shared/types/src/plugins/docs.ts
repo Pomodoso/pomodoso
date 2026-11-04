@@ -76,6 +76,7 @@ export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
   stat: 'A single value with a `format`.',
   progress: 'A bar of `value` against `max` (default 1), with an optional `format`, a `caption` line under it (`{$name}` works) and a `style` (`bar`, `ring` or `dots`, or a `$setting`). Ring and dots take the whole row.',
   record: 'The latest item of a collection matching `where` (the book you are reading), by its `title` field, with a number `field` you edit right on the card (the page you are on), against an optional `max` field (its pages, as a bar). Optional `caption` line with `{$name}` values.',
+  list: 'The records of a collection matching `where` as rows (the open issues), each opening its screen (`opens`, a view with `of`), with an optional `badge` per row (a value that reads the row as `$record`: its open cards) and one `more` row opening a view of the app (the cards with no issue). Takes the whole row on Today.',
   stats: 'Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.',
 };
 

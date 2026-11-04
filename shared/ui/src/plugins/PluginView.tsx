@@ -614,6 +614,7 @@ function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'bo
           {subtitle ? <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-faint)' }}>{subtitle}</span> : null}
         </span>
         {badge ? <span style={{ fontSize: 10, color: 'var(--color-warning)', flexShrink: 0 }}>{badge}</span> : null}
+        {!ctx.readOnly ? <MoveButtons at={groups.findIndex((g) => g.value === recordValue(c, r, groupField.key))} count={groups.length} labels={groups.map((g) => g.label)} onMove={(i) => move(r.id, groups[i]!.value)} /> : null}
       </button>
     );
   };
@@ -680,6 +681,45 @@ function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'bo
       })}
       {rows.length === 0 ? <Empty>Nothing here yet.</Empty> : null}
     </div>
+  );
+}
+
+/**
+ * ‹ › on a board card: to the previous or next column, without dragging.
+ * Spans, not buttons, since the card itself is a button.
+ */
+function MoveButtons({ at, count, labels, onMove }: { at: number; count: number; labels: string[]; onMove: (i: number) => void }) {
+  const arrow = (to: number, glyph: string) => {
+    const ok = to >= 0 && to < count && at >= 0;
+    return (
+      <span
+        role="button"
+        tabIndex={ok ? 0 : -1}
+        aria-label={ok ? `Move to ${labels[to]}` : undefined}
+        title={ok ? `Move to ${labels[to]}` : undefined}
+        aria-disabled={!ok}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (ok) onMove(to);
+        }}
+        onKeyDown={(e) => {
+          if (ok && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            e.stopPropagation();
+            onMove(to);
+          }
+        }}
+        style={{ width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 12, lineHeight: 1, color: 'var(--color-text-muted)', cursor: ok ? 'pointer' : 'default', opacity: ok ? 1 : 0.25 }}
+      >
+        {glyph}
+      </span>
+    );
+  };
+  return (
+    <span style={{ display: 'inline-flex', gap: 3, flexShrink: 0 }}>
+      {arrow(at - 1, '‹')}
+      {arrow(at + 1, '›')}
+    </span>
   );
 }
 

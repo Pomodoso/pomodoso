@@ -155,6 +155,7 @@ export default function TodayAppsCard({ onOpen }: { onOpen: (id: string) => void
               update={actions.update}
               setDay={actions.setDay}
               onOpen={() => onOpen(a.id)}
+              open={() => onOpen(a.id)}
             />
           );
         })}

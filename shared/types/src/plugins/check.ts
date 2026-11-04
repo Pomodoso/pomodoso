@@ -522,6 +522,24 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         if (w.caption !== undefined) template([...path, 'caption'], w.caption);
         break;
       }
+      case 'list': {
+        const c = collection([...path, 'collection'], w.collection, ['item'], 'list');
+        if (w.where) where([...path, 'where'], c, w.where);
+        opens([...path, 'opens'], w.opens, w.collection);
+        if (w.badge !== undefined) {
+          recordScope = c;
+          value([...path, 'badge'], w.badge);
+          recordScope = undefined;
+        }
+        if (w.more) {
+          template([...path, 'more', 'label'], w.more.label);
+          const v = m.views.find((x) => x.id === w.more!.view);
+          if (!v) add([...path, 'more', 'view'], unknownMessage('view', w.more.view, m.views.filter((x) => x.of === undefined).map((x) => x.id)));
+          else if (v.of !== undefined) add([...path, 'more', 'view'], `"${v.id}" is a record's screen; \`more\` opens one of the app's own views`);
+          if (w.more.badge !== undefined) value([...path, 'more', 'badge'], w.more.badge);
+        }
+        break;
+      }
       case 'stats':
         w.items.forEach((it, i) => {
           template([...path, 'items', i, 'label'], it.label);

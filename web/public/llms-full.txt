@@ -386,6 +386,20 @@ The latest item of a collection matching `where` (the book you are reading), by 
   - `max`: key
   - `caption`: text
 
+### `list`
+
+The records of a collection matching `where` as rows (the open issues), each opening its screen (`opens`, a view with `of`), with an optional `badge` per row (a value that reads the row as `$record`: its open cards) and one `more` row opening a view of the app (the cards with no issue). Takes the whole row on Today.
+
+  - `label` (required): text
+  - `collection` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `opens` (required): key
+  - `badge`: value (number, $reference or computed)
+  - `more`: object
+    - `label` (required): text
+    - `view` (required): key
+    - `badge`: value (number, $reference or computed)
+
 ### `stats`
 
 Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.
@@ -810,9 +824,9 @@ rules:
 schema_version: 1
 id: issues
 name: Issues
-version: 1.0.0
+version: 1.1.0
 icon: check
-description: Each issue opens its own kanban board. Link one to a task to open it from there.
+description: Each issue opens its own kanban board, and tasks with no issue share one more. Link an issue to a task to open it from there.
 author: Pomodoso
 license: MIT
 
@@ -833,19 +847,20 @@ collections:
     title_field: title
     fields:
       - { key: title, type: text }
-      - { key: issue, type: ref, collection: issue }
+      - { key: issue, type: ref, collection: issue, optional: true }
       - key: status
         type: select
         user_editable: true
         options:
           - { value: todo, label: To do, color: "#B9B4A7" }
-          - { value: doing, label: Doing, color: "#E0B04A" }
+          - { value: doing, label: In progress, color: "#E0B04A" }
           - { value: done, label: Done, color: "#2D8A7A" }
         default: todo
       - { key: notes, type: longtext, optional: true }
 
 computed:
   open_issues: { count: issue, where: { state: open } }
+  loose_open: { count: card, where: { issue: { exists: false }, status: { not_in: [done] } } }
 
 views:
   - id: main
@@ -868,6 +883,16 @@ views:
         primary: title
         opens: board
         swipe: { label: Reopen, set: { state: open } }
+  - id: loose
+    label: No issue
+    layout: wide
+    blocks:
+      - { type: add-button, label: Add a task, adds: card }
+      - type: board
+        collection: card
+        filter: { issue: { exists: false } }
+        group_by: status
+        card: { title: title }
   - id: board
     of: issue
     layout: wide
@@ -881,5 +906,13 @@ views:
 
 today:
   default_on: true
-  widget: { type: count-badge, label: Open issues, value: $open_issues }
+  widget:
+    type: list
+    label: Issues
+    collection: issue
+    where: { state: open }
+    opens: board
+    # Per issue: the cards not done yet (whatever columns the user added).
+    badge: { count: card, where: { issue: $record, status: { not_in: [done] } } }
+    more: { label: No issue, view: loose, badge: $loose_open }
 ```

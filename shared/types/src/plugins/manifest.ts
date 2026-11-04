@@ -71,13 +71,14 @@ const whereCondition = z.union([
   z
     .strictObject({
       in: z.array(literal).min(1).optional(),
+      not_in: z.array(literal).min(1).optional(),
       exists: z.boolean().optional(),
       lt: comparable.optional(),
       lte: comparable.optional(),
       gt: comparable.optional(),
       gte: comparable.optional(),
     })
-    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, exists, lt, lte, gt, gte' })
+    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, not_in, exists, lt, lte, gt, gte' })
     .meta({ minProperties: 1 }),
 ]);
 
@@ -412,6 +413,18 @@ const widgetSchemas = {
     /** A number field of the same record it's measured against (a bar). */
     max: key.optional(),
     caption: label.optional(),
+  }),
+  list: z.strictObject({
+    type: z.literal('list'),
+    label,
+    collection: key,
+    where: whereSchema.optional(),
+    /** A view with `of` this collection: tapping a row opens that record's screen. */
+    opens: key,
+    /** A value per row, read with `$record` as that row (its open tasks). */
+    badge: valueRefSchema.optional(),
+    /** One more row, after the records, opening a view of the app (the cards with no issue). */
+    more: z.strictObject({ label, view: key, badge: valueRefSchema.optional() }).optional(),
   }),
   stats: z.strictObject({
     type: z.literal('stats'),

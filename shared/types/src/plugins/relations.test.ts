@@ -70,3 +70,9 @@ test('deleting a record takes what belongs to it', () => {
   assert.deepEqual(cascadeIds(issues(), records, 'i1').sort(), ['c1', 'c2', 'i1']);
   assert.deepEqual(cascadeIds(issues(), records, 'c3'), ['c3']);
 });
+
+test('not_in keeps what is none of the values', () => {
+  const ev = createEvaluator(issues(), { today: '2026-03-01', now: at, timeZone: 'UTC', weekStart: 0, installedOn: '2026-01-01', records });
+  assert.equal(ev.value({ count: 'card', where: { status: { not_in: ['done', 'doing'] } } }), 2);
+  assert.equal(ev.forRecord('i1').value({ count: 'card', where: { issue: '$record', status: { not_in: ['todo'] } } }), 1);
+});
