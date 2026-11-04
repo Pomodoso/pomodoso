@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   BLOCK_DOCS,
   BLOCK_TYPES,
+  APPS_VERSION,
   BUILTIN_REFS,
   COLLECTION_DOCS,
   COLLECTION_KINDS,
@@ -300,6 +301,9 @@ migrate:
           </p>
           <p style={muted}>
             To check any file without installing it, paste or upload it in the <Link to="/apps/validate">validator</Link> and try it there.
+          </p>
+          <p style={muted}>
+            <b>Format versions.</b> The app format has its own version, currently <code>{APPS_VERSION}</code>, which goes up when Pomodoso learns new blocks, widgets or values. When you publish, Pomodoso works out the lowest format version your file needs from what it uses. Someone on an older Pomodoso doesn't see an app they couldn't open, and keeps getting the latest version of it that they can. The validator says which version a file needs.
           </p>
           <p style={muted}>From a terminal, with the same validator:</p>
           <pre style={dark}>npx @pomodoso/plugin validate my-app.yaml</pre>

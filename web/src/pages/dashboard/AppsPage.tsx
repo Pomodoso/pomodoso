@@ -6,6 +6,7 @@ import {
   checkUpdate,
   compareVersions,
   parsePluginFile,
+  requiredAppsVersion,
   validatePluginData,
   type PluginIssue,
   type PluginManifest,
@@ -121,6 +122,7 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
         visibility,
         changelog: changelog.trim() || undefined,
         change_kind: kind === 'breaking' ? 'breaking' : checked.current ? 'additive' : undefined,
+        min_apps_version: requiredAppsVersion(checked.manifest),
       });
       setText('');
       setChangelog('');

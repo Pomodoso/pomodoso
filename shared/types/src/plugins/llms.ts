@@ -7,6 +7,7 @@
 
 import { BUILTIN_REFS, COLLECTION_KINDS, FIELD_TYPES, NAMED_RANGES, PLUGIN_FILE_MAX_BYTES, RANGE_PATTERN, STAT_FORMATS } from './catalog.ts';
 import { BLOCK_DOCS, COLLECTION_DOCS, COMPUTED_DOCS, FIELD_DOCS, FORMAT_DOCS, HOOK_DOCS, WIDGET_DOCS } from './docs.ts';
+import { APPS_VERSION } from './apps-version.ts';
 import { PLUGIN_JSON_SCHEMA_URL, pluginJsonSchema } from './json-schema.ts';
 
 type Schema = Record<string, unknown>;
@@ -134,6 +135,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 - Every record also has built-in fields you can list, sort and filter by without declaring them: \`created_at\` and \`updated_at\`, plus \`occurred_at\` on events and \`day\` on dailies.
 - Literal values must fit their field: numbers within min/max, select values from \`options\`.
 - The file is at most ${PLUGIN_FILE_MAX_BYTES / 1024} KB.
+- Newer blocks and values need a newer Pomodoso. The validator reports the app format version a file needs (now up to ${APPS_VERSION}); older clients don't see it in the directory.
 - Validate against ${PLUGIN_JSON_SCHEMA_URL}; Pomodoso also checks that every collection, field and \`$reference\` you name exists, and says what's available when one doesn't.
 
 ## The file`);

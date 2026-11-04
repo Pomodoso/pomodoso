@@ -12,7 +12,7 @@ const example = (name: string) => readFileSync(new URL(`../../types/src/plugins/
 const at100 = (name: string) => example(name).replace(/^version: .*$/m, 'version: 1.0.0');
 
 test('a valid file passes; a broken one says where and what', () => {
-  assert.deepEqual(validate(example('bookshelf')), { ok: true, issues: [] });
+  assert.deepEqual(validate(example('bookshelf')), { ok: true, issues: [], apps_version: '0.2' });
   const broken = example('bookshelf').replace('type: board', 'type: bord');
   const r = validate(broken);
   assert.equal(r.ok, false);

@@ -69,6 +69,55 @@ pub fn is_reserved_slug(slug: &str) -> bool {
     slug.starts_with("pomodoso-") || RESERVED_SLUGS.contains(&slug)
 }
 
+/// The app file format this server knows: APPS_VERSION in shared/types
+/// (src/plugins/apps-version.ts; a test there keeps the two equal). Its
+/// schema is plugin.v1.json; earlier versions' schemas are frozen in
+/// schema/apps/, oldest first.
+pub const APPS_VERSION: &str = "0.2";
+/// What a client that doesn't send `apps_version` understands (extension 1.4.0).
+pub const BASE_APPS_VERSION: &str = "0.1";
+const FROZEN_SCHEMAS: &[(&str, &str)] = &[("0.1", include_str!("../../schema/apps/0.1.json"))];
+
+fn frozen_schemas() -> &'static [(&'static str, jsonschema::Validator)] {
+    static VALIDATORS: OnceLock<Vec<(&'static str, jsonschema::Validator)>> = OnceLock::new();
+    VALIDATORS.get_or_init(|| {
+        FROZEN_SCHEMAS
+            .iter()
+            .map(|(v, text)| {
+                let schema: Value =
+                    serde_json::from_str(text).expect("frozen schema is valid JSON");
+                (
+                    *v,
+                    jsonschema::validator_for(&schema).expect("frozen schema compiles"),
+                )
+            })
+            .collect()
+    })
+}
+
+/// `major.minor` of an apps version.
+fn apps_version(v: &str) -> Option<(u32, u32)> {
+    let (a, b) = v.split_once('.')?;
+    Some((a.parse().ok()?, b.parse().ok()?))
+}
+
+/// The lowest APPS_VERSION whose schema accepts a (valid) file. Some needs
+/// don't show in a schema (a new `$tab.image` is still a string), so the
+/// publishing client says what it needs too, and the higher one wins.
+pub fn schema_min_apps_version(manifest: &Value) -> &'static str {
+    frozen_schemas()
+        .iter()
+        .find(|(_, s)| s.is_valid(manifest))
+        .map_or(APPS_VERSION, |(v, _)| *v)
+}
+
+/// The apps version a client sent, when well-formed; else the base one.
+fn client_apps_version(sent: Option<&str>) -> String {
+    sent.filter(|v| apps_version(v).is_some())
+        .unwrap_or(BASE_APPS_VERSION)
+        .to_owned()
+}
+
 fn schema() -> &'static jsonschema::Validator {
     static VALIDATOR: OnceLock<jsonschema::Validator> = OnceLock::new();
     VALIDATOR.get_or_init(|| {
@@ -127,6 +176,8 @@ pub struct ListingSummary {
 #[derive(Serialize)]
 pub struct VersionInfo {
     pub version: String,
+    /// The lowest apps version that opens it.
+    pub min_apps_version: String,
     pub change_kind: String,
     pub changelog: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -148,6 +199,14 @@ pub struct SearchQuery {
     /// 'newest' (default) or 'name'.
     pub sort: Option<String>,
     pub limit: Option<i64>,
+    /// The client's APPS_VERSION; missing means the base one.
+    pub apps_version: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AppsVersionQuery {
+    /// The client's APPS_VERSION; missing means the base one.
+    pub apps_version: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +219,10 @@ pub struct PublishBody {
     /// The publishing client's classification against the previous version:
     /// 'additive' or 'breaking'. Ignored for a first version.
     pub change_kind: Option<String>,
+    /// The lowest apps version the file needs, as the publishing client
+    /// computed it (requiredAppsVersion). The server takes the higher of
+    /// this and what the frozen schemas say.
+    pub min_apps_version: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -185,39 +248,59 @@ pub async fn search(
         .limit
         .unwrap_or(SEARCH_LIMIT_MAX)
         .clamp(1, SEARCH_LIMIT_MAX);
+    let apps = client_apps_version(q.apps_version.as_deref());
+    // Only listings with a version this client can open, each at the latest such version.
     let rows = sqlx::query_as!(
         ListingSummary,
-        r#"SELECT slug, name, description, icon, author, has_today, latest_version, visibility, updated_at
-           FROM plugin_listing
-           WHERE visibility = 'public' AND deleted_at IS NULL
-             AND ($1 = '' OR lower(name) LIKE $2 OR lower(coalesce(description, '')) LIKE $2 OR slug LIKE $2)
-             AND (NOT $3 OR has_today)
-           ORDER BY CASE WHEN $4 THEN lower(name) END ASC, updated_at DESC
+        r#"SELECT l.slug, l.name, l.description, l.icon, l.author, l.has_today,
+                  c.version AS "latest_version!", l.visibility, l.updated_at
+           FROM plugin_listing l
+           JOIN LATERAL (
+             SELECT v.version FROM plugin_version v
+             WHERE v.listing_id = l.id
+               AND string_to_array(v.min_apps_version, '.')::int[] <= string_to_array($6, '.')::int[]
+             ORDER BY v.created_at DESC LIMIT 1
+           ) c ON TRUE
+           WHERE l.visibility = 'public' AND l.deleted_at IS NULL
+             AND ($1 = '' OR lower(l.name) LIKE $2 OR lower(coalesce(l.description, '')) LIKE $2 OR l.slug LIKE $2)
+             AND (NOT $3 OR l.has_today)
+           ORDER BY CASE WHEN $4 THEN lower(l.name) END ASC, l.updated_at DESC
            LIMIT $5"#,
         term,
         pattern,
         q.today.unwrap_or(false),
         by_name,
         limit,
+        apps,
     )
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
 }
 
-/// A listing that isn't taken down: public, or any of `owner`'s.
+/// A listing that isn't taken down: public, or any of `owner`'s, at the
+/// latest version a client of `apps` can open. Not found when it has none.
 async fn open_listing(
     state: &AppState,
     slug: &str,
     owner: Option<Uuid>,
+    apps: &str,
 ) -> Result<(Uuid, ListingSummary)> {
     let row = sqlx::query!(
-        r#"SELECT id, slug, name, description, icon, author, has_today, latest_version, visibility, updated_at
-           FROM plugin_listing
-           WHERE slug = $1 AND deleted_at IS NULL
-             AND (visibility = 'public' OR owner_user_id = $2)"#,
+        r#"SELECT l.id, l.slug, l.name, l.description, l.icon, l.author, l.has_today,
+                  c.version AS "latest_version!", l.visibility, l.updated_at
+           FROM plugin_listing l
+           JOIN LATERAL (
+             SELECT v.version FROM plugin_version v
+             WHERE v.listing_id = l.id
+               AND string_to_array(v.min_apps_version, '.')::int[] <= string_to_array($3, '.')::int[]
+             ORDER BY v.created_at DESC LIMIT 1
+           ) c ON TRUE
+           WHERE l.slug = $1 AND l.deleted_at IS NULL
+             AND (l.visibility = 'public' OR l.owner_user_id = $2)"#,
         slug,
         owner,
+        apps,
     )
     .fetch_optional(&state.pool)
     .await?
@@ -241,8 +324,10 @@ async fn open_listing(
 pub async fn get_listing(
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    Query(q): Query<AppsVersionQuery>,
 ) -> Result<Json<ListingPage>> {
-    let (id, listing) = open_listing(&state, &slug, None).await?;
+    let apps = client_apps_version(q.apps_version.as_deref());
+    let (id, listing) = open_listing(&state, &slug, None, &apps).await?;
     listing_page(&state, id, listing).await
 }
 
@@ -251,8 +336,10 @@ pub async fn get_mine(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
     Path(slug): Path<String>,
+    Query(q): Query<AppsVersionQuery>,
 ) -> Result<Json<ListingPage>> {
-    let (id, listing) = open_listing(&state, &slug, Some(auth.id)).await?;
+    let apps = client_apps_version(q.apps_version.as_deref());
+    let (id, listing) = open_listing(&state, &slug, Some(auth.id), &apps).await?;
     listing_page(&state, id, listing).await
 }
 
@@ -270,7 +357,7 @@ async fn listing_page(
     .await?;
     let versions = sqlx::query_as!(
         VersionInfo,
-        r#"SELECT version, change_kind, changelog, created_at
+        r#"SELECT version, min_apps_version, change_kind, changelog, created_at
            FROM plugin_version WHERE listing_id = $1 ORDER BY created_at DESC"#,
         id,
     )
@@ -287,7 +374,8 @@ pub async fn get_version(
     State(state): State<AppState>,
     Path((slug, version)): Path<(String, String)>,
 ) -> Result<Json<Value>> {
-    let (id, _) = open_listing(&state, &slug, None).await?;
+    // Any version by number: the client asked for this one.
+    let (id, _) = open_listing(&state, &slug, None, APPS_VERSION).await?;
     let manifest = sqlx::query_scalar!(
         "SELECT manifest FROM plugin_version WHERE listing_id = $1 AND version = $2",
         id,
@@ -356,6 +444,28 @@ pub async fn publish(
             return Err(AppError::BadRequest(format!(
                 "visibility \"{v}\" must be public or private"
             )))
+        }
+    };
+    let min_apps_version = match body.min_apps_version.as_deref() {
+        None => schema_min_apps_version(m).to_owned(),
+        Some(declared) => {
+            let (Some(d), Some(current)) = (apps_version(declared), apps_version(APPS_VERSION))
+            else {
+                return Err(AppError::BadRequest(format!(
+                    "min_apps_version \"{declared}\" must be major.minor, like {APPS_VERSION}"
+                )));
+            };
+            if d > current {
+                return Err(AppError::BadRequest(format!(
+                    "this file needs apps version {declared}; the directory supports up to {APPS_VERSION}"
+                )));
+            }
+            let from_schema = schema_min_apps_version(m);
+            if apps_version(from_schema) > Some(d) {
+                from_schema.to_owned()
+            } else {
+                declared.to_owned()
+            }
         }
     };
     let changelog = body
@@ -497,13 +607,14 @@ pub async fn publish(
     };
 
     sqlx::query!(
-        r#"INSERT INTO plugin_version (listing_id, version, manifest, changelog, change_kind)
-           VALUES ($1, $2, $3, $4, $5)"#,
+        r#"INSERT INTO plugin_version (listing_id, version, manifest, changelog, change_kind, min_apps_version)
+           VALUES ($1, $2, $3, $4, $5, $6)"#,
         listing_id,
         version,
         m,
         changelog,
         change_kind,
+        min_apps_version,
     )
     .execute(&mut *tx)
     .await?;
@@ -552,7 +663,8 @@ pub async fn report(
             "a report needs a reason of 1 to {REPORT_MAX_CHARS} characters"
         )));
     }
-    let (listing_id, _) = open_listing(&state, &slug, None).await?;
+    // Any listing can be reported, whatever version the reporter's client opens.
+    let (listing_id, _) = open_listing(&state, &slug, None, APPS_VERSION).await?;
     let recent = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM plugin_report
            WHERE reporter_user_id = $1 AND created_at > NOW() - INTERVAL '1 day'"#,
@@ -635,6 +747,23 @@ mod tests {
         assert!(is_reserved_slug("pomodoso-timer"));
         assert!(is_reserved_slug("today"));
         assert!(!is_reserved_slug("quit-smoking"));
+    }
+
+    #[test]
+    fn a_file_needs_the_first_apps_version_whose_schema_takes_it() {
+        assert_eq!(schema_min_apps_version(&water()), "0.1");
+        let mut m = water();
+        m["today"] = json!({ "widget": { "type": "stats", "label": "Water", "items": [{ "label": "Today", "value": 1 }] } });
+        assert!(manifest_issues(&m).is_empty());
+        assert_eq!(schema_min_apps_version(&m), "0.2");
+    }
+
+    #[test]
+    fn a_client_that_doesnt_say_is_the_base_apps_version() {
+        assert_eq!(client_apps_version(None), "0.1");
+        assert_eq!(client_apps_version(Some("garbage")), "0.1");
+        assert_eq!(client_apps_version(Some("0.2")), "0.2");
+        assert!(apps_version("0.10") > apps_version("0.9"));
     }
 
     #[test]

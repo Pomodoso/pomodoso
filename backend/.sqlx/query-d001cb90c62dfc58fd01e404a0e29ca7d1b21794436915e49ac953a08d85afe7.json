@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT slug, name, description, icon, author, has_today, latest_version, visibility, updated_at\n           FROM plugin_listing\n           WHERE visibility = 'public' AND deleted_at IS NULL\n             AND ($1 = '' OR lower(name) LIKE $2 OR lower(coalesce(description, '')) LIKE $2 OR slug LIKE $2)\n             AND (NOT $3 OR has_today)\n           ORDER BY CASE WHEN $4 THEN lower(name) END ASC, updated_at DESC\n           LIMIT $5",
+  "query": "SELECT l.slug, l.name, l.description, l.icon, l.author, l.has_today,\n                  c.version AS \"latest_version!\", l.visibility, l.updated_at\n           FROM plugin_listing l\n           JOIN LATERAL (\n             SELECT v.version FROM plugin_version v\n             WHERE v.listing_id = l.id\n               AND string_to_array(v.min_apps_version, '.')::int[] <= string_to_array($6, '.')::int[]\n             ORDER BY v.created_at DESC LIMIT 1\n           ) c ON TRUE\n           WHERE l.visibility = 'public' AND l.deleted_at IS NULL\n             AND ($1 = '' OR lower(l.name) LIKE $2 OR lower(coalesce(l.description, '')) LIKE $2 OR l.slug LIKE $2)\n             AND (NOT $3 OR l.has_today)\n           ORDER BY CASE WHEN $4 THEN lower(l.name) END ASC, l.updated_at DESC\n           LIMIT $5",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "latest_version",
+        "name": "latest_version!",
         "type_info": "Text"
       },
       {
@@ -55,7 +55,8 @@
         "Text",
         "Bool",
         "Bool",
-        "Int8"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -70,5 +71,5 @@
       false
     ]
   },
-  "hash": "68243401f6f665005c8be4efa832e54e52a17ba1e6ec1422a4938766c8f5d9ea"
+  "hash": "d001cb90c62dfc58fd01e404a0e29ca7d1b21794436915e49ac953a08d85afe7"
 }

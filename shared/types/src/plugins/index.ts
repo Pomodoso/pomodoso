@@ -18,3 +18,4 @@ export { applyRules, fieldLabel, fieldOptions, formatMinutes, formatStat, humani
 export { STARTER_PROMPT, TOP_LEVEL_DOCS, llmsFullTxt, llmsTxt, remixPrompt } from './llms.ts';
 export { BLOCK_DOCS, COLLECTION_DOCS, COMPUTED_DOCS, FIELD_DOCS, FORMAT_DOCS, HOOK_DOCS, WIDGET_DOCS } from './docs.ts';
 export { GUIDE_BLOCK_EXAMPLES, GUIDE_COMPUTED_EXAMPLES, GUIDE_FIRST_APP, GUIDE_HOOK_EXAMPLES, GUIDE_PLAYGROUND, GUIDE_WIDGET_EXAMPLES, guideManifestData, guideSeedRecords } from './guide.ts';
+export { APPS_VERSION, BASE_APPS_VERSION, compareAppsVersions, requiredAppsVersion } from './apps-version.ts';

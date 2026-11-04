@@ -11,6 +11,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 - Every record also has built-in fields you can list, sort and filter by without declaring them: `created_at` and `updated_at`, plus `occurred_at` on events and `day` on dailies.
 - Literal values must fit their field: numbers within min/max, select values from `options`.
 - The file is at most 256 KB.
+- Newer blocks and values need a newer Pomodoso. The validator reports the app format version a file needs (now up to 0.2); older clients don't see it in the directory.
 - Validate against https://pomodoso.com/schema/plugin.v1.json; Pomodoso also checks that every collection, field and `$reference` you name exists, and says what's available when one doesn't.
 
 ## The file
