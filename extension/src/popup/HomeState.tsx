@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useLocalStorage } from './useStorage';
+import { TodaySectionHeader } from './TodaySectionHeader';
 import type React from 'react';
 import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
@@ -376,6 +377,9 @@ export function HomeState({
   // reopened.
   const [showHabitsInToday, setShowHabitsInToday] = useLocalStorage<boolean>('pom_habits_in_today', true);
   const [showChallengesInToday, setShowChallengesInToday] = useLocalStorage<boolean>('pom_challenges_in_today', true);
+  // Folding on Today, device-local: habits start open, challenges folded.
+  const [habitsOpenInToday, setHabitsOpenInToday] = useLocalStorage<boolean>('pom_today_habits_open', true);
+  const [challengesOpenInToday, setChallengesOpenInToday] = useLocalStorage<boolean>('pom_today_challenges_open', false);
   const [showScheduleInToday, setShowScheduleInToday] = useLocalStorage<boolean>('pom_schedule_in_today', true);
   const [showWsPicker, setShowWsPicker] = useState(false);
   const wsPickerRef = useRef<HTMLDivElement>(null);
@@ -1590,10 +1594,12 @@ export function HomeState({
                 onToggle={handleHabitToggle}
                 onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
                 challengeViews={challengeViews}
+                open={habitsOpenInToday}
+                onToggleOpen={() => setHabitsOpenInToday(o => !o)}
                 // The row carries the buttons only when the Challenges section
-                // isn't below it; otherwise the same decision would be offered
-                // twice on one screen.
-                {...(showChallengesInToday ? {} : { challengeActions })}
+                // is not open below it; otherwise the same decision would be
+                // offered twice on one screen (and folded, nowhere).
+                {...(showChallengesInToday && challengesOpenInToday && challengeHabits.length > 0 ? {} : { challengeActions })}
               />
             )}
             {showChallengesInToday && challengeHabits.length > 0 && (
@@ -1603,6 +1609,7 @@ export function HomeState({
                   views={challengeViews}
                   actions={challengeActions}
                   compact
+                  fold={{ open: challengesOpenInToday, onToggle: () => setChallengesOpenInToday(o => !o) }}
                 />
               </div>
             )}
@@ -2127,8 +2134,11 @@ function TodayMeetingRow({ meeting, timezone, onStart, onSelect }: {
 
 function TodayHabits({
   habits, habitCounters, habitDone, weekStart, timezone, onCounterChange, onToggle, onReorder,
-  challengeViews, challengeActions,
+  challengeViews, challengeActions, open, onToggleOpen,
 }: {
+  /** Folded, the section is its header and a "2 / 5 done" summary. */
+  open: boolean;
+  onToggleOpen: () => void;
   habits: HabitDef[];
   habitCounters: Record<string, number>;
   habitDone: Record<string, boolean>;
@@ -2145,11 +2155,16 @@ function TodayHabits({
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const dragGuard = useDragResizeGuard();
+  const doneCount = habits.filter(h => (h.kind === 'boolean' ? habitDone[h.id] ?? false : (habitCounters[h.id] ?? 0) >= (h.goal ?? 1))).length;
+  const badge = (
+    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 20, padding: '1px 8px' }}>
+      {doneCount} / {habits.length}
+    </span>
+  );
   return (
     <div style={{ padding: '12px 14px 0' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>
-        Habits
-      </div>
+      <TodaySectionHeader label="Habits" open={open} onToggle={onToggleOpen} summary={`${doneCount} / ${habits.length} done`} right={badge} />
+      {open && (
       <div style={{
         background: 'var(--color-surface)',
         border: '1px solid var(--color-border)',
@@ -2292,6 +2307,7 @@ function TodayHabits({
         </SortableContext>
         </DndContext>
       </div>
+      )}
     </div>
   );
 }
@@ -4776,10 +4792,12 @@ function ChallengeCard({ habit, view, actions, compact = false }: {
 // an end — so they get their own titled block rather than floating above the
 // Habits header unlabelled. Rendered in both the Habits tab and (when pinned)
 // Today, hence the shared component.
-function ChallengesSection({ habits, views, actions, compact = false, showInToday, onToggleShowInToday }: {
+function ChallengesSection({ habits, views, actions, compact = false, showInToday, onToggleShowInToday, fold }: {
   habits: HabitDef[];
   views: Map<string, ChallengeView>;
   actions?: ChallengeActions;
+  /** Today: the section folds, and folded it says how the runs are going. */
+  fold?: { open: boolean; onToggle: () => void };
   /** Today renders the same decisions in a lighter card: a broken run you can
    *  only read is a dead end, and Today is where you notice it. */
   compact?: boolean;
@@ -4788,6 +4806,36 @@ function ChallengesSection({ habits, views, actions, compact = false, showInToda
 }) {
   if (habits.length === 0) return null;
   const done = habits.filter(h => views.get(h.id)?.progress.complete).length;
+  if (fold) {
+    const waiting = habits.filter(h => {
+      const v = views.get(h.id);
+      return v ? challengeNeedsDecision(v.progress) : false;
+    }).length;
+    const active = habits.length - done;
+    const summary = (
+      <>
+        {active} / {habits.length} active
+        {done > 0 ? ` · ${done} done` : ''}
+        {waiting > 0 ? <span style={{ color: 'var(--color-warning)' }}> · {waiting} need{waiting === 1 ? 's' : ''} you</span> : null}
+      </>
+    );
+    return (
+      <div style={{ marginBottom: fold.open ? 14 : 0 }}>
+        <TodaySectionHeader
+          label={<>Challenges {done > 0 && <span style={{ color: 'var(--color-success)' }}>· {done} done</span>}</>}
+          open={fold.open}
+          onToggle={fold.onToggle}
+          summary={summary}
+        />
+        {fold.open && habits.map(h => {
+          const view = views.get(h.id);
+          return view ? (
+            <ChallengeCard key={h.id} habit={h} view={view} compact={compact} {...(actions ? { actions } : {})} />
+          ) : null;
+        })}
+      </div>
+    );
+  }
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

@@ -155,7 +155,6 @@
       }
     },
     "collections": {
-      "minItems": 1,
       "maxItems": 20,
       "type": "array",
       "items": {
@@ -465,6 +464,9 @@
                           }
                         ]
                       }
+                    },
+                    "subtract": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -570,6 +572,7 @@
                         "time_ago",
                         "days",
                         "percent",
+                        "share",
                         "duration",
                         "date"
                       ]
@@ -622,6 +625,7 @@
                               "time_ago",
                               "days",
                               "percent",
+                              "share",
                               "duration",
                               "date"
                             ]
@@ -683,6 +687,34 @@
                     },
                     "invert": {
                       "type": "boolean"
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "number",
+                        "time_ago",
+                        "days",
+                        "percent",
+                        "share",
+                        "duration",
+                        "date"
+                      ]
+                    },
+                    "style": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "bar",
+                            "ring",
+                            "dots"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -1166,6 +1198,9 @@
                 "adds": {
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                },
+                "subtract": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -1195,6 +1230,12 @@
                 "field": {
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                },
+                "after": {
+                  "type": "string",
+                  "enum": [
+                    "year-grid"
+                  ]
                 }
               },
               "required": [
@@ -1272,6 +1313,7 @@
                     "time_ago",
                     "days",
                     "percent",
+                    "share",
                     "duration",
                     "date"
                   ]
@@ -1281,6 +1323,153 @@
                 "type",
                 "label",
                 "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "progress"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  ]
+                },
+                "max": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "number",
+                    "time_ago",
+                    "days",
+                    "percent",
+                    "share",
+                    "duration",
+                    "date"
+                  ]
+                },
+                "caption": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "style": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "bar",
+                        "ring",
+                        "dots"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "label",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "stats"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "items": {
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                          },
+                          {
+                            "$ref": "#/$defs/__schema0"
+                          }
+                        ]
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "number",
+                          "time_ago",
+                          "days",
+                          "percent",
+                          "share",
+                          "duration",
+                          "date"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "label",
+                "items"
               ],
               "additionalProperties": false
             }
@@ -2961,9 +3150,35 @@
             "delta"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "calendar": {
+              "type": "string",
+              "enum": [
+                "week",
+                "month",
+                "year"
+              ]
+            },
+            "show": {
+              "type": "string",
+              "enum": [
+                "progress",
+                "passed",
+                "left",
+                "total"
+              ]
+            }
+          },
+          "required": [
+            "calendar"
+          ],
+          "additionalProperties": false
         }
       ],
-      "description": "Exactly one operator: count, sum, avg, min, max, last, first, streak, taper or delta."
+      "description": "Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta or calendar."
     }
   }
 }

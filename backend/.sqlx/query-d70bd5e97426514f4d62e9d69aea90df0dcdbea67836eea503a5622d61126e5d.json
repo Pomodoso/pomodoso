@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, slug, name, description, icon, author, has_today, latest_version, visibility, updated_at\n           FROM plugin_listing\n           WHERE slug = $1 AND deleted_at IS NULL\n             AND (visibility = 'public' OR owner_user_id = $2)",
+  "query": "SELECT l.id, l.slug, l.name, l.description, l.icon, l.author, l.has_today,\n                  c.version AS \"latest_version!\", l.visibility, l.updated_at\n           FROM plugin_listing l\n           JOIN LATERAL (\n             SELECT v.version FROM plugin_version v\n             WHERE v.listing_id = l.id\n               AND string_to_array(v.min_apps_version, '.')::int[] <= string_to_array($3, '.')::int[]\n             ORDER BY v.created_at DESC LIMIT 1\n           ) c ON TRUE\n           WHERE l.slug = $1 AND l.deleted_at IS NULL\n             AND (l.visibility = 'public' OR l.owner_user_id = $2)",
   "describe": {
     "columns": [
       {
@@ -40,7 +40,7 @@
       },
       {
         "ordinal": 7,
-        "name": "latest_version",
+        "name": "latest_version!",
         "type_info": "Text"
       },
       {
@@ -57,7 +57,8 @@
     "parameters": {
       "Left": [
         "Text",
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -73,5 +74,5 @@
       false
     ]
   },
-  "hash": "c7c1a6b67370a669beaff529b7158f272983c096e59d8abc3b385c0129e77c62"
+  "hash": "d70bd5e97426514f4d62e9d69aea90df0dcdbea67836eea503a5622d61126e5d"
 }

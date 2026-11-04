@@ -9,11 +9,13 @@
 
 import { readFileSync } from 'node:fs';
 
-import { checkUpdate, parsePluginFile, type PluginIssue, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
+import { checkUpdate, parsePluginFile, requiredAppsVersion, worksWith, type PluginIssue, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
 
 export interface ValidateResult {
   ok: boolean;
   issues: PluginIssue[];
+  /** When valid: the lowest app format version (APPS_VERSION) that opens it. */
+  apps_version?: string | undefined;
   /** With --against: how this version differs from the other one. */
   update?: Pick<UpdateReport, 'kind' | 'changes' | 'issues' | 'migrates'> | undefined;
 }
@@ -42,14 +44,15 @@ async function readSource(source: string): Promise<string> {
 export function validate(text: string, previous?: string): ValidateResult {
   const parsed = parsePluginFile(text);
   if (!parsed.ok) return { ok: false, issues: parsed.issues };
-  if (previous === undefined) return { ok: true, issues: [] };
+  const apps_version = requiredAppsVersion(parsed.manifest);
+  if (previous === undefined) return { ok: true, issues: [], apps_version };
   const prev = parsePluginFile(previous);
   if (!prev.ok) {
     return { ok: false, issues: prev.issues.map((i) => ({ ...i, message: `the previous version is invalid: ${i.message}` })) };
   }
   const report = checkUpdate(prev.manifest, parsed.manifest as PluginManifest);
   const update = { kind: report.kind, changes: report.changes, issues: report.issues, migrates: report.migrates };
-  return { ok: report.issues.length === 0, issues: [], update };
+  return { ok: report.issues.length === 0, issues: [], apps_version, update };
 }
 
 function where(i: PluginIssue): string {
@@ -65,6 +68,7 @@ export function format(file: string, r: ValidateResult): string {
     return out.join('\n');
   }
   out.push(`✓ ${file} is a valid plugin file`);
+  if (r.apps_version) out.push(`  works with ${worksWith(r.apps_version)} (app format ${r.apps_version}); older versions don't see it in the directory`);
   if (r.update) {
     out.push(`  update: ${r.update.kind}${r.update.migrates ? ' (runs its migrate block)' : ''}`);
     for (const c of r.update.changes) out.push(`  ${c.kind === 'breaking' ? '!' : '+'} ${c.path}: ${c.message}`);

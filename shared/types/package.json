@@ -12,6 +12,10 @@
       "import": "./src/plugins/index.ts",
       "types": "./src/plugins/index.ts"
     },
+    "./plugins/apps-version": {
+      "import": "./src/plugins/apps-version.ts",
+      "types": "./src/plugins/apps-version.ts"
+    },
     "./plugins/ids": {
       "import": "./src/plugins/ids.ts",
       "types": "./src/plugins/ids.ts"

@@ -1,9 +1,9 @@
 schema_version: 1
 id: year-in-pixels
-name: Year in Pixels
-version: 1.0.0
-icon: grid
-description: Color every day by how it went. You choose the states and their colors.
+name: "Year in Pixels: Happiness"
+version: 2.1.0
+icon: mood
+description: Color every day by how happy it was. You choose the states and their colors.
 author: Pomodoso
 license: MIT
 
@@ -16,13 +16,15 @@ collections:
         user_editable: true
         options:
           - { value: great, label: Great, color: "#2D8A7A" }
-          - { value: productive, label: Productive, color: "#8FB08F" }
-          - { value: normal, label: Normal, color: "#E8D9A8" }
-          - { value: unproductive, label: Not productive, color: "#D98C7A" }
+          - { value: good, label: Good, color: "#8FB08F" }
+          - { value: okay, label: Okay, color: "#E8D9A8" }
+          - { value: bad, label: Bad, color: "#D98C7A" }
+          - { value: awful, label: Awful, color: "#A8432D" }
       - { key: note, type: text, optional: true }
 
 computed:
   logged_this_year: { count: day_state, range: this_year }
+  good_streak: { streak: day_state, where: { state: { in: [great, good] } }, at_least: 1 }
 
 views:
   - id: main
@@ -30,13 +32,23 @@ views:
       - { type: day-picker, collection: day_state, field: state }
       - { type: year-grid, collection: day_state, color_by: state, legend: true }
       - { type: breakdown, collection: day_state, field: state, range: this_year }
-      - { type: stat, label: Days logged this year, value: $logged_this_year }
+      - type: stat-row
+        items:
+          - { label: Days logged this year, value: $logged_this_year }
+          - { label: Good days in a row, value: $good_streak, format: days }
 
 today:
-  default_on: false
-  widget: { type: select-today, label: How was today?, collection: day_state, field: state }
+  default_on: true
+  widget: { type: select-today, label: How happy was today?, collection: day_state, field: state, after: year-grid }
 
 hooks:
   - on: day_end
-    ask: How was today?
+    ask: How happy was yesterday?
     pick: { collection: day_state, field: state }
+
+# 1.x mixed mood and productivity; productivity now has its own app
+# (productivity-pixels). Its states map to the closest mood.
+migrate:
+  from: "1.x"
+  steps:
+    - map_values: { collection: day_state, field: state, map: { productive: good, normal: okay, unproductive: bad } }

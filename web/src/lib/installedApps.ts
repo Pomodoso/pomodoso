@@ -100,11 +100,11 @@ export function useInstalledApps(canWrite: boolean) {
     const withRules = (prev: PluginRecord | undefined, next: PluginRecord) =>
       app.manifest.rules?.some((r) => r.collection === next.collection) ? applyRules(app.manifest, prev, next, evalContext(app)) : next.data;
     return {
-      add: (collection, data) => {
+      add: (collection, data, opts) => {
         if (!canWrite) return;
         const ts = new Date().toISOString();
         const kind = app.manifest.collections.find((c) => c.key === collection)?.kind;
-        const next: PluginRecord = { id: crypto.randomUUID(), collection, occurred_at: kind === 'event' ? ts : null, data, created_at: ts, updated_at: ts };
+        const next: PluginRecord = { id: crypto.randomUUID(), collection, occurred_at: kind === 'event' ? opts?.occurredAt ?? ts : null, data, created_at: ts, updated_at: ts };
         next.data = withRules(undefined, next);
         return commit(app, next);
       },
@@ -117,9 +117,9 @@ export function useInstalledApps(canWrite: boolean) {
         next.data = withRules(prev, next);
         return commit(app, next);
       },
-      update: (record, data) => {
+      update: (record, data, opts) => {
         if (!canWrite) return;
-        const next: PluginRecord = { ...record, data, updated_at: new Date().toISOString() };
+        const next: PluginRecord = { ...record, ...(record.occurred_at && opts?.occurredAt ? { occurred_at: opts.occurredAt } : {}), data, updated_at: new Date().toISOString() };
         next.data = withRules(record, next);
         return commit(app, next);
       },

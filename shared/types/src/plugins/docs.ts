@@ -46,15 +46,16 @@ export const COMPUTED_DOCS: Record<ComputedOp, string> = {
   streak: 'Consecutive days, ending today, with a count within `at_least` / `at_most`. Optional `where`.',
   taper: 'A value that changes by a step every period since install: `from`, `down_by` or `up_by`, `every` (day | week | month), optional `min` / `max`. For limits that tighten over time.',
   delta: 'Relative change between two values, `[a, b]` → (a − b) / b. Reads as a percent in templates.',
+  calendar: 'How far the current `week`, `month` or `year` has gone, from the date alone (no collection). `show`: `progress` (default, a fraction: 0.43 on day 158 of 365), `passed` (days so far, today included), `left` (days after today) or `total` (days in the period).',
 };
 
 export const BLOCK_DOCS: Record<BlockType, string> = {
-  'counter-button': 'A big button that adds a record to an event collection in one tap. `set` fills fields; `details: form` opens a form instead.',
-  'add-button': 'A button that opens a form to add an item. `prefill` can use `$tab.url` / `$tab.title` (the current page).',
-  form: 'An inline form for a collection. On a daily collection it edits today.',
+  'counter-button': 'A big button that adds a record to an event collection in one tap. `set` fills fields; `details: form` opens a form instead. `subtract: true` adds a − button that deletes the latest one from today (a tap by mistake).',
+  'add-button': 'A button that opens a form to add an item. `prefill` can use `$tab.url`, `$tab.title` and `$tab.image` (the current page and its preview image), so one tap saves the page you are on.',
+  form: 'An inline form for a collection. On a daily collection it edits today. On an event collection it also asks "When" (now by default), to log one you forgot.',
   stat: 'One number or value with a label. `format` says how it reads.',
   'stat-row': 'Up to four stats side by side.',
-  progress: 'A bar of `value` against `max`. `invert: true` for limits (going over is bad).',
+  progress: 'A bar of `value` against `max`. `invert: true` for limits (going over is bad). `format` says how the numbers read (`share` shows only the percent). `style`: `bar` (default), `ring` (a ring of dots) or `dots` (one dot per unit when `max` is a whole number up to 400, like the days of a year); it can be a `$setting` so the user picks.',
   chart: 'A bar or line chart of a grouped series (`count` / `sum` / … with `group`). Optional dashed `reference` line.',
   list: 'Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field) and a `swipe` action that sets fields.',
   'tag-filter': 'Chips that filter the lists and boards of the same view by a tags, multiselect or select field.',
@@ -66,10 +67,12 @@ export const BLOCK_DOCS: Record<BlockType, string> = {
 };
 
 export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
-  'mini-counter': 'A number with a + button that adds to an event collection (`adds`). Optional `max`.',
-  'select-today': "Option chips that set today's value of a daily collection's select field.",
+  'mini-counter': 'A number with a + button that adds to an event collection (`adds`). Optional `max`; `subtract: true` adds a − button that deletes the latest one from today.',
+  'select-today': "Option chips that set today's value of a daily collection's select field. `after: year-grid` shows the year in pixels (colored by that field) once today is set, with a Change link to pick again.",
   'count-badge': 'A single number.',
   stat: 'A single value with a `format`.',
+  progress: 'A bar of `value` against `max` (default 1), with an optional `format`, a `caption` line under it (`{$name}` works) and a `style` (`bar`, `ring` or `dots`, or a `$setting`). Ring and dots take the whole row.',
+  stats: 'Up to four values side by side, each with its `label` and optional `format` (`items`). More than two take the whole row on Today.',
 };
 
 export const HOOK_DOCS: Record<HookEvent, string> = {
@@ -84,6 +87,7 @@ export const FORMAT_DOCS: Record<StatFormat, string> = {
   time_ago: '3h 20m ago (for timestamps such as `last`)',
   days: '8 days',
   percent: '+20%, −34% (for fractions such as `delta`)',
+  share: '43.3%: a fraction as a plain percent (`calendar` progress). In a progress block or widget, the value as a share of `max` (158 of 365 reads 43.3%).',
   duration: '1h 35m (minutes)',
   date: 'Oct 21, 2026',
 };

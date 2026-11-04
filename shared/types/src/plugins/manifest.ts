@@ -10,6 +10,8 @@ import { z } from './zod.ts';
 
 import {
   BLOCK_TYPES,
+  CALENDAR_PERIODS,
+  CALENDAR_SHOWS,
   COLLECTION_KINDS,
   COMPUTED_OPS,
   FIELD_TYPES,
@@ -17,6 +19,7 @@ import {
   HOOK_EVENTS,
   NAMED_RANGES,
   PLUGIN_SCHEMA_VERSION,
+  PROGRESS_STYLES,
   RANGE_PATTERN,
   SETTING_TYPES,
   STAT_FORMATS,
@@ -123,7 +126,11 @@ export interface TaperExpr {
 export interface DeltaExpr {
   delta: [ValueRef, ValueRef];
 }
-export type ComputedExpr = CountExpr | AggExpr | PickExpr | StreakExpr | TaperExpr | DeltaExpr;
+export interface CalendarExpr {
+  calendar: (typeof CALENDAR_PERIODS)[number];
+  show?: (typeof CALENDAR_SHOWS)[number] | undefined;
+}
+export type ComputedExpr = CountExpr | AggExpr | PickExpr | StreakExpr | TaperExpr | DeltaExpr | CalendarExpr;
 export type ValueRef = number | string | ComputedExpr;
 
 const group = z.enum(GROUP_PERIODS);
@@ -184,12 +191,13 @@ export const computedSchema: z.ZodType<ComputedExpr> = z.lazy(() =>
         .meta({ oneOf: [{ required: ['down_by'] }, { required: ['up_by'] }] }),
     }),
     z.strictObject({ delta: z.tuple([valueRefSchema, valueRefSchema]) }),
-  ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper or delta.' }),
+    z.strictObject({ calendar: z.enum(CALENDAR_PERIODS), show: z.enum(CALENDAR_SHOWS).optional() }),
+  ]).meta({ id: 'ComputedValue', description: 'Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta or calendar.' }),
 );
 
 // Compile-time guard: the union above must list one branch per operator.
 const _opsCovered: Record<(typeof COMPUTED_OPS)[number], true> = {
-  count: true, sum: true, avg: true, min: true, max: true, last: true, first: true, streak: true, taper: true, delta: true,
+  count: true, sum: true, avg: true, min: true, max: true, last: true, first: true, streak: true, taper: true, delta: true, calendar: true,
 };
 void _opsCovered;
 
@@ -263,6 +271,8 @@ export type PluginCollection = z.infer<typeof collectionSchema>;
 // ─── View blocks ─────────────────────────────────────────────────────────────
 
 const statFormat = z.enum(STAT_FORMATS);
+/** bar or ring, or a $setting that picks one (check.ts checks its options). */
+const progressStyle = z.union([z.enum(PROGRESS_STYLES), refString]);
 const sortField = z.strictObject({ field: key, order: z.enum(['asc', 'desc']).optional() });
 
 const blockSchemas = {
@@ -272,6 +282,7 @@ const blockSchemas = {
     adds: key,
     details: z.enum(['none', 'form']).optional(),
     set: valueMap.optional(),
+    subtract: z.boolean().optional(),
   }),
   'add-button': z.strictObject({ type: z.literal('add-button'), label, adds: key, prefill: valueMap.optional() }),
   form: z.strictObject({ type: z.literal('form'), collection: key }),
@@ -286,6 +297,8 @@ const blockSchemas = {
     value: valueRefSchema,
     max: valueRefSchema,
     invert: z.boolean().optional(),
+    format: statFormat.optional(),
+    style: progressStyle.optional(),
   }),
   chart: z.strictObject({
     type: z.literal('chart'),
@@ -347,10 +360,32 @@ const widgetSchemas = {
     value: valueRefSchema,
     max: valueRefSchema.optional(),
     adds: key,
+    subtract: z.boolean().optional(),
   }),
-  'select-today': z.strictObject({ type: z.literal('select-today'), label, collection: key, field: key }),
+  'select-today': z.strictObject({
+    type: z.literal('select-today'),
+    label,
+    collection: key,
+    field: key,
+    /** Once today is set, what the card shows instead of the options. */
+    after: z.enum(['year-grid']).optional(),
+  }),
   'count-badge': z.strictObject({ type: z.literal('count-badge'), label, value: valueRefSchema }),
   stat: z.strictObject({ type: z.literal('stat'), label, value: valueRefSchema, format: statFormat.optional() }),
+  progress: z.strictObject({
+    type: z.literal('progress'),
+    label,
+    value: valueRefSchema,
+    max: valueRefSchema.optional(),
+    format: statFormat.optional(),
+    caption: label.optional(),
+    style: progressStyle.optional(),
+  }),
+  stats: z.strictObject({
+    type: z.literal('stats'),
+    label,
+    items: z.array(z.strictObject({ label, value: valueRefSchema, format: statFormat.optional() })).min(1).max(4),
+  }),
 } satisfies Record<(typeof TODAY_WIDGET_TYPES)[number], z.ZodType>;
 
 type WidgetSchemas = typeof widgetSchemas;
@@ -433,7 +468,8 @@ export const manifestSchema = z.strictObject({
   author: z.string().max(80).optional(),
   license: z.string().max(40).optional(),
   settings: z.array(settingSchema).max(30).optional(),
-  collections: z.array(collectionSchema).min(1).max(20),
+  // Empty for an app that keeps no data (a year progress bar).
+  collections: z.array(collectionSchema).max(20),
   computed: z.record(key, computedSchema).optional(),
   views: z.array(viewSchema).min(1).max(10),
   today: todaySchema.optional(),

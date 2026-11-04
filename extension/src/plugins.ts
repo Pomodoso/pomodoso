@@ -159,7 +159,15 @@ export async function applyPluginUpdate(pluginId: string, next: PluginManifest):
           }),
       );
     }
-    await db.plugins.update(pluginId, { manifest: next, updatedAt: ts, syncedAt: undefined });
+    // A version that starts suggesting its Today widget (it had none, or it
+    // was off by default) turns it on once; after that it's the user's call.
+    const suggestsToday = next.today?.default_on === true && plugin.manifest.today?.default_on !== true;
+    await db.plugins.update(pluginId, {
+      manifest: next,
+      ...(suggestsToday ? { settings: { ...plugin.settings, [SHOW_ON_TODAY_KEY]: true } } : {}),
+      updatedAt: ts,
+      syncedAt: undefined,
+    });
   });
 }
 
@@ -243,13 +251,15 @@ export async function setDaily(plugin: PluginRow, collection: string, day: strin
   });
 }
 
-export async function updateRecord(plugin: PluginRow, id: string, data: Record<string, unknown>, env: PluginEnv): Promise<void> {
+/** `occurredAt` moves an event to another moment (logged at the wrong time). */
+export async function updateRecord(plugin: PluginRow, id: string, data: Record<string, unknown>, env: PluginEnv, opts: { occurredAt?: string } = {}): Promise<void> {
   await db.transaction('rw', db.pluginRecords, async () => {
     const existing = await db.pluginRecords.get(id);
     if (!existing || existing.deletedAt) return;
     const ts = now();
-    const next = withinLimit(await withRules(plugin, env, existing, { ...existing, data, updatedAt: ts }), 'These values');
-    await db.pluginRecords.update(id, { data: next, updatedAt: ts, syncedAt: undefined });
+    const occurredAt = existing.occurredAt !== undefined && opts.occurredAt ? opts.occurredAt : existing.occurredAt;
+    const next = withinLimit(await withRules(plugin, env, existing, { ...existing, occurredAt, data, updatedAt: ts }), 'These values');
+    await db.pluginRecords.update(id, { data: next, ...(occurredAt !== undefined ? { occurredAt } : {}), updatedAt: ts, syncedAt: undefined });
   });
 }
 

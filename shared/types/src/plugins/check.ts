@@ -2,7 +2,7 @@
 // field and `$reference` a file names must exist and fit where it is used.
 // Runs only on a file that already passed manifestSchema.
 
-import { BUILTIN_REFS, COMPUTED_OPS, type CollectionKind, type FieldType } from './catalog.ts';
+import { BUILTIN_REFS, COMPUTED_OPS, PROGRESS_STYLES, type CollectionKind, type FieldType } from './catalog.ts';
 import { formatPath, unknownMessage, type PluginIssue } from './issues.ts';
 import type {
   ComputedExpr,
@@ -281,7 +281,23 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         value([...path, 'delta', 1], b);
         return;
       }
+      case 'calendar':
+        return;
     }
+  }
+
+  /** A progress `style`: bar, ring or dots, or a select setting whose every option is one. */
+  function progressStyle(path: Path, style: string) {
+    if (!style.startsWith('$')) return;
+    const s = m.settings?.find((x) => x.key === style.slice(1));
+    if (!s) {
+      add(path, unknownMessage('setting', style, (m.settings ?? []).filter((x) => x.type === 'select').map((x) => `$${x.key}`)));
+      return;
+    }
+    const allowed = PROGRESS_STYLES as readonly string[];
+    const bad = s.type !== 'select' ? [] : (s.options ?? []).map(optionValue).filter((o) => !allowed.includes(o));
+    if (s.type !== 'select') add(path, `style ${style} must name a select setting with options among ${PROGRESS_STYLES.join(', ')}`);
+    else if (bad.length > 0) add(path, `setting "${s.key}" offers ${bad.join(', ')}, which isn't a style; use ${PROGRESS_STYLES.join(', ')}`);
   }
 
   function quickAdd(path: Path, c: PluginCollection | undefined, set: Record<string, unknown> | undefined, usage: string, picked?: string) {
@@ -359,6 +375,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         value([...path, 'value'], b.value);
         value([...path, 'max'], b.max);
         if (b.label !== undefined) template([...path, 'label'], b.label);
+        if (b.style !== undefined) progressStyle([...path, 'style'], b.style);
         return;
       case 'chart': {
         const op = operatorOf(b.series);
@@ -443,6 +460,18 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       case 'count-badge':
       case 'stat':
         value([...path, 'value'], w.value);
+        break;
+      case 'progress':
+        value([...path, 'value'], w.value);
+        if (w.max !== undefined) value([...path, 'max'], w.max);
+        if (w.caption !== undefined) template([...path, 'caption'], w.caption);
+        if (w.style !== undefined) progressStyle([...path, 'style'], w.style);
+        break;
+      case 'stats':
+        w.items.forEach((it, i) => {
+          template([...path, 'items', i, 'label'], it.label);
+          value([...path, 'items', i, 'value'], it.value);
+        });
         break;
     }
   }

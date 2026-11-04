@@ -140,8 +140,11 @@ export default function TodayAppsCard({ onOpen }: { onOpen: (id: string) => void
               evaluator={evaluatorFor(a)}
               today={localDayOf(now, tz())}
               now={now}
+              timeZone={tz()}
+              weekStart={0}
               readOnly={!canWrite}
               add={actions.add}
+              remove={actions.remove}
               setDay={actions.setDay}
               onOpen={() => onOpen(a.id)}
             />

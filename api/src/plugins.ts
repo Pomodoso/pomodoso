@@ -1,7 +1,13 @@
+import { APPS_VERSION } from '@pomodoso/types/plugins/apps-version';
+
 import type { IApiClient } from './client.ts';
 
 // The plugin directory (backend/src/routes/plugin_directory.rs). Browsing is
 // public; publishing, reporting and "my plugins" need a signed-in client.
+//
+// Reads send this client's APPS_VERSION (the app file format it opens), so
+// the directory lists only apps it can open, each at the latest version it
+// understands.
 
 /** `private` is only seen by its owner, and needs entitlements.features.private_plugins to publish. */
 export type DirectoryVisibility = 'public' | 'private';
@@ -20,6 +26,8 @@ export interface DirectoryListing {
 
 export interface DirectoryVersion {
   version: string;
+  /** The lowest APPS_VERSION that opens it. */
+  min_apps_version: string;
   change_kind: 'initial' | 'additive' | 'breaking';
   changelog: string | null;
   created_at: string;
@@ -37,6 +45,8 @@ export interface DirectorySearch {
   today?: boolean;
   sort?: 'newest' | 'name';
   limit?: number;
+  /** Defaults to this client's APPS_VERSION. */
+  apps_version?: string;
 }
 
 export function searchDirectory(client: IApiClient, search: DirectorySearch = {}): Promise<DirectoryListing[]> {
@@ -45,12 +55,14 @@ export function searchDirectory(client: IApiClient, search: DirectorySearch = {}
   if (search.today) params.set('today', 'true');
   if (search.sort) params.set('sort', search.sort);
   if (search.limit) params.set('limit', String(search.limit));
+  params.set('apps_version', search.apps_version ?? APPS_VERSION);
   const qs = params.toString();
   return client.get(`/plugins/directory${qs ? `?${qs}` : ''}`);
 }
 
-export function getDirectoryPage(client: IApiClient, slug: string): Promise<DirectoryPage> {
-  return client.get(`/plugins/directory/${encodeURIComponent(slug)}`);
+/** A listing at the latest version a client of `appsVersion` opens (404 when none). */
+export function getDirectoryPage(client: IApiClient, slug: string, appsVersion: string = APPS_VERSION): Promise<DirectoryPage> {
+  return client.get(`/plugins/directory/${encodeURIComponent(slug)}?apps_version=${encodeURIComponent(appsVersion)}`);
 }
 
 export function getDirectoryVersion(client: IApiClient, slug: string, version: string): Promise<unknown> {
@@ -64,6 +76,8 @@ export interface PublishBody {
   visibility?: DirectoryVisibility;
   /** From checkUpdate against the latest published version; omitted for a first version. */
   change_kind?: 'additive' | 'breaking';
+  /** requiredAppsVersion(manifest). The server takes the higher of this and its own check. */
+  min_apps_version?: string;
 }
 
 export function publishPlugin(client: IApiClient, body: PublishBody): Promise<DirectoryListing> {
@@ -75,8 +89,8 @@ export function myPlugins(client: IApiClient): Promise<DirectoryListing[]> {
 }
 
 /** One of your own listings, private ones included, with its latest file. */
-export function getMyPlugin(client: IApiClient, slug: string): Promise<DirectoryPage> {
-  return client.get(`/plugins/mine/${encodeURIComponent(slug)}`);
+export function getMyPlugin(client: IApiClient, slug: string, appsVersion: string = APPS_VERSION): Promise<DirectoryPage> {
+  return client.get(`/plugins/mine/${encodeURIComponent(slug)}?apps_version=${encodeURIComponent(appsVersion)}`);
 }
 
 export function takeDownPlugin(client: IApiClient, slug: string): Promise<unknown> {

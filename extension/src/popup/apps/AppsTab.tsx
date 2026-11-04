@@ -52,7 +52,9 @@ interface AppsTabProps {
   installSlug?: { slug: string; nonce: number } | null;
 }
 
-type Screen = { kind: 'list' } | { kind: 'add'; slug?: string } | { kind: 'app'; id: string } | { kind: 'settings'; id: string };
+/** What Browse picked: the listing's file, checked, on its way to the install preview. */
+type Picked = { text: string; manifest: PluginManifest };
+type Screen = { kind: 'list' } | { kind: 'add'; slug?: string; picked?: Picked; mode?: 'file' } | { kind: 'app'; id: string } | { kind: 'settings'; id: string } | { kind: 'updates' };
 
 export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openApp, installSlug }: AppsTabProps) {
   const [screen, setScreen] = useState<Screen>(
@@ -95,15 +97,21 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
     });
   }, [openId, current, plugins]);
 
+  // Installed | Browse. Until the user picks, it's Browse with nothing installed yet.
+  const [listTab, setListTab] = useState<'installed' | 'browse' | null>(null);
+
   if (!plugins) return null;
+  const listTabShown = !directoryAvailable ? 'installed' : listTab ?? (plugins.length === 0 ? 'browse' : 'installed');
 
   return (
     <div style={{ padding: '10px 14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       {readOnly ? <SignedOutBanner onSignIn={onSignIn} /> : null}
       {screen.kind === 'add' ? (
         <AddApp
-          key={screen.slug ?? ''}
+          key={screen.slug ?? screen.picked?.manifest.id ?? screen.mode ?? ''}
           slug={screen.slug}
+          picked={screen.picked}
+          initialMode={screen.mode}
           timezone={timezone}
           readOnly={readOnly}
           onCancel={() => setScreen({ kind: 'list' })}
@@ -117,8 +125,42 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
         />
       ) : screen.kind === 'settings' && current ? (
         <AppSettings plugin={current} update={updates.get(current.id)} gone={gone.has(current.id)} readOnly={readOnly} onBack={() => setScreen({ kind: 'app', id: current.id })} />
+      ) : screen.kind === 'updates' ? (
+        <UpdatesScreen plugins={plugins} updates={updates} readOnly={readOnly} onBack={() => setScreen({ kind: 'list' })} onOpen={(id) => setScreen({ kind: 'app', id })} />
       ) : (
-        <AppList plugins={plugins} updates={updates} timezone={timezone} weekStart={weekStart} readOnly={readOnly} onOpen={(id) => setScreen({ kind: 'app', id })} onAdd={() => setScreen({ kind: 'add' })} />
+        <>
+          <ListTabs tab={listTabShown} count={plugins.length} onChange={setListTab} />
+          {listTabShown === 'browse' ? (
+            <>
+              <Browse
+                autoFocus={false}
+                installed={new Set(plugins.filter((p) => !p.deletedAt).map((p) => p.slug))}
+                onOpenInstalled={(slug) => {
+                  const p = plugins.find((x) => x.slug === slug && !x.deletedAt);
+                  if (p) setScreen({ kind: 'app', id: p.id });
+                }}
+                onPick={(text, manifest) => {
+                  // Back from the preview returns here, to Browse.
+                  setListTab('browse');
+                  setScreen({ kind: 'add', picked: { text, manifest } });
+                }}
+              />
+              <button type="button" disabled={readOnly} onClick={() => setScreen({ kind: 'add', mode: 'file' })} style={{ ...btn('ghost'), alignSelf: 'center', fontSize: 11, opacity: readOnly ? 0.5 : 1 }}>
+                Have a file? Install from a file ›
+              </button>
+            </>
+          ) : (
+            <AppList
+              plugins={plugins} updates={updates} timezone={timezone} weekStart={weekStart}
+              onOpen={(id) => setScreen({ kind: 'app', id })}
+              onUpdate={(id) => setScreen({ kind: 'settings', id })}
+              onUpdates={() => setScreen({ kind: 'updates' })}
+              onBrowse={() => setListTab(directoryAvailable ? 'browse' : 'installed')}
+              onAddFile={() => setScreen({ kind: 'add', mode: 'file' })}
+              readOnly={readOnly}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -190,17 +232,54 @@ function readFile(file: File): Promise<string> {
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
-function AppList({ plugins, updates, timezone, weekStart, readOnly, onOpen, onAdd }: {
+/** Installed | Browse, over the app list. Browse needs the directory; without it there's one tab. */
+function ListTabs({ tab, count, onChange }: { tab: 'installed' | 'browse'; count: number; onChange: (t: 'installed' | 'browse') => void }) {
+  if (!directoryAvailable) return null;
+  const item = (value: 'installed' | 'browse', label: string) => (
+    <button
+      type="button" onClick={() => onChange(value)} aria-pressed={tab === value}
+      style={{ flex: 1, padding: '5px 0', fontSize: 12, fontWeight: tab === value ? 600 : 400, fontFamily: 'inherit', cursor: 'pointer', border: 'none', borderBottom: `2px solid ${tab === value ? 'var(--color-accent)' : 'transparent'}`, background: 'none', color: tab === value ? 'var(--color-text)' : 'var(--color-text-muted)' }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)' }}>
+      {item('installed', count > 0 ? `Installed (${count})` : 'Installed')}
+      {item('browse', 'Browse apps')}
+    </div>
+  );
+}
+
+function AppList({ plugins, updates, timezone, weekStart, readOnly, onOpen, onUpdate, onUpdates, onBrowse, onAddFile }: {
   plugins: PluginRow[];
   updates: Map<string, AvailableUpdate>;
   timezone: string;
   weekStart: number;
   readOnly: boolean;
   onOpen: (id: string) => void;
-  onAdd: () => void;
+  /** The Update badge: that app's settings, where its update is. */
+  onUpdate: (id: string) => void;
+  onUpdates: () => void;
+  onBrowse: () => void;
+  onAddFile: () => void;
 }) {
+  const fromDirectory = plugins.some((p) => p.source === 'directory');
   return (
     <>
+      {updates.size > 0 ? (
+        <button
+          type="button" onClick={onUpdates}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--color-accent-soft)', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--color-text)', textAlign: 'left' }}
+        >
+          <span style={{ flex: 1 }}><b>{updates.size} update{updates.size === 1 ? '' : 's'}</b> available</span>
+          <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>Review ›</span>
+        </button>
+      ) : fromDirectory ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onUpdates} style={{ ...btn('ghost'), padding: '0 2px', fontSize: 11 }}>Updates</button>
+        </div>
+      ) : null}
       {plugins.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '28px 12px 8px', color: 'var(--color-text-muted)', fontSize: 12, lineHeight: 1.5 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 4 }}>Apps</div>
@@ -209,35 +288,51 @@ function AppList({ plugins, updates, timezone, weekStart, readOnly, onOpen, onAd
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {plugins.map((p) => (isSupported(p)
-            ? <AppRow key={p.id} plugin={p} hasUpdate={updates.has(p.id)} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} />
+            ? <AppRow key={p.id} plugin={p} hasUpdate={updates.has(p.id)} timezone={timezone} weekStart={weekStart} onOpen={() => onOpen(p.id)} onUpdate={() => onUpdate(p.id)} />
             : <UnsupportedRow key={p.id} plugin={p} />))}
         </div>
       )}
-      <button type="button" disabled={readOnly} onClick={onAdd} style={{ ...btn('secondary'), opacity: readOnly ? 0.5 : 1 }}>+ Add an app</button>
+      {directoryAvailable ? (
+        <button type="button" onClick={onBrowse} style={btn('secondary')}>Browse more apps ›</button>
+      ) : (
+        <button type="button" disabled={readOnly} onClick={onAddFile} style={{ ...btn('secondary'), opacity: readOnly ? 0.5 : 1 }}>+ Add an app from a file</button>
+      )}
     </>
   );
 }
 
 /** One installed app, with its Today value as a hint when it declares one. */
-function AppRow({ plugin, hasUpdate, timezone, weekStart, onOpen }: { plugin: PluginRow; hasUpdate: boolean; timezone: string; weekStart: number; onOpen: () => void }) {
+function AppRow({ plugin, hasUpdate, timezone, weekStart, onOpen, onUpdate }: { plugin: PluginRow; hasUpdate: boolean; timezone: string; weekStart: number; onOpen: () => void; onUpdate: () => void }) {
   const { evaluator } = usePluginData(plugin, timezone, weekStart);
   const w = plugin.manifest.today?.widget;
-  const hint = evaluator && w && 'value' in w ? `${w.label}: ${formatStat(evaluator.value(w.value), w.type === 'stat' ? w.format : 'number', new Date().toISOString())}` : plugin.manifest.description;
+  // The Today value as a hint: the widget's number, or a `stats` widget's first one.
+  const shown = w && 'value' in w ? { label: w.label, value: w.value, format: w.type === 'stat' ? w.format : undefined } : w?.type === 'stats' ? w.items[0] : undefined;
+  const hint = evaluator && shown ? `${shown.label}: ${formatStat(evaluator.value(shown.value), shown.format ?? 'number', new Date().toISOString())}` : plugin.manifest.description;
+  // A div, not a button: the Update badge inside is a button of its own.
   return (
-    <button
-      type="button" onClick={onOpen}
+    <div
+      role="button" tabIndex={0} onClick={onOpen}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
     >
       <PluginIcon icon={plugin.manifest.icon} name={plugin.manifest.name} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>
           {plugin.manifest.name}
-          {hasUpdate ? <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'var(--color-accent-soft)', color: 'var(--color-accent)', verticalAlign: 'middle' }}>Update</span> : null}
+          {hasUpdate ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUpdate(); }}
+              style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, fontFamily: 'inherit', padding: '1px 5px', borderRadius: 99, border: 'none', cursor: 'pointer', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', verticalAlign: 'middle' }}
+            >
+              Update
+            </button>
+          ) : null}
         </span>
         {hint ? <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hint}</span> : null}
       </span>
       <span style={{ color: 'var(--color-text-faint)' }}>›</span>
-    </button>
+    </div>
   );
 }
 
@@ -261,14 +356,23 @@ function UnsupportedRow({ plugin }: { plugin: PluginRow }) {
 
 // ─── Add / preview ───────────────────────────────────────────────────────────
 
-function AddApp({ slug, timezone, readOnly, onCancel, onInstalled }: { slug?: string | undefined; timezone: string; readOnly: boolean; onCancel: () => void; onInstalled: (id: string) => void }) {
-  const [text, setText] = useState('');
-  const [manifest, setManifest] = useState<PluginManifest | null>(null);
+function AddApp({ slug, picked, initialMode, timezone, readOnly, onCancel, onInstalled }: {
+  slug?: string | undefined;
+  /** Chosen in the Browse tab: straight to its install preview. */
+  picked?: Picked | undefined;
+  initialMode?: 'file' | undefined;
+  timezone: string;
+  readOnly: boolean;
+  onCancel: () => void;
+  onInstalled: (id: string) => void;
+}) {
+  const [text, setText] = useState(picked?.text ?? '');
+  const [manifest, setManifest] = useState<PluginManifest | null>(picked?.manifest ?? null);
   const [backup, setBackup] = useState<PluginExport | null>(null);
   const [issues, setIssues] = useState<PluginIssue[]>([]);
 
-  const [mode, setMode] = useState<'browse' | 'file'>(directoryAvailable ? 'browse' : 'file');
-  const [source, setSource] = useState<PluginRow['source']>('file');
+  const [mode, setMode] = useState<'browse' | 'file'>(initialMode ?? (directoryAvailable ? 'browse' : 'file'));
+  const [source, setSource] = useState<PluginRow['source']>(picked ? 'directory' : 'file');
   // A file (or listing) of an app that's already installed updates it rather
   // than installing a second copy: undefined while it's looked up.
   const [installed, setInstalled] = useState<PluginRow | null | undefined>(undefined);
@@ -351,10 +455,10 @@ function AddApp({ slug, timezone, readOnly, onCancel, onInstalled }: { slug?: st
   }
   if (manifest && installed === undefined) return null;
   if (manifest && installed) {
-    return <UpdatePreview installed={installed} next={manifest} readOnly={readOnly} onBack={() => setManifest(null)} onUpdated={onInstalled} />;
+    return <UpdatePreview installed={installed} next={manifest} readOnly={readOnly} onBack={() => (picked ? onCancel() : setManifest(null))} onUpdated={onInstalled} />;
   }
   if (manifest) {
-    return <InstallPreview text={text} manifest={manifest} source={source} timezone={timezone} readOnly={readOnly} onBack={() => setManifest(null)} onInstalled={onInstalled} />;
+    return <InstallPreview text={text} manifest={manifest} source={source} timezone={timezone} readOnly={readOnly} onBack={() => (picked ? onCancel() : setManifest(null))} onInstalled={onInstalled} />;
   }
 
   const tab = (value: 'browse' | 'file', label: string) => (
@@ -618,6 +722,48 @@ function RestorePreview({ text, backup, readOnly, onBack, onInstalled }: {
 
 // ─── An app ──────────────────────────────────────────────────────────────────
 
+/**
+ * The active page's preview image (og:image, else twitter:image), for
+ * `$tab.image`. Read from the tab's DOM, only when the app's file uses it;
+ * https only, as covers render from it.
+ */
+function useTabImage(url: string, manifest: PluginRow['manifest']): string | undefined {
+  const [image, setImage] = useState<string | undefined>();
+  const wanted = useMemo(() => JSON.stringify(manifest).includes('$tab.image'), [manifest]);
+  useEffect(() => {
+    setImage(undefined);
+    if (!wanted || !/^https?:\/\//i.test(url)) return;
+    let live = true;
+    void chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([t]) =>
+        t?.id === undefined
+          ? undefined
+          : chrome.scripting.executeScript({
+              target: { tabId: t.id },
+              func: () => {
+                const meta = (sel: string) => document.querySelector<HTMLMetaElement>(sel)?.content;
+                const raw = meta('meta[property="og:image"]') ?? meta('meta[name="og:image"]') ?? meta('meta[name="twitter:image"]') ?? meta('meta[property="twitter:image"]');
+                try {
+                  return raw ? new URL(raw, location.href).href : null;
+                } catch {
+                  return null;
+                }
+              },
+            }),
+      )
+      .then((res) => {
+        const v = res?.[0]?.result;
+        if (live && typeof v === 'string' && /^https:\/\//i.test(v)) setImage(v);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [url, wanted]);
+  return image;
+}
+
 function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSettings }: {
   plugin: PluginRow;
   timezone: string;
@@ -628,8 +774,9 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
   onSettings: () => void;
 }) {
   const [viewId, setViewId] = useState(plugin.manifest.views[0]!.id);
+  const image = useTabImage(tab.url, plugin.manifest);
   // `$tab` is only a web page: never chrome:// or the extension's own pages.
-  const webTab = /^https?:\/\//i.test(tab.url) ? tab : undefined;
+  const webTab = useMemo(() => (/^https?:\/\//i.test(tab.url) ? { ...tab, ...(image ? { image } : {}) } : undefined), [tab, image]);
   const { evaluator } = usePluginData(plugin, timezone, weekStart, webTab);
   const view = plugin.manifest.views.find((v) => v.id === viewId) ?? plugin.manifest.views[0]!;
 
@@ -637,9 +784,9 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
     const env = { timezone, weekStart };
     return {
       // Writes return their promise so a form can reset once the record is stored.
-      add: (c, data) => addRecord(plugin, c, data, env),
+      add: (c, data, opts) => addRecord(plugin, c, data, env, opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
       setDay: (c, day, data) => setDaily(plugin, c, day, data, env),
-      update: (r: PluginRecord, data) => updateRecord(plugin, r.id, data, env),
+      update: (r: PluginRecord, data, opts) => updateRecord(plugin, r.id, data, env, opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
       remove: (r: PluginRecord) => deleteRecord(r.id),
       openUrl: (url) => {
         if (/^https?:\/\//i.test(url)) void chrome.tabs.create({ url });
@@ -702,13 +849,15 @@ function AppSettings({ plugin, update, gone, readOnly, onBack }: { plugin: Plugi
   return (
     <>
       <Header title={`${m.name} settings`} onBack={onBack} />
+      {/* An available update comes first: the Update badge leads here. */}
+      {plugin.source === 'directory' && !gone && update ? <Updates plugin={plugin} update={update} readOnly={readOnly} /> : null}
       <SettingsFields manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       <EditableOptions manifest={m} values={plugin.settings} disabled={readOnly} onChange={save} />
       {plugin.source === 'directory' && gone ? (
         <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--color-text-muted)', padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
           This app is no longer in the directory. It keeps working here with all your entries, but won't get updates.
         </div>
-      ) : plugin.source === 'directory' ? (
+      ) : plugin.source === 'directory' && !update ? (
         <Updates plugin={plugin} update={update} readOnly={readOnly} />
       ) : null}
       {m.today ? (
@@ -754,7 +903,6 @@ function Updates({ plugin, update, readOnly }: { plugin: PluginRow; update: Avai
   const [error, setError] = useState<string | null>(null);
   const breaking = update?.report.kind === 'breaking';
   const blocked = (update?.report.issues.length ?? 0) > 0;
-  const steps = update?.report.migrates ? update.next.migrate?.steps ?? [] : [];
   return (
     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={sectionTitle}>Updates</div>
@@ -763,16 +911,7 @@ function Updates({ plugin, update, readOnly }: { plugin: PluginRow; update: Avai
           <div>
             <b>Version {update.next.version}</b> is available (you have {plugin.manifest.version}).
           </div>
-          {blocked ? (
-            <div style={{ color: 'var(--color-accent)' }}>This version can't be applied to your data, so it's skipped.</div>
-          ) : breaking ? (
-            <>
-              <div>It changes how your entries are stored:</div>
-              {steps.map((s, i) => <div key={i}>• {describeStep(s)}</div>)}
-            </>
-          ) : (
-            update.report.changes.slice(0, 5).map((c, i) => <div key={i} style={{ color: 'var(--color-text-muted)' }}>• {c.message}</div>)
-          )}
+          <UpdateDetails update={update} />
           {error ? <div style={{ color: 'var(--color-accent)' }}>{error}</div> : null}
           {!blocked ? (
             <button
@@ -802,6 +941,102 @@ function Updates({ plugin, update, readOnly }: { plugin: PluginRow; update: Avai
         Update automatically (small changes only)
       </label>
     </div>
+  );
+}
+
+/** What an update does: why it's skipped, how it converts entries, or what changes. */
+function UpdateDetails({ update }: { update: AvailableUpdate }) {
+  if (update.report.issues.length > 0) return <div style={{ color: 'var(--color-accent)' }}>This version can't be applied to your data, so it's skipped.</div>;
+  if (update.report.kind === 'breaking') {
+    const steps = update.report.migrates ? update.next.migrate?.steps ?? [] : [];
+    return (
+      <>
+        <div>It changes how your entries are stored:</div>
+        {steps.map((s, i) => <div key={i}>• {describeStep(s)}</div>)}
+      </>
+    );
+  }
+  return <>{update.report.changes.slice(0, 5).map((c, i) => <div key={i} style={{ color: 'var(--color-text-muted)' }}>• {c.message}</div>)}</>;
+}
+
+// ─── Updates ─────────────────────────────────────────────────────────────────
+
+/**
+ * Every available update in one place: each with what it does and its own
+ * button, or all at once. A version that converts entries says how right
+ * where it's listed, so "Update all" never converts anything unseen.
+ */
+function UpdatesScreen({ plugins, updates, readOnly, onBack, onOpen }: {
+  plugins: PluginRow[];
+  updates: Map<string, AvailableUpdate>;
+  readOnly: boolean;
+  onBack: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [errors, setErrors] = useState<Map<string, string>>(new Map());
+  const pending = plugins.flatMap((p) => {
+    const u = updates.get(p.id);
+    return u && isSupported(p) ? [{ plugin: p, update: u }] : [];
+  });
+  const applicable = pending.filter((x) => x.update.report.issues.length === 0);
+  const converts = applicable.filter((x) => x.update.report.kind === 'breaking').length;
+
+  const apply = async (items: typeof pending) => {
+    setBusy((b) => new Set([...b, ...items.map((x) => x.plugin.id)]));
+    // One at a time: each update is its own transaction over its own records.
+    for (const { plugin, update } of items) {
+      try {
+        await applyPluginUpdate(plugin.id, update.next);
+        setErrors((e) => { const n = new Map(e); n.delete(plugin.id); return n; });
+      } catch (err) {
+        setErrors((e) => new Map(e).set(plugin.id, (err as Error).message));
+      }
+      setBusy((b) => { const n = new Set(b); n.delete(plugin.id); return n; });
+    }
+  };
+
+  return (
+    <>
+      <Header title="Updates" onBack={onBack} />
+      {pending.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '24px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 4 }}>All up to date</div>
+          Your apps from the directory have their latest version.
+        </div>
+      ) : (
+        <>
+          {applicable.length > 1 ? (
+            <button type="button" disabled={readOnly || busy.size > 0} onClick={() => void apply(applicable)} style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}>
+              {busy.size > 0 ? 'Updating…' : `Update all (${applicable.length})${converts > 0 ? ' and convert entries' : ''}`}
+            </button>
+          ) : null}
+          {pending.map(({ plugin, update }) => {
+            const blocked = update.report.issues.length > 0;
+            const breaking = update.report.kind === 'breaking';
+            const error = errors.get(plugin.id);
+            return (
+              <div key={plugin.id} style={{ fontSize: 11, color: 'var(--color-text)', lineHeight: 1.5, padding: '8px 10px', background: 'var(--color-surface)', border: `1px solid ${breaking ? 'var(--color-accent)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <PluginIcon icon={update.next.icon} name={update.next.name} size={24} />
+                  <button type="button" onClick={() => onOpen(plugin.id)} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{update.next.name}</span>
+                    <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-faint)' }}>{plugin.manifest.version} → {update.next.version}</span>
+                  </button>
+                  {!blocked ? (
+                    <button type="button" disabled={readOnly || busy.has(plugin.id)} onClick={() => void apply([{ plugin, update }])} style={{ ...btn(breaking ? 'primary' : 'secondary'), flexShrink: 0, opacity: readOnly ? 0.5 : 1 }}>
+                      {busy.has(plugin.id) ? 'Updating…' : breaking ? 'Update and convert' : 'Update'}
+                    </button>
+                  ) : null}
+                </div>
+                <UpdateDetails update={update} />
+                {error ? <div style={{ color: 'var(--color-accent)' }}>{error}</div> : null}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </>
   );
 }
 

@@ -14,7 +14,16 @@ const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 
 export const directoryAvailable = Boolean(API_URL);
 
-export function Browse({ onPick }: { onPick: (text: string, manifest: PluginManifest) => void }) {
+/**
+ * `installed` (slugs) marks what's already here; picking one of those opens
+ * it (`onOpenInstalled`) instead of its install preview.
+ */
+export function Browse({ onPick, installed, onOpenInstalled, autoFocus = true }: {
+  onPick: (text: string, manifest: PluginManifest) => void;
+  installed?: ReadonlySet<string> | undefined;
+  onOpenInstalled?: ((slug: string) => void) | undefined;
+  autoFocus?: boolean | undefined;
+}) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<DirectoryListing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +49,10 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
   }, [q]);
 
   const open = async (slug: string) => {
+    if (installed?.has(slug) && onOpenInstalled) {
+      onOpenInstalled(slug);
+      return;
+    }
     if (!API_URL || opening) return;
     setOpening(slug);
     try {
@@ -61,7 +74,7 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <input
-        type="search" value={q} placeholder="Search apps" autoFocus
+        type="search" value={q} placeholder="Search apps" autoFocus={autoFocus}
         onChange={(e) => setQ(e.target.value)}
         style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'inherit', color: 'var(--color-text)', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none' }}
       />
@@ -83,6 +96,7 @@ export function Browse({ onPick }: { onPick: (text: string, manifest: PluginMani
               <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>
                 {l.name}
                 <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-faint)' }}> v{l.latest_version}{l.has_today ? ' · Today widget' : ''}</span>
+                {installed?.has(l.slug) ? <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'var(--color-success-bg)', color: 'var(--color-success)', verticalAlign: 'middle' }}>Installed</span> : null}
               </span>
               {l.description ? (
                 <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.description}</span>

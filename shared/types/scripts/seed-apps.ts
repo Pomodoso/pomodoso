@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { checkUpdate, compareVersions, parsePluginFile, validatePluginData } from '../src/plugins/index.ts';
+import { APPS_VERSION, checkUpdate, compareVersions, parsePluginFile, requiredAppsVersion, validatePluginData } from '../src/plugins/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const examples = join(here, '../src/plugins/examples');
@@ -71,7 +71,8 @@ for (const file of readdirSync(examples).filter((f) => f.endsWith('.yaml')).sort
   }
   const next = parsed.manifest;
 
-  const current = await call(`/plugins/mine/${next.id}`);
+  // Compared with the latest version this format can open, which is the latest one.
+  const current = await call(`/plugins/mine/${next.id}?apps_version=${APPS_VERSION}`);
   let changeKind: 'additive' | 'breaking' | undefined;
   if (current.ok) {
     const page = (await current.json()) as { latest_version: string; manifest: unknown };
@@ -91,10 +92,16 @@ for (const file of readdirSync(examples).filter((f) => f.endsWith('.yaml')).sort
 
   const r = await call('/plugins/publish', {
     method: 'POST',
-    body: JSON.stringify({ manifest: next, visibility: 'public', change_kind: changeKind, changelog: changeKind ? undefined : 'First version' }),
+    body: JSON.stringify({
+      manifest: next,
+      visibility: 'public',
+      change_kind: changeKind,
+      changelog: changeKind ? undefined : 'First version',
+      min_apps_version: requiredAppsVersion(next),
+    }),
   });
   if (r.ok) {
-    console.log(`✓ ${next.id} ${next.version}${changeKind ? ` (${changeKind} update)` : ''}`);
+    console.log(`✓ ${next.id} ${next.version}${changeKind ? ` (${changeKind} update)` : ''} · apps ${requiredAppsVersion(next)}`);
   } else if (r.status === 403) {
     console.error(`✗ ${next.id}: another account already owns this id`);
     failed++;

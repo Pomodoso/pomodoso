@@ -41,12 +41,13 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
   );
 
   const collection = (key: string) => manifest.collections.find((c) => c.key === key);
-  const add = (key: string, data: Record<string, unknown>) => {
+  const add = (key: string, data: Record<string, unknown>, opts?: { occurredAt?: string | undefined }) => {
     const c = collection(key);
     if (!c) return;
     const at = new Date().toISOString();
-    setRecords((rs) => [...rs, { id: crypto.randomUUID(), collection: key, occurred_at: c.kind === 'event' ? at : null, created_at: at, updated_at: at, data: merged(initialRecordData(c), data) }]);
+    setRecords((rs) => [...rs, { id: crypto.randomUUID(), collection: key, occurred_at: c.kind === 'event' ? opts?.occurredAt ?? at : null, created_at: at, updated_at: at, data: merged(initialRecordData(c), data) }]);
   };
+  const remove = (rec: PluginRecord) => setRecords((rs) => rs.filter((r) => r.id !== rec.id));
   const setDay = (key: string, day: string, data: Record<string, unknown>) => {
     const at = new Date().toISOString();
     setRecords((rs) => {
@@ -69,8 +70,8 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
     actions: {
       add,
       setDay,
-      update: (rec, data) => setRecords((rs) => rs.map((r) => (r.id === rec.id ? { ...r, updated_at: new Date().toISOString(), data: merged(r.data, data) } : r))),
-      remove: (rec) => setRecords((rs) => rs.filter((r) => r.id !== rec.id)),
+      update: (rec, data, opts) => setRecords((rs) => rs.map((r) => (r.id === rec.id ? { ...r, ...(r.occurred_at && opts?.occurredAt ? { occurred_at: opts.occurredAt } : {}), updated_at: new Date().toISOString(), data: merged(r.data, data) } : r))),
+      remove,
       openUrl: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
     },
   };
@@ -106,7 +107,7 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
           {manifest.today ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>On Today</div>
-              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} readOnly={false} add={add} setDay={setDay} onOpen={() => setViewId(manifest.views[0]!.id)} />
+              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} timeZone={timeZone} weekStart={0} readOnly={false} add={add} remove={remove} setDay={setDay} onOpen={() => setViewId(manifest.views[0]!.id)} />
             </div>
           ) : null}
           {asks.map((h, i) => (

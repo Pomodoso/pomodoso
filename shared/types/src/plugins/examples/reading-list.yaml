@@ -1,7 +1,7 @@
 schema_version: 1
 id: reading-list
 name: Reading list
-version: 1.0.0
+version: 1.1.0
 icon: bookmark
 description: Articles, videos and papers to get to later, organized with tags.
 author: Pomodoso
@@ -17,9 +17,13 @@ collections:
       - { key: kind, type: select, options: [article, video, paper, other], default: article }
       - { key: tags, type: tags, optional: true }
       - { key: status, type: select, options: [to_read, done], default: to_read }
+      - { key: done_on, type: date, label: Read on, optional: true }
 
 computed:
   to_read: { count: link, where: { status: to_read } }
+  read_week: { count: link, where: { status: done }, range: this_week, by: done_on }
+  read_month: { count: link, where: { status: done }, range: this_month, by: done_on }
+  read_year: { count: link, where: { status: done }, range: this_year, by: done_on }
 
 views:
   - id: main
@@ -40,7 +44,32 @@ views:
   - id: done
     label: Done
     blocks:
-      - { type: list, collection: link, filter: { status: done }, primary: title, open: url }
+      - type: stat-row
+        items:
+          - { label: Read this week, value: $read_week }
+          - { label: This month, value: $read_month }
+          - { label: This year, value: $read_year }
+      - type: list
+        collection: link
+        filter: { status: done }
+        primary: title
+        secondary: [done_on]
+        open: url
+        sort: { field: done_on, order: desc }
 
 today:
-  widget: { type: count-badge, label: To read, value: $to_read }
+  default_on: true
+  widget:
+    type: stats
+    label: Reading list
+    items:
+      - { label: To read, value: $to_read }
+      - { label: Read this week, value: $read_week }
+      - { label: Month, value: $read_month }
+      - { label: Year, value: $read_year }
+
+rules:
+  - collection: link
+    when: { status: done }
+    set: { done_on: $today_date }
+    only_if_empty: true

@@ -9,6 +9,7 @@ import { COMPUTED_OPS, type CollectionKind } from './catalog.ts';
 import {
   DEFAULT_SERIES_RANGE,
   addDays,
+  daysBetween,
   localDayOf,
   nextPeriod,
   periodStart,
@@ -54,8 +55,8 @@ export interface EvalContext {
   /** User-set values; missing keys fall back to the setting's default. */
   settings?: Record<string, unknown> | undefined;
   records: readonly PluginRecord[];
-  /** Active tab, extension only (`$tab.url`, `$tab.title`). */
-  tab?: { url?: string | undefined; title?: string | undefined } | undefined;
+  /** Active tab, extension only (`$tab.url`, `$tab.title`, `$tab.image`). */
+  tab?: { url?: string | undefined; title?: string | undefined; image?: string | undefined } | undefined;
 }
 
 export interface PluginEvaluator {
@@ -200,6 +201,7 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
     if (name === 'now') return ctx.now;
     if (name === 'tab.url') return ctx.tab?.url ?? null;
     if (name === 'tab.title') return ctx.tab?.title ?? null;
+    if (name === 'tab.image') return ctx.tab?.image ?? null;
     if (settingDefaults.has(name)) {
       const v = ctx.settings?.[name] ?? settingDefaults.get(name);
       return v === undefined ? null : (v as PluginValue);
@@ -319,6 +321,21 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
         const y = numberAt(b, asOf);
         if (x === undefined || y === undefined || y === 0) return null;
         return (x - y) / y;
+      }
+
+      case 'calendar': {
+        // Days of the period, today included in `passed`: on the last day it's 100%.
+        const x = e as Extract<ComputedExpr, { calendar: unknown }>;
+        const start = x.calendar === 'year' ? `${asOf.slice(0, 4)}-01-01` : periodStart(asOf, x.calendar, ctx.weekStart);
+        const end = x.calendar === 'year' ? `${Number(asOf.slice(0, 4)) + 1}-01-01` : nextPeriod(start, x.calendar);
+        const total = daysBetween(start, end);
+        const passed = daysBetween(start, asOf) + 1;
+        switch (x.show ?? 'progress') {
+          case 'progress': return passed / total;
+          case 'passed': return passed;
+          case 'left': return total - passed;
+          case 'total': return total;
+        }
       }
     }
   }

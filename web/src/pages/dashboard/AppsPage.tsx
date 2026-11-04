@@ -6,7 +6,9 @@ import {
   checkUpdate,
   compareVersions,
   parsePluginFile,
+  requiredAppsVersion,
   validatePluginData,
+  worksWith,
   type PluginIssue,
   type PluginManifest,
   type UpdateReport,
@@ -121,6 +123,7 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
         visibility,
         changelog: changelog.trim() || undefined,
         change_kind: kind === 'breaking' ? 'breaking' : checked.current ? 'additive' : undefined,
+        min_apps_version: requiredAppsVersion(checked.manifest),
       });
       setText('');
       setChangelog('');
@@ -181,7 +184,7 @@ function PublishPanel({ mine, onPublished }: { mine: DirectoryListing[]; onPubli
           <div style={{ fontSize: 13, color: 'var(--text)' }}>
             <b>{checked.manifest.name}</b> <span style={{ color: 'var(--text-tert)' }}>· {checked.manifest.id} · v{checked.manifest.version}</span>
             <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 2 }}>
-              {checked.current ? `New version of your app (published: v${checked.current.latest_version}).` : 'A new app.'}
+              {checked.current ? `New version of your app (published: v${checked.current.latest_version}).` : 'A new app.'} Works with {worksWith(requiredAppsVersion(checked.manifest))}.
             </div>
           </div>
 

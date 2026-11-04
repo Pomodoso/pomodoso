@@ -36,6 +36,7 @@ collections:
       - { key: tags, type: tags, optional: true }
       - { key: rating, type: rating, optional: true }
       - { key: link, type: url, optional: true }
+      - { key: cover, type: image_url, optional: true }
       - { key: finished_on, type: date, optional: true }
   - key: mood
     kind: daily
@@ -60,11 +61,12 @@ export const GUIDE_BLOCK_EXAMPLES: Record<BlockType, string> = {
   'counter-button': `- type: counter-button
   label: Drank a glass
   adds: glass
-  set: { drink: water }`,
+  set: { drink: water }
+  subtract: true            # a − button for a tap by mistake`,
   'add-button': `- type: add-button
   label: Save this page as a book
   adds: book
-  prefill: { title: $tab.title, link: $tab.url }`,
+  prefill: { title: $tab.title, link: $tab.url, cover: $tab.image }`,
   form: `- type: form
   collection: book`,
   stat: `- type: stat
@@ -79,7 +81,12 @@ export const GUIDE_BLOCK_EXAMPLES: Record<BlockType, string> = {
   progress: `- type: progress
   label: Daily goal
   value: $today
-  max: $goal`,
+  max: $goal
+- type: progress
+  label: Glasses today
+  value: $today
+  max: $goal
+  style: dots               # bar (default), ring or dots; or a $setting`,
   chart: `- type: chart
   label: Last 14 days
   kind: bar
@@ -121,13 +128,32 @@ export const GUIDE_BLOCK_EXAMPLES: Record<BlockType, string> = {
 export const GUIDE_WIDGET_EXAMPLES: Record<TodayWidgetType, string> = {
   'mini-counter': `today:
   default_on: true
-  widget: { type: mini-counter, label: Water, value: $today, max: $goal, adds: glass }`,
+  widget: { type: mini-counter, label: Water, value: $today, max: $goal, adds: glass, subtract: true }`,
   'select-today': `today:
-  widget: { type: select-today, label: Mood, collection: mood, field: mood }`,
+  widget: { type: select-today, label: Mood, collection: mood, field: mood, after: year-grid }`,
   'count-badge': `today:
   widget: { type: count-badge, label: This week, value: $week }`,
   stat: `today:
   widget: { type: stat, label: Last glass, value: $last, format: time_ago }`,
+  progress: `computed:
+  year_done: { calendar: year }
+  days_left: { calendar: year, show: left }
+today:
+  widget:
+    type: progress
+    label: Year
+    value: $year_done
+    format: share
+    caption: "{$days_left} days left"
+    style: ring`,
+  stats: `today:
+  widget:
+    type: stats
+    label: Water
+    items:
+      - { label: Today, value: $today }
+      - { label: This week, value: $week }
+      - { label: vs last week, value: $week_change, format: percent }`,
 };
 
 export const GUIDE_HOOK_EXAMPLES: Record<HookEvent, string> = {
@@ -169,6 +195,9 @@ export const GUIDE_COMPUTED_EXAMPLES: Record<ComputedOp, string> = {
   ramp_up: { taper: { from: 3, up_by: 1, every: week, max: $goal } }`,
   delta: `computed:
   vs_last_week: { delta: [$week, $last_week] }`,
+  calendar: `computed:
+  year_done: { calendar: year }                  # 0.43 on day 158 of 365
+  days_left: { calendar: year, show: left }`,
 };
 
 /** The walkthrough's finished file: a small water tracker, end to end. */
@@ -226,8 +255,14 @@ const DEFAULT_VIEW = [{ type: 'stat', label: 'Glasses today', value: '$today' }]
 export function guideManifestData(part: { blocks?: string; today?: string; hooks?: string; computed?: string }): Record<string, unknown> {
   const data = parse(GUIDE_PLAYGROUND) as Record<string, unknown>;
   data.views = [{ id: 'main', blocks: part.blocks ? parse(part.blocks) : DEFAULT_VIEW }];
-  if (part.today) Object.assign(data, parse(part.today));
-  if (part.hooks) Object.assign(data, parse(part.hooks));
+  // A snippet may bring computed values of its own: they join the playground's.
+  const merge = (snippet: string) => {
+    const { computed, ...rest } = parse(snippet) as Record<string, unknown>;
+    Object.assign(data, rest);
+    if (computed) data.computed = { ...(data.computed as Record<string, unknown>), ...(computed as Record<string, unknown>) };
+  };
+  if (part.today) merge(part.today);
+  if (part.hooks) merge(part.hooks);
   if (part.computed) {
     const extra = (parse(part.computed) as { computed: Record<string, unknown> }).computed;
     data.computed = { ...(data.computed as Record<string, unknown>), ...extra };
