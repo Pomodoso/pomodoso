@@ -15,6 +15,7 @@
 - **Year in Pixels, twice** — Year in Pixels is now about happiness; productivity has its own app, Year in Pixels: Productivity. Updating moves your productivity states to the closest mood. Once you pick today's state, its Today card shows your year in pixels (tap **Change** to pick again).
 - **New app: Year progress** — How much of the year has gone by, on Today and in its own screen with the month and week too. Choose in its settings how it looks: a bar, a ring, or one dot per day.
 - **Installed and Browse apps, side by side** — The Apps tab has two tabs: your installed apps, and Browse apps to search the directory and install more (already installed ones say so and open directly). Installing from a file is a link under Browse.
+- **A badge for app updates** — The Apps tab shows how many app updates are waiting for you. Small updates of apps set to update automatically now apply as soon as you open Pomodoso, not only when you open Apps, and don't count in the badge.
 - **Updates in one place** — When apps have new versions, Apps shows "N updates available": review each one with what it changes, update them one by one or all at once. Tapping an app's **Update** badge opens its settings with the update at the top. With nothing pending, Apps → Updates says everything is up to date.
 - **Pomodoso's apps show on Today** — Every app we publish suggests its Today card, and an update that starts suggesting it turns it on once.
 
