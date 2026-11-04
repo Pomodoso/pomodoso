@@ -2,9 +2,9 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { CHROME_STORE_URL } from '../../lib/extension.ts';
 
-// The public app pages' top bar (/apps, /apps/:slug, /apps/build).
+// The public app pages' top bar (/apps, /apps/:slug, /apps/build, /apps/docs, /apps/validate).
 
-export function SiteHeader({ current }: { current: 'apps' | 'build' }) {
+export function SiteHeader({ current }: { current: 'apps' | 'build' | 'docs' | 'validate' }) {
   const { session, loading } = useAuth();
   const navLink = (to: string, label: string, active: boolean) => (
     <Link to={to} aria-current={active ? 'page' : undefined} style={{ color: active ? 'var(--color-text)' : 'var(--color-text-muted)', fontWeight: active ? 600 : 400, textDecoration: 'none' }}>
@@ -19,6 +19,8 @@ export function SiteHeader({ current }: { current: 'apps' | 'build' }) {
           {navLink('/#features', 'Features', false)}
           {navLink('/apps', 'Apps', current === 'apps')}
           {navLink('/apps/build', 'Build an app', current === 'build')}
+          {navLink('/apps/docs', 'Docs', current === 'docs')}
+          {navLink('/apps/validate', 'Validator', current === 'validate')}
           {navLink('/pricing', 'Pricing', false)}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>

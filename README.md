@@ -107,8 +107,10 @@ it within Chrome's MV3 remote-code rules and makes a public directory safe.
 **Using them:** browse at [pomodoso.com/apps](https://pomodoso.com/apps), or in the extension
 under Apps → Add an app.
 
-**Writing one:** start at [pomodoso.com/apps/build](https://pomodoso.com/apps/build). Point an AI
-assistant at [`llms-full.txt`](https://pomodoso.com/llms-full.txt) and check the result:
+**Writing one:** by hand, with the docs at [pomodoso.com/apps/docs](https://pomodoso.com/apps/docs)
+(every block with a live example), or with AI from [pomodoso.com/apps/build](https://pomodoso.com/apps/build):
+point an assistant at [`llms-full.txt`](https://pomodoso.com/llms-full.txt). Either way, check the result
+in the browser at [pomodoso.com/apps/validate](https://pomodoso.com/apps/validate) (paste or upload, then try it) or with:
 
 ```bash
 npx @pomodoso/plugin validate my-app.yaml
@@ -121,15 +123,16 @@ publish it from Dashboard → Apps; entries carry over.
 
 | Where | What |
 |---|---|
-| `shared/types/src/plugins/` | The format: schema, validation, computed values, update checks, migrations, docs for LLMs, example apps |
+| `shared/types/src/plugins/` | The format: schema, validation, computed values, update checks, migrations, docs for LLMs (`docs.ts`), examples for the human docs (`guide.ts`), example apps |
 | `shared/ui/src/plugins/` | The components an app renders with |
 | `shared/plugin/` | The CLI (`shared/plugin/skill/` has the agent skill) |
 | `extension/src/popup/apps/`, `extension/src/plugins.ts` | Apps tab, storage, hooks, install and updates |
-| `web/src/pages/apps/`, `web/src/pages/dashboard/AppsPage.tsx` | Public directory, publishing, installed apps |
+| `web/src/pages/apps/`, `web/src/pages/dashboard/AppsPage.tsx` | Public directory, docs (`DocsPage.tsx`), publishing, installed apps |
 | `backend/src/routes/plugin_directory.rs`, `installed_plugins.rs` | Directory API, installed apps; sync lives in `sync.rs` |
 
 The JSON Schema and `llms.txt` / `llms-full.txt` are generated from the catalog, and a test
-fails if they go stale:
+fails if they go stale. A new block, widget, hook or operator also needs its example in `guide.ts`
+for `/apps/docs` (the typecheck fails without it):
 
 ```bash
 pnpm --filter @pomodoso/types gen:plugin-schema

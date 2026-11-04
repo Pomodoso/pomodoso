@@ -36,7 +36,7 @@ export default defineConfig({
     dirStyle: 'nested',
     // Prerender the public pages — dashboard/login/settings stay a
     // client-only SPA, served through the app-shell fallback below.
-    includedRoutes: () => ['/', '/apps', '/apps/build'],
+    includedRoutes: () => ['/', '/apps', '/apps/build', '/apps/docs', '/apps/validate'],
     onFinished: () => {
       writeAppShell()
     },

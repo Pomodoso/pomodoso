@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { createEvaluator, humanize, initialRecordData, localDayOf, normalizeOption, type PluginManifest, type PluginRecord } from '@pomodoso/types/plugins';
+import { createEvaluator, humanize, initialRecordData, localDayOf, normalizeOption, reportLines, type PluginManifest, type PluginRecord } from '@pomodoso/types/plugins';
 import { PluginView, TodayWidget, type PluginEnv } from '@pomodoso/ui/plugins';
 
 // An app's screen and Today widget, rendered from its file with the same
@@ -25,8 +25,9 @@ function merged(base: Record<string, unknown>, data: Record<string, unknown>) {
   return out;
 }
 
-export function LivePreview({ manifest }: { manifest: PluginManifest }) {
-  const [records, setRecords] = useState<PluginRecord[]>([]);
+/** `initialRecords` seeds the preview (the docs' sample data); edits stay local. */
+export function LivePreview({ manifest, initialRecords = [] }: { manifest: PluginManifest; initialRecords?: PluginRecord[] }) {
+  const [records, setRecords] = useState<PluginRecord[]>(initialRecords);
   const [viewId, setViewId] = useState(manifest.views[0]!.id);
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const now = new Date().toISOString();
@@ -75,6 +76,7 @@ export function LivePreview({ manifest }: { manifest: PluginManifest }) {
   };
   const view = manifest.views.find((v) => v.id === viewId) ?? manifest.views[0]!;
   const asks = (manifest.hooks ?? []).flatMap((h) => ('ask' in h ? [h] : []));
+  const reports = (['daily_report', 'weekly_report'] as const).flatMap((on) => reportLines(manifest, on, evaluator, now).map((line) => ({ on, line })));
 
   return (
     <div style={{ background: '#F4F2EC', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start' }}>
@@ -99,7 +101,7 @@ export function LivePreview({ manifest }: { manifest: PluginManifest }) {
         <PluginView env={env} view={view} />
       </div>
 
-      {manifest.today || asks.length > 0 ? (
+      {manifest.today || asks.length > 0 || reports.length > 0 ? (
         <div style={{ width: 240, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {manifest.today ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -111,6 +113,12 @@ export function LivePreview({ manifest }: { manifest: PluginManifest }) {
             <div key={i} style={{ background: 'var(--color-surface)', border: '1.5px solid var(--color-accent)', borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: '#A8432D' }}>{h.on === 'day_end' ? 'THE NEXT DAY' : 'DURING A BREAK'}</span>
               <span style={{ fontWeight: 600 }}>{h.ask}</span>
+            </div>
+          ))}
+          {reports.map((r, i) => (
+            <div key={`r${i}`} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--color-text-muted)' }}>{r.on === 'daily_report' ? 'IN THE DAILY REPORT' : 'IN THE WEEKLY REPORT'}</span>
+              <span>{r.line}</span>
             </div>
           ))}
         </div>
