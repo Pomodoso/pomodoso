@@ -73,6 +73,7 @@ export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
   'count-badge': 'A single number.',
   stat: 'A single value with a `format`.',
   progress: 'A bar of `value` against `max` (default 1), with an optional `format`, a `caption` line under it (`{$name}` works) and a `style` (`bar`, `ring` or `dots`, or a `$setting`). Ring and dots take the whole row.',
+  record: 'The latest item of a collection matching `where` (the book you are reading), by its `title` field, with a number `field` you edit right on the card (the page you are on), against an optional `max` field (its pages, as a bar). Optional `caption` line with `{$name}` values.',
   stats: 'Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.',
 };
 

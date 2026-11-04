@@ -145,6 +145,7 @@ export default function TodayAppsCard({ onOpen }: { onOpen: (id: string) => void
               readOnly={!canWrite}
               add={actions.add}
               remove={actions.remove}
+              update={actions.update}
               setDay={actions.setDay}
               onOpen={() => onOpen(a.id)}
             />

@@ -5,7 +5,7 @@ import { showsOnToday } from '@pomodoso/types/plugins';
 import { TodayWidget } from '@pomodoso/ui/plugins';
 
 import { db, localDate, type PluginRow } from '../../db';
-import { addRecord, deleteRecord, setDaily } from '../../plugins';
+import { addRecord, deleteRecord, setDaily, updateRecord } from '../../plugins';
 import { useLocalStorage } from '../useStorage';
 import { TodaySectionHeader } from '../TodaySectionHeader';
 import { isSupported } from './supported';
@@ -53,6 +53,7 @@ function PinnedApp({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow;
       readOnly={false}
       add={(c, data) => addRecord(plugin, c, data, env)}
       remove={(r) => deleteRecord(r.id)}
+      update={(r, data) => updateRecord(plugin, r.id, data, env)}
       setDay={(c, day, data) => setDaily(plugin, c, day, data, env)}
       onOpen={onOpen}
     />

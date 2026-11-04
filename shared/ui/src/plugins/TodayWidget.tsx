@@ -36,6 +36,8 @@ export interface TodayWidgetProps {
   add(collection: string, data: Record<string, unknown>): void | Promise<unknown>;
   /** Deletes a record: the mini-counter's − (`subtract: true`). */
   remove(record: PluginRecord): void | Promise<unknown>;
+  /** Saves a record's data (the `record` widget's field). */
+  update(record: PluginRecord, data: Record<string, unknown>): void | Promise<unknown>;
   setDay(collection: string, day: string, data: Record<string, unknown>): void | Promise<unknown>;
   /** Opens the app's own screen. */
   onOpen(): void;
@@ -108,6 +110,9 @@ export function TodayWidget(props: TodayWidgetProps) {
     case 'select-today':
       return <SelectToday {...props} widget={w} label={label} />;
 
+    case 'record':
+      return <RecordCard {...props} widget={w} label={label} />;
+
     case 'count-badge':
     case 'stat': {
       const v = evaluator.value(w.value);
@@ -175,6 +180,86 @@ export function TodayWidget(props: TodayWidgetProps) {
       );
     }
   }
+}
+
+type RecordSpec = Extract<NonNullable<PluginManifest['today']>['widget'], { type: 'record' }>;
+
+/**
+ * The latest item matching `where` (the book being read), with its number
+ * `field` (the page) edited right here: typed, saved on Enter or on leaving
+ * the box. Against `max` (its pages) it gets a bar.
+ */
+function RecordCard(props: TodayWidgetProps & { widget: RecordSpec; label: string }) {
+  const { manifest, evaluator, widget: w, label, now } = props;
+  const c = manifest.collections.find((x) => x.key === w.collection);
+  const rows = c ? evaluator.records(c.key, w.where) : [];
+  // The one touched last: the book you're on.
+  const rec = rows.reduce<PluginRecord | undefined>((a, r) => (!a || (r.updated_at ?? r.created_at) > (a.updated_at ?? a.created_at) ? r : a), undefined);
+  const caption = w.caption !== undefined ? evaluator.template(w.caption, templateFormat(manifest, now)) : null;
+  const value = rec ? num(rec.data[w.field] as PluginValue) : undefined;
+  const max = rec && w.max ? num(rec.data[w.max] as PluginValue) : undefined;
+  const field = c?.fields.find((f) => f.key === w.field);
+  return (
+    <Card {...props} label={label}>
+      {rec ? (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {String(rec.data[w.title] ?? 'Untitled')}
+            {rows.length > 1 ? <span style={{ fontWeight: 400, color: 'var(--color-text-faint)' }}> +{rows.length - 1}</span> : null}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-text-muted)' }}>
+            <span>{field?.label ?? w.field}</span>
+            <NumberInput
+              key={`${rec.id}:${value ?? ''}`}
+              value={value}
+              min={field?.min}
+              max={field?.max ?? max}
+              disabled={props.readOnly}
+              onSave={(v) => void props.update(rec, { ...rec.data, [w.field]: v })}
+            />
+            {max !== undefined ? <span>/ {formatStat(max, 'number', now)}</span> : null}
+          </div>
+          {max !== undefined && max > 0 ? (
+            <div style={{ height: 4, background: 'var(--color-border)', borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, ((value ?? 0) / max) * 100))}%`, background: 'var(--color-accent)' }} />
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--color-text-faint)' }}>Nothing here yet.</div>
+      )}
+      {caption ? <div style={{ fontSize: 10, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{caption}</div> : null}
+    </Card>
+  );
+}
+
+/** A small number box that saves on Enter or blur, not on every keystroke. */
+function NumberInput({ value, min, max, disabled, onSave }: { value: number | undefined; min?: number | undefined; max?: number | undefined; disabled: boolean; onSave: (v: number | null) => void }) {
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  const save = () => {
+    const v = text.trim() === '' ? null : Number(text);
+    if (v !== null && !Number.isFinite(v)) return;
+    if ((v ?? undefined) !== value) onSave(v);
+  };
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      value={text}
+      min={min}
+      max={max}
+      disabled={disabled}
+      aria-label="Value"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+      style={{ width: 52, padding: '2px 4px', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', textAlign: 'center', color: 'var(--color-text)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}
+    />
+  );
 }
 
 type SelectTodaySpec = Extract<NonNullable<PluginManifest['today']>['widget'], { type: 'select-today' }>;

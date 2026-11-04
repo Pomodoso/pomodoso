@@ -368,6 +368,18 @@ A bar of `value` against `max` (default 1), with an optional `format`, a `captio
   - `caption`: text
   - `style`: bar | ring | dots | $reference
 
+### `record`
+
+The latest item of a collection matching `where` (the book you are reading), by its `title` field, with a number `field` you edit right on the card (the page you are on), against an optional `max` field (its pages, as a bar). Optional `caption` line with `{$name}` values.
+
+  - `label` (required): text
+  - `collection` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `title` (required): key
+  - `field` (required): key
+  - `max`: key
+  - `caption`: text
+
 ### `stats`
 
 Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.
@@ -702,12 +714,14 @@ views:
 today:
   default_on: true
   widget:
-    type: stats
-    label: Bookshelf
-    items:
-      - { label: Reading, value: $reading }
-      - { label: This month, value: $read_this_month }
-      - { label: This year, value: $read_this_year }
+    type: record
+    label: Reading
+    collection: book
+    where: { status: reading }
+    title: title
+    field: current_page
+    max: pages
+    caption: "{$read_this_month} read this month · {$read_this_year} this year"
 
 rules:
   - collection: book

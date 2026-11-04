@@ -68,12 +68,14 @@ views:
 today:
   default_on: true
   widget:
-    type: stats
-    label: Bookshelf
-    items:
-      - { label: Reading, value: $reading }
-      - { label: This month, value: $read_this_month }
-      - { label: This year, value: $read_this_year }
+    type: record
+    label: Reading
+    collection: book
+    where: { status: reading }
+    title: title
+    field: current_page
+    max: pages
+    caption: "{$read_this_month} read this month · {$read_this_year} this year"
 
 rules:
   - collection: book

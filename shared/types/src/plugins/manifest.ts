@@ -385,6 +385,19 @@ const widgetSchemas = {
     caption: label.optional(),
     style: progressStyle.optional(),
   }),
+  record: z.strictObject({
+    type: z.literal('record'),
+    label,
+    collection: key,
+    where: whereSchema.optional(),
+    /** The field that names the record (its title). */
+    title: key,
+    /** A number field edited right on the card. */
+    field: key,
+    /** A number field of the same record it's measured against (a bar). */
+    max: key.optional(),
+    caption: label.optional(),
+  }),
   stats: z.strictObject({
     type: z.literal('stats'),
     label,

@@ -35,6 +35,8 @@ collections:
       - { key: status, type: select, options: [to_read, reading, read], default: to_read }
       - { key: tags, type: tags, optional: true }
       - { key: rating, type: rating, optional: true }
+      - { key: pages, type: number, optional: true, min: 1 }
+      - { key: current_page, type: number, label: On page, optional: true, min: 0 }
       - { key: link, type: url, optional: true }
       - { key: cover, type: image_url, optional: true }
       - { key: finished_on, type: date, optional: true }
@@ -146,6 +148,15 @@ today:
     format: share
     caption: "{$days_left} days left"
     style: ring`,
+  record: `today:
+  widget:
+    type: record
+    label: Reading
+    collection: book
+    where: { status: reading }
+    title: title
+    field: current_page       # edited right on the card
+    max: pages`,
   stats: `today:
   widget:
     type: stats
@@ -290,7 +301,7 @@ export function guideSeedRecords(today: string): PluginRecord[] {
   const books = [
     { title: 'The Pragmatic Programmer', author: 'Hunt & Thomas', status: 'read', tags: ['tech'], rating: 5 },
     { title: 'Deep Work', author: 'Cal Newport', status: 'read', tags: ['focus'], rating: 4 },
-    { title: 'Piranesi', author: 'Susanna Clarke', status: 'reading', tags: ['fiction'] },
+    { title: 'Piranesi', author: 'Susanna Clarke', status: 'reading', tags: ['fiction'], pages: 272, current_page: 96 },
     { title: 'Four Thousand Weeks', author: 'Oliver Burkeman', status: 'to_read', tags: ['focus'] },
     { title: 'Designing Data-Intensive Applications', author: 'Martin Kleppmann', status: 'to_read', tags: ['tech'] },
   ];
