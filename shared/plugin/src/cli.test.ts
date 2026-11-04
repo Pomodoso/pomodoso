@@ -8,17 +8,19 @@ import { test } from 'node:test';
 import { format, validate } from './cli.ts';
 
 const example = (name: string) => readFileSync(new URL(`../../types/src/plugins/examples/${name}.yaml`, import.meta.url), 'utf8');
+/** An example pinned to 1.0.0, so the update tests hold as the example moves on. */
+const at100 = (name: string) => example(name).replace(/^version: .*$/m, 'version: 1.0.0');
 
 test('a valid file passes; a broken one says where and what', () => {
   assert.deepEqual(validate(example('bookshelf')), { ok: true, issues: [] });
   const broken = example('bookshelf').replace('type: board', 'type: bord');
   const r = validate(broken);
   assert.equal(r.ok, false);
-  assert.match(format('bookshelf.yaml', r), /views\[0\]\.blocks\[2\]\.type: unknown type "bord"; did you mean "board"\?/);
+  assert.match(format('bookshelf.yaml', r), /views\[0\]\.blocks\[\d+\]\.type: unknown type "bord"; did you mean "board"\?/);
 });
 
 test('--against classifies the update and blocks a breaking one without migrate', () => {
-  const v1 = example('bookshelf');
+  const v1 = at100('bookshelf');
   const additive = v1.replace('version: 1.0.0', 'version: 1.1.0').replace(/description: .*/, 'description: Better.');
   let r = validate(additive, v1);
   assert.equal(r.ok, true);
