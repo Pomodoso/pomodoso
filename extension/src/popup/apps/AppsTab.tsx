@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import {
@@ -70,20 +70,8 @@ export function AppsTab({ timezone, weekStart, isSignedIn, tab, onSignIn, openAp
   const readOnly = !isSignedIn;
   const { updates, gone } = useDirectoryUpdates(plugins);
 
-  // Small (additive) updates apply on their own for apps that allow it; a
-  // breaking one always waits for the user. Each version is tried once per
-  // popup, so a failing one doesn't retry in a loop.
-  const tried = useRef(new Set<string>());
-  useEffect(() => {
-    if (readOnly || !plugins) return;
-    for (const [id, u] of updates) {
-      const p = plugins.find((x) => x.id === id);
-      const attempt = `${id}@${u.next.version}`;
-      if (!p?.autoUpdate || u.report.kind === 'breaking' || u.report.issues.length > 0 || tried.current.has(attempt)) continue;
-      tried.current.add(attempt);
-      void applyPluginUpdate(id, u.next).catch(() => {});
-    }
-  }, [updates, plugins, readOnly]);
+  // Small updates of apps that allow it apply on their own in UpdatesWatcher,
+  // which runs on every tab, not only this one.
 
   const current = screen.kind === 'app' || screen.kind === 'settings' ? plugins?.find((p) => p.id === screen.id && isSupported(p)) : undefined;
   // An app uninstalled (here or by sync) while open falls back to the list.

@@ -54,6 +54,7 @@ import { WEB_URL } from '../webUrl';
 // Lazy: the plugin engine (YAML parser, schema) only loads when Apps opens.
 const AppsTab = lazy(() => import('./apps/AppsTab').then((m) => ({ default: m.AppsTab })));
 const TodayApps = lazy(() => import('./apps/TodayApps').then((m) => ({ default: m.TodayApps })));
+const UpdatesWatcher = lazy(() => import('./apps/UpdatesWatcher').then((m) => ({ default: m.UpdatesWatcher })));
 const PluginPrompts = lazy(() => import('./apps/PluginPrompts').then((m) => ({ default: m.PluginPrompts })));
 
 marked.use({ breaks: true });
@@ -321,6 +322,8 @@ export function HomeState({
   const meetings = useLiveQuery(() => db.meetings.filter(m => !m.deletedAt).toArray()) ?? [];
   // Today's Apps section loads the plugin engine only when there are apps to show.
   const hasPlugins = (useLiveQuery(() => db.plugins.filter(p => !p.deletedAt).count()) ?? 0) > 0;
+  // App updates waiting for the user, for the badge on the Apps tab (UpdatesWatcher).
+  const [appUpdates, setAppUpdates] = useState(0);
   // A widget tapped on Today opens its app in the Apps tab.
   const [openApp, setOpenApp] = useState<{ id: string; nonce: number } | null>(null);
   // An app the web app asked to install (installRequest.ts): taken once, it
@@ -1941,6 +1944,12 @@ export function HomeState({
         )}
       </div>
 
+      {isSignedIn && hasPlugins && (
+        <Suspense fallback={null}>
+          <UpdatesWatcher onCount={setAppUpdates} />
+        </Suspense>
+      )}
+
       {/* ── Tab bar ── */}
       <div style={{
         display: 'flex', flexShrink: 0,
@@ -1952,8 +1961,8 @@ export function HomeState({
           { key: 'tasks' as Tab, label: 'Tasks', icon: <TasksIcon /> },
           { key: 'habits' as Tab, label: 'Habits', icon: <HabitsIcon /> },
           { key: 'schedule' as Tab, label: 'Schedule', icon: <ScheduleIcon /> },
-          { key: 'apps' as Tab, label: 'Apps', icon: <AppsIcon /> },
-        ]).map(({ key, label, icon }) => (
+          { key: 'apps' as Tab, label: 'Apps', icon: <AppsIcon />, badge: isSignedIn && hasPlugins ? appUpdates : 0 },
+        ] as { key: Tab; label: string; icon: React.ReactNode; badge?: number }[]).map(({ key, label, icon, badge = 0 }) => (
           <button
             key={key}
             onClick={() => { setActiveTab(key); setIsAddingHabit(false); }}
@@ -1964,7 +1973,21 @@ export function HomeState({
               color: activeTab === key ? 'var(--color-accent)' : 'var(--color-text-muted)',
             }}
           >
-            {icon}
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              {icon}
+              {badge > 0 && (
+                <span
+                  aria-label={`${badge} app update${badge === 1 ? '' : 's'}`}
+                  style={{
+                    position: 'absolute', top: -4, right: -8, minWidth: 14, height: 14, padding: '0 3px', boxSizing: 'border-box',
+                    borderRadius: 99, background: 'var(--color-accent)', color: '#fff', border: '1.5px solid var(--color-bg)',
+                    fontSize: 9, fontWeight: 700, lineHeight: '11px', textAlign: 'center',
+                  }}
+                >
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </span>
             <span style={{ fontSize: 10, fontWeight: activeTab === key ? 600 : 400 }}>{label}</span>
           </button>
         ))}
