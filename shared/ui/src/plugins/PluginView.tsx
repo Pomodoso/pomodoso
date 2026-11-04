@@ -7,20 +7,23 @@ import {
   fieldOptions,
   formatStat,
   initialRecordData,
+  recordTitle,
   templateFormat,
   type PluginBlock,
   type PluginCollection,
+  type PluginField,
   type PluginEvaluator,
   type PluginManifest,
   type PluginRecord,
   type PluginValue,
   type PluginView as PluginViewSpec,
   type SeriesPoint,
+  type Where,
 } from '@pomodoso/types/plugins';
 
 import { BreakdownBars, Legend, SeriesChart, YearGrid } from './charts.js';
 import { DotGrid, DotRing, progressUnits } from './progress.js';
-import { RecordForm, chipStyle } from './RecordForm.js';
+import { RecordForm, chipStyle, type FieldChoice } from './RecordForm.js';
 import { buttonStyle, cardStyle, labelStyle } from './styles.js';
 
 /**
@@ -51,6 +54,17 @@ export interface PluginEnv {
   /** Signed out: everything shows, nothing writes. */
   readOnly: boolean;
   actions: PluginActions;
+  /** Opens the screen of one record (a view with `of`). Without it, `opens` does nothing. */
+  openRecord?: ((viewId: string, recordId: string) => void) | undefined;
+  /** Full width (a `layout: wide` view in its own tab): boards show their columns side by side. */
+  wide?: boolean | undefined;
+  /** The user's Pomodoso tasks, for `task` fields: picked by id, shown by title. Apps see nothing else. */
+  tasks?: PluginTasks | undefined;
+}
+
+export interface PluginTasks {
+  list(): FieldChoice[];
+  title(id: string): string | undefined;
 }
 
 type Editing =
@@ -73,13 +87,20 @@ interface BlockCtx extends PluginEnv {
   /** Live records of a collection after the view's tag filter. */
   filtered(collection: string, where?: Parameters<PluginEvaluator['records']>[1]): PluginRecord[];
   edit(e: Editing): void;
+  /** What a `ref` or `task` field can be set to; undefined when this client can't list them (tasks on the web). */
+  choices(field: PluginField): FieldChoice[] | undefined;
 }
 
-/** Renders one view of a plugin: its blocks, top to bottom. */
-export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec }) {
+/**
+ * Renders one view of a plugin: its blocks, top to bottom. A view with `of`
+ * is the screen of `record` (its id), which its blocks read as `$record`.
+ */
+export function PluginView({ env: outer, view, record }: { env: PluginEnv; view: PluginViewSpec; record?: string | undefined }) {
   const [tagFilters, setTagFilters] = useState<TagFilters>({});
   const [editing, setEditing] = useState<Editing | null>(null);
-  const collections = useMemo(() => new Map(env.manifest.collections.map((c) => [c.key, c])), [env.manifest]);
+  const collections = useMemo(() => new Map(outer.manifest.collections.map((c) => [c.key, c])), [outer.manifest]);
+  const evaluator = useMemo(() => (record ? outer.evaluator.forRecord(record) : outer.evaluator), [outer.evaluator, record]);
+  const env: PluginEnv = { ...outer, evaluator };
 
   const ctx: BlockCtx = {
     ...env,
@@ -99,6 +120,11 @@ export function PluginView({ env, view }: { env: PluginEnv; view: PluginViewSpec
     },
     edit: (e) => {
       if (!env.readOnly) setEditing(e);
+    },
+    choices: (f) => {
+      if (f.type === 'task') return env.tasks?.list();
+      if (f.type !== 'ref' || !f.collection) return [];
+      return env.evaluator.records(f.collection).map((r) => ({ value: r.id, label: recordTitle(env.manifest, r) }));
     },
   };
 
@@ -416,6 +442,7 @@ function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockC
   return (
     <div style={cardStyle}>
       <RecordForm
+        choices={ctx.choices}
         // Remounts from the saved record once the write lands (its updated_at changes).
         key={`${round}:${todays?.id ?? ''}:${todays?.updated_at ?? ''}`}
         collection={c}
@@ -449,6 +476,11 @@ function displayValue(ctx: BlockCtx, c: PluginCollection, key: string, r: Plugin
   if (f?.type === 'duration') return ctx.stat(v as PluginValue, 'duration');
   if (f?.type === 'date') return ctx.stat(v as PluginValue, 'date');
   if (f?.type === 'boolean') return v ? fieldLabel(f) : '';
+  if (f?.type === 'task') return ctx.tasks ? ctx.tasks.title(String(v)) ?? 'Task deleted' : 'Linked task';
+  if (f?.type === 'ref') {
+    const target = f.collection ? ctx.evaluator.records(f.collection).find((x) => x.id === v) : undefined;
+    return target ? recordTitle(ctx.manifest, target) : 'Deleted';
+  }
   return ctx.stat(v as PluginValue);
 }
 
@@ -492,6 +524,14 @@ function ListBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'lis
                 >
                   {primary}
                 </a>
+              ) : b.opens && ctx.openRecord ? (
+                <button
+                  type="button"
+                  onClick={() => ctx.openRecord!(b.opens!, r.id)}
+                  style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 12, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {primary} <span style={{ color: 'var(--color-text-faint)' }}>›</span>
+                </button>
               ) : (
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{primary}</div>
               )}
@@ -510,51 +550,131 @@ function ListBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'lis
   );
 }
 
+/**
+ * Literal `field: value` pairs of a filter, resolved: what a record added
+ * from a filtered board must carry to show up in it (`{ issue: $record }`).
+ */
+function filterFills(ctx: BlockCtx, filter: Where | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(filter ?? {})) {
+    if (v === null || typeof v === 'object') continue;
+    const r = ctx.resolve(v);
+    if (r !== null && r !== undefined) out[k] = r;
+  }
+  return out;
+}
+
 function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'board' }>; ctx: BlockCtx }) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const c = ctx.collection(b.collection);
   const groupField = c?.fields.find((f) => f.key === b.group_by);
   if (!c || !groupField) return null;
-  const rows = sortRecords(c, ctx.filtered(c.key), undefined);
+  const rows = sortRecords(c, ctx.filtered(c.key, b.filter), undefined);
   const groups = fieldOptions(c.key, groupField, ctx.settings);
+  const wide = ctx.wide === true;
+  const canDrag = wide && !ctx.readOnly;
+
+  const tap = (r: PluginRecord) => (b.opens && ctx.openRecord ? ctx.openRecord(b.opens, r.id) : ctx.edit({ mode: 'edit', collection: c, record: r }));
+  const move = (id: string, to: string) => {
+    const r = rows.find((x) => x.id === id);
+    if (r && recordValue(c, r, groupField.key) !== to) void ctx.actions.update(r, { ...r.data, [groupField.key]: to });
+  };
+  const addTo = (group: string) =>
+    ctx.edit({ mode: 'new', collection: c, title: `Add to ${groups.find((g) => g.value === group)?.label ?? group}`, initial: initialRecordData(c, { ...filterFills(ctx, b.filter), [groupField.key]: group }) });
+
+  const cardOf = (r: PluginRecord) => {
+    const image = b.card.image ? recordValue(c, r, b.card.image) : undefined;
+    const subtitle = b.card.subtitle ? displayValue(ctx, c, b.card.subtitle, r) : '';
+    const badge = b.card.badge ? displayValue(ctx, c, b.card.badge, r) : '';
+    return (
+      <button
+        key={r.id}
+        type="button"
+        draggable={canDrag}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', r.id);
+          e.dataTransfer.effectAllowed = 'move';
+          setDragging(r.id);
+        }}
+        onDragEnd={() => {
+          setDragging(null);
+          setOver(null);
+        }}
+        onClick={() => tap(r)}
+        style={{ ...cardStyle, padding: wide ? '8px 10px' : '6px 8px', display: 'flex', gap: 8, alignItems: 'center', textAlign: 'left', cursor: canDrag ? 'grab' : ctx.readOnly ? 'default' : 'pointer', fontFamily: 'inherit', opacity: dragging === r.id ? 0.4 : 1, width: '100%' }}
+      >
+        {typeof image === 'string' && /^https:\/\//.test(image) ? (
+          <img src={image} alt="" referrerPolicy="no-referrer" style={{ width: 26, height: 38, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+        ) : null}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: wide ? 13 : 12, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: wide ? 'normal' : 'nowrap' }}>
+            {displayValue(ctx, c, b.card.title, r) || 'Untitled'}
+          </span>
+          {subtitle ? <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-faint)' }}>{subtitle}</span> : null}
+        </span>
+        {badge ? <span style={{ fontSize: 10, color: 'var(--color-warning)', flexShrink: 0 }}>{badge}</span> : null}
+      </button>
+    );
+  };
+
+  const header = (g: (typeof groups)[number], count: number) => (
+    <div style={{ ...labelStyle, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+      {g.color ? <span style={{ width: 8, height: 8, borderRadius: 2, background: g.color }} /> : null}
+      {g.label}
+      <span style={{ color: 'var(--color-text-faint)', fontWeight: 400 }}>{count}</span>
+    </div>
+  );
+
+  if (wide) {
+    // Columns side by side; a card drags to another column to move it there.
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${groups.length}, minmax(200px, 1fr))`, gap: 12, overflowX: 'auto', alignItems: 'start' }}>
+        {groups.map((g) => {
+          const cards = rows.filter((r) => recordValue(c, r, groupField.key) === g.value);
+          return (
+            <section
+              key={g.value}
+              onDragOver={(e) => {
+                if (!canDrag) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setOver(g.value);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((o) => (o === g.value ? null : o));
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData('text/plain');
+                setOver(null);
+                setDragging(null);
+                if (id) move(id, g.value);
+              }}
+              style={{ background: over === g.value ? 'var(--color-accent-soft)' : 'var(--color-surface-2, rgba(0,0,0,0.03))', border: `1px ${over === g.value ? 'dashed var(--color-accent)' : 'solid var(--color-border)'}`, borderRadius: 'var(--radius-md)', padding: 8, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 120 }}
+            >
+              {header(g, cards.length)}
+              {cards.map(cardOf)}
+              {!ctx.readOnly ? (
+                <button type="button" onClick={() => addTo(g.value)} style={{ ...buttonStyle('ghost'), justifyContent: 'flex-start', fontSize: 12 }}>
+                  + Add
+                </button>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {groups.map((g) => {
         const cards = rows.filter((r) => recordValue(c, r, groupField.key) === g.value);
         return (
           <section key={g.value}>
-            <div style={{ ...labelStyle, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-              {g.color ? <span style={{ width: 8, height: 8, borderRadius: 2, background: g.color }} /> : null}
-              {g.label}
-              <span style={{ color: 'var(--color-text-faint)', fontWeight: 400 }}>{cards.length}</span>
-            </div>
-            {cards.length === 0 ? null : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {cards.map((r) => {
-                  const image = b.card.image ? recordValue(c, r, b.card.image) : undefined;
-                  const subtitle = b.card.subtitle ? displayValue(ctx, c, b.card.subtitle, r) : '';
-                  const badge = b.card.badge ? displayValue(ctx, c, b.card.badge, r) : '';
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => ctx.edit({ mode: 'edit', collection: c, record: r })}
-                      style={{ ...cardStyle, padding: '6px 8px', display: 'flex', gap: 8, alignItems: 'center', textAlign: 'left', cursor: ctx.readOnly ? 'default' : 'pointer', fontFamily: 'inherit' }}
-                    >
-                      {typeof image === 'string' && /^https:\/\//.test(image) ? (
-                        <img src={image} alt="" referrerPolicy="no-referrer" style={{ width: 26, height: 38, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
-                      ) : null}
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {displayValue(ctx, c, b.card.title, r) || 'Untitled'}
-                        </span>
-                        {subtitle ? <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-faint)' }}>{subtitle}</span> : null}
-                      </span>
-                      {badge ? <span style={{ fontSize: 10, color: 'var(--color-warning)', flexShrink: 0 }}>{badge}</span> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {header(g, cards.length)}
+            {cards.length === 0 ? null : <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{cards.map(cardOf)}</div>}
           </section>
         );
       })}
@@ -616,6 +736,7 @@ function EditSheet({ editing, ctx, onClose }: { editing: Editing; ctx: BlockCtx;
         <RecordForm
           collection={c}
           settings={ctx.settings}
+          choices={ctx.choices}
           initial={initial}
           occurredAt={editing.mode === 'edit' ? editing.record.occurred_at ?? undefined : undefined}
           submitLabel={editing.mode === 'new' ? 'Add' : 'Save'}

@@ -5,7 +5,7 @@ import { db, type PluginRow } from '../../db';
 import { evaluatorFor } from '../../plugins';
 
 /** A plugin's live records and evaluator, refreshed when its data changes and once a minute (for "today" and "time ago"). */
-export function usePluginData(plugin: PluginRow, timezone: string, weekStart: number, tab?: { url: string; title: string }) {
+export function usePluginData(plugin: PluginRow, timezone: string, weekStart: number, tab?: { url: string; title: string; image?: string | undefined }) {
   const records = useLiveQuery(
     async () => (await db.pluginRecords.where('pluginId').equals(plugin.id).toArray()).filter((r) => !r.deletedAt),
     [plugin.id],
@@ -19,7 +19,7 @@ export function usePluginData(plugin: PluginRow, timezone: string, weekStart: nu
     () => (records ? evaluatorFor(plugin, records, { timezone, weekStart, ...(tab ? { tab } : {}) }) : undefined),
     // tick re-evaluates "today" and "now" as time passes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plugin, records, timezone, weekStart, tab?.url, tab?.title, tick],
+    [plugin, records, timezone, weekStart, tab?.url, tab?.title, tab?.image, tick],
   );
   return { records, evaluator };
 }

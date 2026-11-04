@@ -55,6 +55,8 @@ export interface EvalContext {
   /** User-set values; missing keys fall back to the setting's default. */
   settings?: Record<string, unknown> | undefined;
   records: readonly PluginRecord[];
+  /** In a record's screen (a view with `of`): that record's id, `$record`. */
+  record?: string | undefined;
   /** Active tab, extension only (`$tab.url`, `$tab.title`, `$tab.image`). */
   tab?: { url?: string | undefined; title?: string | undefined; image?: string | undefined } | undefined;
 }
@@ -68,6 +70,8 @@ export interface PluginEvaluator {
   records(collection: string, where?: Where): PluginRecord[];
   /** Replaces each `{$name}` with `format(value)`. */
   template(text: string, format?: (v: PluginValue, name: string) => string): string;
+  /** The same data seen from a record's screen: `$record` is `id`. */
+  forRecord(id: string): PluginEvaluator;
 }
 
 const TEMPLATE_REF = /\{\$([a-z][a-z0-9_.]*)\}/g;
@@ -202,6 +206,14 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
     if (name === 'tab.url') return ctx.tab?.url ?? null;
     if (name === 'tab.title') return ctx.tab?.title ?? null;
     if (name === 'tab.image') return ctx.tab?.image ?? null;
+    if (name === 'record') return ctx.record ?? null;
+    if (name.startsWith('record.')) {
+      const r = ctx.record === undefined ? undefined : ctx.records.find((x) => x.id === ctx.record && !x.deleted_at);
+      const c = r && collections.get(r.collection);
+      if (!r || !c) return null;
+      const v = fieldValue(r, c, name.slice('record.'.length));
+      return v === undefined ? null : (v as PluginValue);
+    }
     if (settingDefaults.has(name)) {
       const v = ctx.settings?.[name] ?? settingDefaults.get(name);
       return v === undefined ? null : (v as PluginValue);
@@ -408,5 +420,6 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
     records: (collection, where) => select(collection, where, undefined, undefined, ctx.today).rows,
     template: (text, format = defaultFormat) =>
       text.replace(TEMPLATE_REF, (_, name: string) => format(resolveRef(name, ctx.today), name)),
+    forRecord: (id) => createEvaluator(manifest, { ...ctx, record: id }),
   };
 }

@@ -112,6 +112,14 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
       }
     });
 
+    c.fields.forEach((f, j) => {
+      if (f.type !== 'ref' || !f.collection) return;
+      const target = m.collections.find((x) => x.key === f.collection);
+      const at: Path = ['collections', i, 'fields', j, 'collection'];
+      if (!target) add(at, unknownMessage('collection', f.collection, m.collections.map((x) => x.key)));
+      else if (target.kind !== 'item') add(at, `a ref points to an item collection; "${target.key}" is ${target.kind}`);
+    });
+
     if (c.title_field !== undefined) {
       const f = c.fields.find((x) => x.key === c.title_field);
       if (!f) add(['collections', i, 'title_field'], unknownMessage('field', c.title_field, c.fields.map((x) => x.key)));
@@ -146,14 +154,32 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
   m.views.forEach((v, i) => {
     if (viewIds.has(v.id)) add(['views', i, 'id'], `duplicate view "${v.id}"`);
     viewIds.add(v.id);
+    if (v.of !== undefined) {
+      if (i === 0) add(['views', 0, 'of'], 'the first view is the app\'s main screen; a record\'s screen (`of`) goes after it');
+      const c = collections.get(v.of);
+      if (!c) add(['views', i, 'of'], unknownMessage('collection', v.of, collections.keys()));
+      else if (c.kind !== 'item') add(['views', i, 'of'], `a record's screen is of an item collection; "${v.of}" is ${c.kind}`);
+    }
   });
 
   // ─── Reference helpers ─────────────────────────────────────────────────────
 
   const refNames = [...settingKeys, ...computedKeys, ...BUILTIN_REFS];
 
+  // The collection of the record screen being checked (a view with `of`):
+  // only there `$record` and `$record.<field>` mean something.
+  let recordScope: PluginCollection | undefined;
+
   function ref(path: Path, raw: string, allowTab = false) {
     const name = raw.startsWith('$') ? raw.slice(1) : raw;
+    if (name === 'record' || name.startsWith('record.')) {
+      if (!recordScope) {
+        add(path, `$record only works in a record's screen (a view with \`of\`)`);
+        return;
+      }
+      if (name !== 'record') field(path, recordScope, name.slice('record.'.length));
+      return;
+    }
     if (name.startsWith('tab.')) {
       if (!(BUILTIN_REFS as readonly string[]).includes(name)) add(path, unknownMessage('reference', `$${name}`, BUILTIN_REFS.map((b) => `$${b}`)));
       else if (!allowTab) add(path, `$${name} is only available in an add-button's prefill`);
@@ -347,7 +373,18 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
 
   // ─── Views ─────────────────────────────────────────────────────────────────
 
-  m.views.forEach((v, i) => v.blocks.forEach((b, j) => block(['views', i, 'blocks', j], b)));
+  m.views.forEach((v, i) => {
+    recordScope = v.of !== undefined ? collections.get(v.of) : undefined;
+    v.blocks.forEach((b, j) => block(['views', i, 'blocks', j], b));
+  });
+  recordScope = undefined;
+
+  /** `opens`: a view that is the screen of a record of `collection`. */
+  function opens(path: Path, viewId: string, collection: string) {
+    const v = m.views.find((x) => x.id === viewId);
+    if (!v) add(path, unknownMessage('view', viewId, m.views.filter((x) => x.of !== undefined).map((x) => x.id)));
+    else if (v.of !== collection) add(path, `"${viewId}" isn't the screen of a "${collection}" record; give it \`of: ${collection}\``);
+  }
 
   function block(path: Path, b: PluginBlock) {
     switch (b.type) {
@@ -405,6 +442,7 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
           valueMap([...path, 'swipe', 'set'], c, b.swipe.set);
           if (b.swipe.label !== undefined) template([...path, 'swipe', 'label'], b.swipe.label);
         }
+        if (b.opens !== undefined) opens([...path, 'opens'], b.opens, b.collection);
         return;
       }
       case 'tag-filter': {
@@ -419,6 +457,8 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         if (b.card.subtitle !== undefined) field([...path, 'card', 'subtitle'], c, b.card.subtitle);
         if (b.card.image !== undefined) field([...path, 'card', 'image'], c, b.card.image, ['image_url'], 'card image');
         if (b.card.badge !== undefined) field([...path, 'card', 'badge'], c, b.card.badge);
+        if (b.filter) where([...path, 'filter'], c, b.filter);
+        if (b.opens !== undefined) opens([...path, 'opens'], b.opens, b.collection);
         return;
       }
       case 'year-grid': {

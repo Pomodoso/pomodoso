@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listInstalledPlugins, pushEntities, type InstalledPlugin } from '@pomodoso/api';
 import {
   applyRules,
+  cascadeIds,
   createEvaluator,
   dailyRecordId,
   localDayOf,
@@ -123,10 +124,12 @@ export function useInstalledApps(canWrite: boolean) {
         next.data = withRules(record, next);
         return commit(app, next);
       },
+      // A record takes what belongs to it (records whose `ref` points at it).
       remove: (record) => {
         if (!canWrite) return;
         const ts = new Date().toISOString();
-        return commit(app, { ...record, updated_at: ts }, ts);
+        const ids = new Set(cascadeIds(app.manifest, app.records, record.id));
+        return Promise.all(app.records.filter((r) => ids.has(r.id)).map((r) => commit(app, { ...r, updated_at: ts }, ts)));
       },
       openUrl: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
     };

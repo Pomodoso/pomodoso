@@ -52,7 +52,7 @@ function PinnedApp({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow;
       weekStart={weekStart}
       readOnly={false}
       add={(c, data) => addRecord(plugin, c, data, env)}
-      remove={(r) => deleteRecord(r.id)}
+      remove={(r) => deleteRecord(plugin, r.id)}
       update={(r, data) => updateRecord(plugin, r.id, data, env)}
       setDay={(c, day, data) => setDaily(plugin, c, day, data, env)}
       onOpen={onOpen}

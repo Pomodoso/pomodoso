@@ -8,6 +8,7 @@
 import {
   applyMigration,
   applyRules,
+  cascadeIds,
   checkUpdate,
   createEvaluator,
   dailyRecordId,
@@ -263,9 +264,17 @@ export async function updateRecord(plugin: PluginRow, id: string, data: Record<s
   });
 }
 
-export async function deleteRecord(id: string): Promise<void> {
+/**
+ * Soft-deletes a record and everything that belongs to it (records whose
+ * `ref` fields point at it, transitively): an issue takes its cards along.
+ */
+export async function deleteRecord(plugin: PluginRow, id: string): Promise<void> {
   const ts = now();
-  await db.pluginRecords.update(id, { deletedAt: ts, updatedAt: ts, syncedAt: undefined });
+  await db.transaction('rw', db.pluginRecords, async () => {
+    const records = (await pluginRecords(plugin.id)).map(toEngineRecord);
+    const ids = cascadeIds(plugin.manifest, records, id);
+    await Promise.all(ids.map((x) => db.pluginRecords.update(x, { deletedAt: ts, updatedAt: ts, syncedAt: undefined })));
+  });
 }
 
 // ─── Computing ───────────────────────────────────────────────────────────────

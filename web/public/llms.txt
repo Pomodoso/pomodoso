@@ -9,7 +9,7 @@
 
 ## Reference
 
-- [Full reference with every block, field type, computed value, hook and five complete examples](/llms-full.txt)
+- [Full reference with every block, field type, computed value, hook, and complete examples](/llms-full.txt)
 - [JSON Schema](https://pomodoso.com/schema/plugin.v1.json)
 
 ## Blocks

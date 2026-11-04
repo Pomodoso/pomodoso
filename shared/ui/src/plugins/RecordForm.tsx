@@ -10,8 +10,16 @@ import {
 
 import { buttonStyle, inputStyle, labelStyle } from './styles.js';
 
+/** A record or task a `ref` / `task` field can point to. */
+export interface FieldChoice {
+  value: string;
+  label: string;
+}
+
 interface RecordFormProps {
   collection: PluginCollection;
+  /** What a `ref` or `task` field can be set to (records of its collection, the user's tasks). */
+  choices?: ((field: PluginField) => FieldChoice[] | undefined) | undefined;
   settings: Record<string, unknown>;
   initial: Record<string, unknown>;
   submitLabel: string;
@@ -28,7 +36,7 @@ interface RecordFormProps {
 }
 
 /** One input per field of a collection. Submitting is blocked until required fields are filled. */
-export function RecordForm({ collection, settings, initial, occurredAt, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
+export function RecordForm({ collection, settings, initial, occurredAt, choices, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
   const isEvent = collection.kind === 'event';
   const [when, setWhen] = useState(() => toLocalInput(occurredAt ?? new Date().toISOString()));
   // Untouched, a new event happens when it's saved, not when the form opened.
@@ -81,7 +89,7 @@ export function RecordForm({ collection, settings, initial, occurredAt, submitLa
             {fieldLabel(f)}
             {f.optional ? <span style={{ color: 'var(--color-text-faint)', fontWeight: 400 }}> · optional</span> : null}
           </span>
-          <FieldInput field={f} collection={collection.key} settings={settings} value={data[f.key]} disabled={disabled} onChange={(v) => set(f.key, v)} />
+          <FieldInput field={f} collection={collection.key} settings={settings} value={data[f.key]} disabled={disabled} choices={choices?.(f)} onChange={(v) => set(f.key, v)} />
         </label>
       ))}
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -138,10 +146,12 @@ interface FieldInputProps {
   settings: Record<string, unknown>;
   value: unknown;
   disabled?: boolean | undefined;
+  /** For `ref` and `task` fields. */
+  choices?: FieldChoice[] | undefined;
   onChange: (v: unknown) => void;
 }
 
-export function FieldInput({ field: f, collection, settings, value, disabled, onChange }: FieldInputProps) {
+export function FieldInput({ field: f, collection, settings, value, disabled, choices, onChange }: FieldInputProps) {
   const str = typeof value === 'string' ? value : '';
   const num = typeof value === 'number' ? value : undefined;
 
@@ -253,6 +263,27 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
     }
     case 'tags':
       return <TagsInput value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />;
+    case 'ref':
+    case 'task': {
+      // Tasks only list where they live (the extension); elsewhere the link is kept as is.
+      if (choices === undefined && f.type === 'task') {
+        return (
+          <select value={str} disabled style={inputStyle}>
+            <option value={str}>{str ? 'Linked task' : 'Link a task from the Pomodoso extension'}</option>
+          </select>
+        );
+      }
+      const list = choices ?? [];
+      // A value no longer among the choices (a deleted task) stays shown until changed.
+      const missing = str && !list.some((c) => c.value === str);
+      return (
+        <select value={str} disabled={disabled || list.length === 0 && !str} onChange={(e) => onChange(e.target.value || undefined)} style={inputStyle}>
+          <option value="">{list.length === 0 ? (f.type === 'task' ? 'No tasks to link' : 'Nothing to pick yet') : f.optional ? '—' : 'Pick one'}</option>
+          {missing ? <option value={str}>{f.type === 'task' ? 'Task deleted' : 'Deleted'}</option> : null}
+          {list.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      );
+    }
   }
 }
 

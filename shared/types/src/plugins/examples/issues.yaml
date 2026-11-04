@@ -1,0 +1,75 @@
+schema_version: 1
+id: issues
+name: Issues
+version: 1.0.0
+icon: check
+description: Each issue opens its own kanban board. Link one to a task to open it from there.
+author: Pomodoso
+license: MIT
+
+collections:
+  - key: issue
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: task, type: task, label: Linked task, optional: true }
+      - { key: notes, type: longtext, optional: true }
+      - key: state
+        type: select
+        options: [open, closed]
+        default: open
+  - key: card
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: issue, type: ref, collection: issue }
+      - key: status
+        type: select
+        user_editable: true
+        options:
+          - { value: todo, label: To do, color: "#B9B4A7" }
+          - { value: doing, label: Doing, color: "#E0B04A" }
+          - { value: done, label: Done, color: "#2D8A7A" }
+        default: todo
+      - { key: notes, type: longtext, optional: true }
+
+computed:
+  open_issues: { count: issue, where: { state: open } }
+
+views:
+  - id: main
+    blocks:
+      - { type: add-button, label: New issue, adds: issue }
+      - type: list
+        collection: issue
+        filter: { state: open }
+        primary: title
+        secondary: [task]
+        sort: { field: created_at, order: desc }
+        opens: board
+        swipe: { label: Close, set: { state: closed } }
+  - id: closed
+    label: Closed
+    blocks:
+      - type: list
+        collection: issue
+        filter: { state: closed }
+        primary: title
+        opens: board
+        swipe: { label: Reopen, set: { state: open } }
+  - id: board
+    of: issue
+    layout: wide
+    blocks:
+      - { type: add-button, label: Add a task, adds: card, prefill: { issue: $record } }
+      - type: board
+        collection: card
+        filter: { issue: $record }
+        group_by: status
+        card: { title: title }
+
+today:
+  default_on: true
+  widget: { type: count-badge, label: Open issues, value: $open_issues }

@@ -66,6 +66,7 @@ export default defineConfig({
         popup: resolve(root, 'popup/index.html'),
         'popup/mini': resolve(root, 'popup/mini.html'),
         'report/index': resolve(root, 'report/index.html'),
+        'app/index': resolve(root, 'app/index.html'),
         background: resolve(root, 'background.ts'),
         'content-scripts/linear': resolve(root, 'content-scripts/linear.ts'),
         'content-scripts/github': resolve(root, 'content-scripts/github.ts'),

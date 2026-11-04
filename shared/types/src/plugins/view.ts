@@ -205,3 +205,34 @@ export function formatStat(v: PluginValue, format: StatFormat = 'number', now: s
     }
   }
 }
+
+// ─── Records that point at records ───────────────────────────────────────────
+
+/** What names a record: its collection's `title_field`, else its first text field. */
+export function recordTitle(manifest: PluginManifest, record: PluginRecord): string {
+  const c = manifest.collections.find((x) => x.key === record.collection);
+  const key = c?.title_field ?? c?.fields.find((f) => f.type === 'text')?.key;
+  const v = key ? record.data[key] : undefined;
+  return typeof v === 'string' && v.trim() ? v : 'Untitled';
+}
+
+/**
+ * A record and everything that belongs to it: records whose `ref` fields
+ * point at it, and theirs in turn. Deleting an issue deletes its cards.
+ */
+export function cascadeIds(manifest: PluginManifest, records: readonly PluginRecord[], id: string): string[] {
+  const refs = manifest.collections.flatMap((c) => c.fields.filter((f) => f.type === 'ref').map((f) => ({ collection: c.key, field: f.key })));
+  const out = new Set([id]);
+  const queue = [id];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    for (const r of records) {
+      if (r.deleted_at || out.has(r.id)) continue;
+      if (refs.some((x) => x.collection === r.collection && r.data[x.field] === parent)) {
+        out.add(r.id);
+        queue.push(r.id);
+      }
+    }
+  }
+  return [...out];
+}

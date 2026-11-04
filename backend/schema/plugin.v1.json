@@ -202,7 +202,9 @@
                     "tags",
                     "rating",
                     "duration",
-                    "image_url"
+                    "image_url",
+                    "ref",
+                    "task"
                   ]
                 },
                 "label": {
@@ -284,6 +286,10 @@
                 "unit": {
                   "type": "string",
                   "maxLength": 20
+                },
+                "collection": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
                 }
               },
               "required": [
@@ -376,6 +382,32 @@
                       }
                     ]
                   }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "collection"
+                    ]
+                  },
+                  "else": {
+                    "not": {
+                      "required": [
+                        "collection"
+                      ]
+                    }
+                  }
                 }
               ]
             }
@@ -414,6 +446,16 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 80
+          },
+          "of": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "wide"
+            ]
           },
           "blocks": {
             "minItems": 1,
@@ -892,6 +934,10 @@
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     },
+                    "opens": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
                     "sort": {
                       "type": "object",
                       "properties": {
@@ -989,6 +1035,103 @@
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     },
+                    "filter": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "in": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 500
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              },
+                              "exists": {
+                                "type": "boolean"
+                              },
+                              "lt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                                  }
+                                ]
+                              },
+                              "lte": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                                  }
+                                ]
+                              },
+                              "gt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                                  }
+                                ]
+                              },
+                              "gte": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false,
+                            "minProperties": 1
+                          }
+                        ]
+                      }
+                    },
                     "group_by": {
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_]{0,39}$"
@@ -1017,6 +1160,10 @@
                         "title"
                       ],
                       "additionalProperties": false
+                    },
+                    "opens": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     }
                   },
                   "required": [

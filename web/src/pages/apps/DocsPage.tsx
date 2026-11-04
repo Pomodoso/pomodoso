@@ -30,10 +30,12 @@ import {
   guideManifestData,
   guideSeedRecords,
   localDayOf,
+  parsePluginFile,
   validatePluginData,
   type PluginRecord,
 } from '@pomodoso/types/plugins';
 import { Seo } from '../../seo.tsx';
+import issuesFile from '../../../../shared/types/src/plugins/examples/issues.yaml?raw';
 import { AppChecker } from './AppChecker.tsx';
 import { LivePreview } from './LivePreview.tsx';
 import { SiteHeader } from './SiteHeader.tsx';
@@ -57,6 +59,7 @@ const TOC = [
   ['values', 'Settings and values'],
   ['computed', 'Computed values'],
   ['blocks', 'Blocks'],
+  ['records', 'Records inside records'],
   ['today', 'Today widget'],
   ['hooks', 'Hooks'],
   ['rules', 'Rules'],
@@ -132,6 +135,23 @@ function Example({ id, name, doc, yaml, part, seed }: { id: string; name: string
       {mounted && manifest ? <LivePreview manifest={manifest} initialRecords={seed} /> : null}
     </div>
   );
+}
+
+const ISSUE_SAMPLES: PluginRecord[] = [
+  { id: 'doc-issue-1', collection: 'issue', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Publish the app', state: 'open', task: 'sample-task-1' } },
+  { id: 'doc-issue-2', collection: 'issue', created_at: '2026-01-01T10:00:00.000Z', data: { title: 'Landing page refresh', state: 'open' } },
+  { id: 'doc-card-1', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Store screenshots', issue: 'doc-issue-1', status: 'doing' } },
+  { id: 'doc-card-2', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Write the listing copy', issue: 'doc-issue-1', status: 'todo' } },
+  { id: 'doc-card-3', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Bump the version', issue: 'doc-issue-1', status: 'done' } },
+];
+
+function IssuesPreview() {
+  const mounted = useMounted();
+  const manifest = useMemo(() => {
+    const r = parsePluginFile(issuesFile);
+    return r.ok ? r.manifest : null;
+  }, []);
+  return mounted && manifest ? <LivePreview manifest={manifest} initialRecords={ISSUE_SAMPLES} /> : null;
 }
 
 export default function DocsPage() {
@@ -241,6 +261,32 @@ export default function DocsPage() {
           {BLOCK_TYPES.map((b) => (
             <Example key={b} id={`block-${b}`} name={b} doc={BLOCK_DOCS[b]} yaml={GUIDE_BLOCK_EXAMPLES[b]} part={{ blocks: GUIDE_BLOCK_EXAMPLES[b] }} seed={seed} />
           ))}
+        </Section>
+
+        <Section id="records" title="Records inside records">
+          <p style={muted}>
+            Some apps need things that belong to other things: the tasks of an issue, the notes of a book. Three pieces do it, shown here with the Issues app, where every issue opens its own kanban board.
+          </p>
+          <ul style={{ ...muted, paddingLeft: 20, lineHeight: 1.7, listStyle: 'disc' }}>
+            <li>
+              A <b><code>ref</code> field</b> points to a record of another item collection: <code>{'{ key: issue, type: ref, collection: issue }'}</code>. The form lets you pick one by its title. Deleting an issue deletes its cards too.
+            </li>
+            <li>
+              A <b>record's screen</b> is a view with <code>of: issue</code>. It isn't one of the app's tabs: it opens when you tap a row of a <code>list</code> or a card of a <code>board</code> that says <code>opens: board</code>. Its blocks read the record as <code>$record</code> (its id) and <code>$record.title</code> (any of its fields), so <code>{'filter: { issue: $record }'}</code> shows only its cards and <code>{'prefill: { issue: $record }'}</code> adds new ones to it.
+            </li>
+            <li>
+              <code>layout: wide</code> opens a view full width, in its own browser tab from the extension. There a <code>board</code> shows its columns side by side: drag a card to another column to move it, and add straight into a column.
+            </li>
+          </ul>
+          <p style={muted}>
+            A <b><code>task</code> field</b> links a record to one of your Pomodoso tasks. You pick the task from your list; the app keeps only its id and shows its title, and the task shows the record back, with a button to open it. The app can't read or change your tasks.
+          </p>
+          <details style={card}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>The Issues app's file</summary>
+            <pre style={{ ...code, border: 'none', padding: '12px 0 0' }}>{issuesFile}</pre>
+          </details>
+          <IssuesPreview />
+          <p style={{ ...muted, fontSize: 14 }}>In the preview, tap an issue to open its board. The tasks you can link are samples.</p>
         </Section>
 
         <Section id="today" title="Today widget">

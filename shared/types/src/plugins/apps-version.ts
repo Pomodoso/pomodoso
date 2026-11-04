@@ -56,10 +56,12 @@ const OPS: Record<ComputedOp, string> = {
 const FORMATS: Record<StatFormat, string> = {
   number: '0.1', time_ago: '0.1', days: '0.1', percent: '0.1', share: '0.2', duration: '0.1', date: '0.1',
 };
-const REFS: Record<BuiltinRef, string> = { today_date: '0.1', now: '0.1', 'tab.url': '0.1', 'tab.title': '0.1', 'tab.image': '0.2' };
+const REFS: Record<BuiltinRef, string> = { today_date: '0.1', now: '0.1', 'tab.url': '0.1', 'tab.title': '0.1', 'tab.image': '0.2', record: '0.2' };
+/** `$record.title` reads as `$record`. */
+const refVersion = (ref: string) => REFS[(ref.startsWith('record.') ? 'record' : ref) as BuiltinRef];
 const FIELDS: Record<FieldType, string> = {
   text: '0.1', longtext: '0.1', number: '0.1', scale: '0.1', boolean: '0.1', date: '0.1', url: '0.1', select: '0.1',
-  multiselect: '0.1', tags: '0.1', rating: '0.1', duration: '0.1', image_url: '0.1',
+  multiselect: '0.1', tags: '0.1', rating: '0.1', duration: '0.1', image_url: '0.1', ref: '0.2', task: '0.2',
 };
 const KINDS: Record<CollectionKind, string> = { event: '0.1', item: '0.1', daily: '0.1' };
 const HOOKS: Record<HookEvent, string> = { pomodoro_end: '0.1', day_end: '0.1', daily_report: '0.1', weekly_report: '0.1' };
@@ -74,7 +76,7 @@ export function requiredAppsVersion(m: PluginManifest): string {
   const values = (v: ValueRef | undefined) => {
     if (v === undefined) return;
     if (typeof v === 'string') {
-      if (v.startsWith('$')) at(REFS[v.slice(1) as BuiltinRef]);
+      if (v.startsWith('$')) at(refVersion(v.slice(1)));
       return;
     }
     if (typeof v === 'number') return;
@@ -94,7 +96,7 @@ export function requiredAppsVersion(m: PluginManifest): string {
   };
   const format = (f: StatFormat | undefined) => at(f && FORMATS[f]);
   const refs = (map: Record<string, unknown> | undefined) => {
-    for (const v of Object.values(map ?? {})) if (typeof v === 'string' && v.startsWith('$')) at(REFS[v.slice(1) as BuiltinRef]);
+    for (const v of Object.values(map ?? {})) if (typeof v === 'string' && v.startsWith('$')) at(refVersion(v.slice(1)));
   };
 
   // An app that keeps no data.
@@ -106,8 +108,10 @@ export function requiredAppsVersion(m: PluginManifest): string {
   for (const e of Object.values(m.computed ?? {})) expr(e);
 
   for (const view of m.views) {
+    if (view.of !== undefined || view.layout !== undefined) at('0.2');
     for (const b of view.blocks) {
       at(BLOCKS[b.type]);
+      if (('opens' in b && b.opens !== undefined) || (b.type === 'board' && b.filter !== undefined)) at('0.2');
       switch (b.type) {
         case 'counter-button':
           if (b.subtract !== undefined) at('0.2');
