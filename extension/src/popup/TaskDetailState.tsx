@@ -8,6 +8,7 @@ import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
 import { resolveTaskStatus, taskStatusOptions } from '@pomodoso/types';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
+import { LinkedApps } from './apps/LinkedApps';
 
 const STATUS_ACTIVE_COLORS: Record<TaskStatus, { bg: string; color: string; border: string }> = {
   todo:        { bg: 'rgba(74,111,165,0.1)',  color: 'var(--color-info)',    border: 'var(--color-info)' },
@@ -916,6 +917,9 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
           </>
         )}
       </div>
+
+      {/* Records in apps linked to this task (an issue and its board) */}
+      <LinkedApps taskId={task.id} label={(children) => <FieldLabel>{children}</FieldLabel>} />
 
       {/* Notes */}
       <div style={{ padding: '12px 14px 0' }}>

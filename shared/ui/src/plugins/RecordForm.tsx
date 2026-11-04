@@ -10,8 +10,16 @@ import {
 
 import { buttonStyle, inputStyle, labelStyle } from './styles.js';
 
+/** A record or task a `ref` / `task` field can point to. */
+export interface FieldChoice {
+  value: string;
+  label: string;
+}
+
 interface RecordFormProps {
   collection: PluginCollection;
+  /** What a `ref` or `task` field can be set to (records of its collection, the user's tasks). */
+  choices?: ((field: PluginField) => FieldChoice[] | undefined) | undefined;
   settings: Record<string, unknown>;
   initial: Record<string, unknown>;
   submitLabel: string;
@@ -28,7 +36,7 @@ interface RecordFormProps {
 }
 
 /** One input per field of a collection. Submitting is blocked until required fields are filled. */
-export function RecordForm({ collection, settings, initial, occurredAt, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
+export function RecordForm({ collection, settings, initial, occurredAt, choices, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
   const isEvent = collection.kind === 'event';
   const [when, setWhen] = useState(() => toLocalInput(occurredAt ?? new Date().toISOString()));
   // Untouched, a new event happens when it's saved, not when the form opened.
@@ -81,7 +89,7 @@ export function RecordForm({ collection, settings, initial, occurredAt, submitLa
             {fieldLabel(f)}
             {f.optional ? <span style={{ color: 'var(--color-text-faint)', fontWeight: 400 }}> · optional</span> : null}
           </span>
-          <FieldInput field={f} collection={collection.key} settings={settings} value={data[f.key]} disabled={disabled} onChange={(v) => set(f.key, v)} />
+          <FieldInput field={f} collection={collection.key} settings={settings} value={data[f.key]} disabled={disabled} choices={choices?.(f)} onChange={(v) => set(f.key, v)} />
         </label>
       ))}
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -138,10 +146,12 @@ interface FieldInputProps {
   settings: Record<string, unknown>;
   value: unknown;
   disabled?: boolean | undefined;
+  /** For `ref` and `task` fields. */
+  choices?: FieldChoice[] | undefined;
   onChange: (v: unknown) => void;
 }
 
-export function FieldInput({ field: f, collection, settings, value, disabled, onChange }: FieldInputProps) {
+export function FieldInput({ field: f, collection, settings, value, disabled, choices, onChange }: FieldInputProps) {
   const str = typeof value === 'string' ? value : '';
   const num = typeof value === 'number' ? value : undefined;
 
@@ -253,7 +263,90 @@ export function FieldInput({ field: f, collection, settings, value, disabled, on
     }
     case 'tags':
       return <TagsInput value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />;
+    case 'ref':
+    case 'task': {
+      // Tasks only list where they live (the extension); elsewhere the link is kept as is.
+      if (choices === undefined && f.type === 'task') {
+        return (
+          <select value={str} disabled style={inputStyle}>
+            <option value={str}>{str ? 'Linked task' : 'Link a task from the Pomodoso extension'}</option>
+          </select>
+        );
+      }
+      return <SearchSelect value={str} choices={choices ?? []} optional={f.optional === true} disabled={disabled} gone={f.type === 'task' ? 'Task deleted' : 'Deleted'} empty={f.type === 'task' ? 'No tasks to link' : 'Nothing to pick yet'} onChange={onChange} />;
+    }
   }
+}
+
+/**
+ * A pick from a long list (a task among dozens): type to filter, pick a
+ * match. Shows the picked one's label while not searching.
+ */
+function SearchSelect({ value, choices, optional, disabled, gone, empty, onChange }: {
+  value: string;
+  choices: FieldChoice[];
+  optional: boolean;
+  disabled?: boolean | undefined;
+  /** Shown for a value no longer among the choices (a deleted task). */
+  gone: string;
+  empty: string;
+  onChange: (v: unknown) => void;
+}) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const picked = choices.find((c) => c.value === value);
+  const needle = q.trim().toLowerCase();
+  const matches = (needle ? choices.filter((c) => c.label.toLowerCase().includes(needle)) : choices).slice(0, 8);
+  const pick = (v: string | undefined) => {
+    onChange(v);
+    setQ('');
+    setOpen(false);
+  };
+  if (choices.length === 0 && !value) return <input type="text" disabled placeholder={empty} style={inputStyle} />;
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={open ? q : picked?.label ?? (value ? gone : '')}
+        placeholder={open ? 'Search…' : optional ? 'None' : 'Pick one'}
+        disabled={disabled}
+        onFocus={() => setOpen(true)}
+        // Late enough for a click on a match to land first.
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (matches[0]) pick(matches[0].value);
+          }
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        style={inputStyle}
+      />
+      {open ? (
+        <div role="listbox" style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 6px 18px rgba(0,0,0,0.12)' }}>
+          {optional && value ? (
+            <div role="option" aria-selected={false} onMouseDown={(e) => { e.preventDefault(); pick(undefined); }} style={optionStyle(false)}>
+              <span style={{ color: 'var(--color-text-muted)' }}>None</span>
+            </div>
+          ) : null}
+          {matches.map((c) => (
+            <div key={c.value} role="option" aria-selected={c.value === value} onMouseDown={(e) => { e.preventDefault(); pick(c.value); }} style={optionStyle(c.value === value)}>
+              {c.label}
+            </div>
+          ))}
+          {matches.length === 0 ? <div style={{ ...optionStyle(false), color: 'var(--color-text-faint)', cursor: 'default' }}>No matches</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function optionStyle(on: boolean): CSSProperties {
+  return { padding: '6px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--color-text)', background: on ? 'var(--color-accent-soft)' : 'transparent', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 }
 
 /**

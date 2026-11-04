@@ -30,10 +30,12 @@ import {
   guideManifestData,
   guideSeedRecords,
   localDayOf,
+  parsePluginFile,
   validatePluginData,
   type PluginRecord,
 } from '@pomodoso/types/plugins';
 import { Seo } from '../../seo.tsx';
+import kanbanFile from '../../../../shared/types/src/plugins/examples/kanban.yaml?raw';
 import { AppChecker } from './AppChecker.tsx';
 import { LivePreview } from './LivePreview.tsx';
 import { SiteHeader } from './SiteHeader.tsx';
@@ -57,6 +59,7 @@ const TOC = [
   ['values', 'Settings and values'],
   ['computed', 'Computed values'],
   ['blocks', 'Blocks'],
+  ['records', 'Records inside records'],
   ['today', 'Today widget'],
   ['hooks', 'Hooks'],
   ['rules', 'Rules'],
@@ -132,6 +135,23 @@ function Example({ id, name, doc, yaml, part, seed }: { id: string; name: string
       {mounted && manifest ? <LivePreview manifest={manifest} initialRecords={seed} /> : null}
     </div>
   );
+}
+
+const KANBAN_SAMPLES: PluginRecord[] = [
+  { id: 'doc-board-1', collection: 'board', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Publish the app', state: 'open', task: 'sample-task-1' } },
+  { id: 'doc-board-2', collection: 'board', created_at: '2026-01-01T10:00:00.000Z', data: { title: 'Landing page refresh', state: 'open' } },
+  { id: 'doc-card-1', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Store screenshots', board: 'doc-board-1', status: 'doing' } },
+  { id: 'doc-card-2', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Write the listing copy', board: 'doc-board-1', status: 'todo' } },
+  { id: 'doc-card-3', collection: 'card', created_at: '2026-01-02T10:00:00.000Z', data: { title: 'Bump the version', board: 'doc-board-1', status: 'done' } },
+];
+
+function KanbanPreview() {
+  const mounted = useMounted();
+  const manifest = useMemo(() => {
+    const r = parsePluginFile(kanbanFile);
+    return r.ok ? r.manifest : null;
+  }, []);
+  return mounted && manifest ? <LivePreview manifest={manifest} initialRecords={KANBAN_SAMPLES} /> : null;
 }
 
 export default function DocsPage() {
@@ -220,7 +240,7 @@ export default function DocsPage() {
             Under <code>computed</code>, each entry gets a name and exactly one operator. Read it with <code>$name</code>; entries can use each other, as long as they don't go in a circle.
           </p>
           <p style={muted}>
-            <b>Ranges</b> pick a period: {NAMED_RANGES.map((r, i) => <span key={r}>{i > 0 ? ', ' : ''}<code>{r}</code></span>)}, or a rolling window like <code>14d</code> or <code>12mo</code>. <b>where</b> filters records by field: a value (<code>{'{ drink: tea }'}</code>), or <code>in</code>, <code>exists</code>, <code>lt</code>, <code>lte</code>, <code>gt</code>, <code>gte</code> (<code>{'{ size: { gte: 300 } }'}</code>). <b>group</b> (day, week or month) turns a count or sum into a series for charts.
+            <b>Ranges</b> pick a period: {NAMED_RANGES.map((r, i) => <span key={r}>{i > 0 ? ', ' : ''}<code>{r}</code></span>)}, or a rolling window like <code>14d</code> or <code>12mo</code>. <b>where</b> filters records by field: a value (<code>{'{ drink: tea }'}</code>), or <code>in</code>, <code>not_in</code>, <code>exists</code>, <code>lt</code>, <code>lte</code>, <code>gt</code>, <code>gte</code> (<code>{'{ size: { gte: 300 } }'}</code>). <b>group</b> (day, week or month) turns a count or sum into a series for charts.
           </p>
           {COMPUTED_OPS.map((op) => (
             <Example key={op} id={`computed-${op}`} name={op} doc={COMPUTED_DOCS[op]} yaml={GUIDE_COMPUTED_EXAMPLES[op]} part={{ computed: GUIDE_COMPUTED_EXAMPLES[op] }} seed={seed} />
@@ -241,6 +261,35 @@ export default function DocsPage() {
           {BLOCK_TYPES.map((b) => (
             <Example key={b} id={`block-${b}`} name={b} doc={BLOCK_DOCS[b]} yaml={GUIDE_BLOCK_EXAMPLES[b]} part={{ blocks: GUIDE_BLOCK_EXAMPLES[b] }} seed={seed} />
           ))}
+        </Section>
+
+        <Section id="records" title="Records inside records">
+          <p style={muted}>
+            Some apps need things that belong to other things: the cards of a board, the notes of a book. Three pieces do it, shown here with the Kanban app, where every board opens with its own columns.
+          </p>
+          <ul style={{ ...muted, paddingLeft: 20, lineHeight: 1.7, listStyle: 'disc' }}>
+            <li>
+              A <b><code>ref</code> field</b> points to a record of another item collection: <code>{'{ key: board, type: ref, collection: board }'}</code>. The form lets you search and pick one by its title. Deleting a board deletes its cards too.
+            </li>
+            <li>
+              A <b>record's screen</b> is a view with <code>of: board</code>. It isn't one of the app's tabs: it opens when you tap a row of a <code>list</code> or a card of a <code>board</code> that says <code>opens: kanban</code>. Its blocks read the record as <code>$record</code> (its id) and <code>$record.title</code> (any of its fields), so <code>{'filter: { board: $record }'}</code> shows only its cards and <code>{'prefill: { board: $record }'}</code> adds new ones to it.
+            </li>
+            <li>
+              <code>layout: wide</code> opens a view full width, in its own browser tab from the extension. There a <code>board</code> shows its columns side by side: drag a card to another column or use its ‹ › buttons, and add straight into a column. The columns are the options of its <code>group_by</code> field; with <code>user_editable: true</code> each user renames them and adds their own, in the app's settings.
+            </li>
+          </ul>
+          <p style={muted}>
+            On Today, the <b><code>list</code> widget</b> shows the records as rows that open their screens: every open board, with its cards done out of all of them (<code>badge</code> and <code>badge_of</code>, read with <code>$record</code> as the row). An optional <code>more</code> row opens another view.
+          </p>
+          <p style={muted}>
+            A <b><code>task</code> field</b> links a record to one of your Pomodoso tasks. You pick the task from your list; the app keeps only its id and shows its title, and the task shows the record back, with a button to open it. The app can't read or change your tasks.
+          </p>
+          <details style={card}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>The Kanban app's file</summary>
+            <pre style={{ ...code, border: 'none', padding: '12px 0 0' }}>{kanbanFile}</pre>
+          </details>
+          <KanbanPreview />
+          <p style={{ ...muted, fontSize: 14 }}>In the preview, tap a board to open it, and move its cards with ‹ ›. The tasks you can link are samples.</p>
         </Section>
 
         <Section id="today" title="Today widget">

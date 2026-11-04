@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 
 import {
   formatStat,
+  recordTitle,
   parsePluginExport,
   parsePluginFile,
   SHOW_ON_TODAY_KEY,
@@ -16,24 +17,22 @@ import { PluginIcon, PluginView, type PluginActions, type PluginEnv } from '@pom
 
 import { db, localDate, type PluginRow } from '../../db';
 import {
-  addRecord,
-  deleteRecord,
   exportPlugin,
   importPlugin,
   installPlugin,
   installedBySlug,
-  setDaily,
   applyPluginUpdate,
   setAutoUpdate,
   uninstallPlugin,
   updatePluginSetting,
-  updateRecord,
 } from '../../plugins';
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
 import { isSupported } from './supported';
 import { Browse, directoryAvailable } from './Browse';
 import { openListing, SignInToOpen } from './directory';
 import { describeStep, updateFor, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
+import { appPageUrl, pluginActions, usePluginTasks } from './appEnv';
+import { toEngineRecord } from '../../pluginRows';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and
@@ -761,44 +760,55 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
   onBack: () => void;
   onSettings: () => void;
 }) {
-  const [viewId, setViewId] = useState(plugin.manifest.views[0]!.id);
-  const image = useTabImage(tab.url, plugin.manifest);
+  const m = plugin.manifest;
+  const [viewId, setViewId] = useState(m.views[0]!.id);
+  // A record's screen (a view with `of`) opened from a list or board, over the tabs.
+  const [opened, setOpened] = useState<{ view: string; record: string } | null>(null);
+  const image = useTabImage(tab.url, m);
   // `$tab` is only a web page: never chrome:// or the extension's own pages.
   const webTab = useMemo(() => (/^https?:\/\//i.test(tab.url) ? { ...tab, ...(image ? { image } : {}) } : undefined), [tab, image]);
-  const { evaluator } = usePluginData(plugin, timezone, weekStart, webTab);
-  const view = plugin.manifest.views.find((v) => v.id === viewId) ?? plugin.manifest.views[0]!;
+  const { records, evaluator } = usePluginData(plugin, timezone, weekStart, webTab);
+  const tasks = usePluginTasks();
+  const tabs = m.views.filter((v) => v.of === undefined);
+  const recordView = opened ? m.views.find((v) => v.id === opened.view) : undefined;
+  const record = opened ? records?.find((r) => r.id === opened.record) : undefined;
+  const view = recordView && record ? recordView : tabs.find((v) => v.id === viewId) ?? tabs[0]!;
 
-  const actions: PluginActions = useMemo(() => {
-    const env = { timezone, weekStart };
-    return {
-      // Writes return their promise so a form can reset once the record is stored.
-      add: (c, data, opts) => addRecord(plugin, c, data, env, opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
-      setDay: (c, day, data) => setDaily(plugin, c, day, data, env),
-      update: (r: PluginRecord, data, opts) => updateRecord(plugin, r.id, data, env, opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
-      remove: (r: PluginRecord) => deleteRecord(r.id),
-      openUrl: (url) => {
-        if (/^https?:\/\//i.test(url)) void chrome.tabs.create({ url });
-      },
-    };
-  }, [plugin, timezone, weekStart]);
+  const actions: PluginActions = useMemo(() => pluginActions(plugin, timezone, weekStart), [plugin, timezone, weekStart]);
+  // A wide screen (a kanban) opens in its own browser tab; the others here.
+  const openRecord = (v: string, r: string) => {
+    if (m.views.find((x) => x.id === v)?.layout === 'wide') void chrome.tabs.create({ url: appPageUrl(plugin.id, v, r) });
+    else setOpened({ view: v, record: r });
+  };
 
   return (
     <>
       <Header
-        title={<><PluginIcon icon={plugin.manifest.icon} name={plugin.manifest.name} size={22} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plugin.manifest.name}</span></>}
-        onBack={onBack}
-        right={<button type="button" aria-label="App settings" onClick={onSettings} style={{ ...btn('ghost'), padding: '2px 6px' }}><GearIcon /></button>}
+        title={
+          recordView && record ? (
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{recordTitle(m, toEngineRecord(record))}</span>
+          ) : (
+            <><PluginIcon icon={m.icon} name={m.name} size={22} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span></>
+          )
+        }
+        onBack={recordView && record ? () => setOpened(null) : onBack}
+        right={
+          <>
+            <button type="button" aria-label="Open in a tab" title="Open in a tab" onClick={() => void chrome.tabs.create({ url: appPageUrl(plugin.id, recordView && record ? recordView.id : view.id, record?.id) })} style={{ ...btn('ghost'), padding: '2px 6px' }}>⤢</button>
+            <button type="button" aria-label="App settings" onClick={onSettings} style={{ ...btn('ghost'), padding: '2px 6px' }}><GearIcon /></button>
+          </>
+        }
       />
-      {plugin.manifest.views.length > 1 ? (
+      {!(recordView && record) && tabs.length > 1 ? (
         <div style={{ display: 'flex', gap: 4 }}>
-          {plugin.manifest.views.map((v, i) => {
+          {tabs.map((v, i) => {
             const on = v.id === view.id;
             return (
               <button
                 key={v.id} type="button" onClick={() => setViewId(v.id)}
                 style={{ padding: '3px 10px', fontSize: 11, fontWeight: on ? 600 : 400, fontFamily: 'inherit', borderRadius: 'var(--radius-sm)', cursor: 'pointer', border: `1px solid ${on ? 'var(--color-accent)' : 'var(--color-border)'}`, background: on ? 'var(--color-accent-soft)' : 'transparent', color: on ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
               >
-                {v.label ?? (i === 0 ? plugin.manifest.name : v.id)}
+                {v.label ?? (i === 0 ? m.name : v.id)}
               </button>
             );
           })}
@@ -806,10 +816,11 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
       ) : null}
       {evaluator ? (
         <PluginView
-          key={view.id}
+          key={`${view.id}:${record?.id ?? ''}`}
           view={view}
+          record={recordView && record ? record.id : undefined}
           env={{
-            manifest: plugin.manifest,
+            manifest: m,
             settings: plugin.settings,
             evaluator,
             today: localDate(timezone),
@@ -818,6 +829,8 @@ function AppScreen({ plugin, timezone, weekStart, tab, readOnly, onBack, onSetti
             weekStart,
             readOnly,
             actions,
+            openRecord,
+            tasks,
           } satisfies PluginEnv}
         />
       ) : null}

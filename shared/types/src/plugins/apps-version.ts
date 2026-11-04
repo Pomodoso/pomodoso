@@ -48,7 +48,7 @@ const BLOCKS: Record<BlockType, string> = {
   list: '0.1', 'tag-filter': '0.1', board: '0.1', 'year-grid': '0.1', 'day-picker': '0.1', breakdown: '0.1', text: '0.1',
 };
 const WIDGETS: Record<TodayWidgetType, string> = {
-  'mini-counter': '0.1', 'select-today': '0.1', 'count-badge': '0.1', stat: '0.1', stats: '0.2', progress: '0.2', record: '0.2',
+  'mini-counter': '0.1', 'select-today': '0.1', 'count-badge': '0.1', stat: '0.1', stats: '0.2', progress: '0.2', record: '0.2', list: '0.2',
 };
 const OPS: Record<ComputedOp, string> = {
   count: '0.1', sum: '0.1', avg: '0.1', min: '0.1', max: '0.1', last: '0.1', first: '0.1', streak: '0.1', taper: '0.1', delta: '0.1', calendar: '0.2', ratio: '0.2',
@@ -56,10 +56,12 @@ const OPS: Record<ComputedOp, string> = {
 const FORMATS: Record<StatFormat, string> = {
   number: '0.1', time_ago: '0.1', days: '0.1', percent: '0.1', share: '0.2', duration: '0.1', date: '0.1',
 };
-const REFS: Record<BuiltinRef, string> = { today_date: '0.1', now: '0.1', 'tab.url': '0.1', 'tab.title': '0.1', 'tab.image': '0.2' };
+const REFS: Record<BuiltinRef, string> = { today_date: '0.1', now: '0.1', 'tab.url': '0.1', 'tab.title': '0.1', 'tab.image': '0.2', record: '0.2' };
+/** `$record.title` reads as `$record`. */
+const refVersion = (ref: string) => REFS[(ref.startsWith('record.') ? 'record' : ref) as BuiltinRef];
 const FIELDS: Record<FieldType, string> = {
   text: '0.1', longtext: '0.1', number: '0.1', scale: '0.1', boolean: '0.1', date: '0.1', url: '0.1', select: '0.1',
-  multiselect: '0.1', tags: '0.1', rating: '0.1', duration: '0.1', image_url: '0.1',
+  multiselect: '0.1', tags: '0.1', rating: '0.1', duration: '0.1', image_url: '0.1', ref: '0.2', task: '0.2',
 };
 const KINDS: Record<CollectionKind, string> = { event: '0.1', item: '0.1', daily: '0.1' };
 const HOOKS: Record<HookEvent, string> = { pomodoro_end: '0.1', day_end: '0.1', daily_report: '0.1', weekly_report: '0.1' };
@@ -74,7 +76,7 @@ export function requiredAppsVersion(m: PluginManifest): string {
   const values = (v: ValueRef | undefined) => {
     if (v === undefined) return;
     if (typeof v === 'string') {
-      if (v.startsWith('$')) at(REFS[v.slice(1) as BuiltinRef]);
+      if (v.startsWith('$')) at(refVersion(v.slice(1)));
       return;
     }
     if (typeof v === 'number') return;
@@ -94,11 +96,13 @@ export function requiredAppsVersion(m: PluginManifest): string {
   };
   const format = (f: StatFormat | undefined) => at(f && FORMATS[f]);
   const refs = (map: Record<string, unknown> | undefined) => {
-    for (const v of Object.values(map ?? {})) if (typeof v === 'string' && v.startsWith('$')) at(REFS[v.slice(1) as BuiltinRef]);
+    for (const v of Object.values(map ?? {})) if (typeof v === 'string' && v.startsWith('$')) at(refVersion(v.slice(1)));
   };
 
   // An app that keeps no data.
   if (m.collections.length === 0) at('0.2');
+  // `not_in` in any filter (where conditions sit at many paths; the key is reserved to them).
+  if (JSON.stringify(m).includes('"not_in":')) at('0.2');
   for (const c of m.collections) {
     at(KINDS[c.kind]);
     for (const f of c.fields) at(FIELDS[f.type]);
@@ -106,8 +110,10 @@ export function requiredAppsVersion(m: PluginManifest): string {
   for (const e of Object.values(m.computed ?? {})) expr(e);
 
   for (const view of m.views) {
+    if (view.of !== undefined || view.layout !== undefined) at('0.2');
     for (const b of view.blocks) {
       at(BLOCKS[b.type]);
+      if (('opens' in b && b.opens !== undefined) || (b.type === 'board' && b.filter !== undefined)) at('0.2');
       switch (b.type) {
         case 'counter-button':
           if (b.subtract !== undefined) at('0.2');
@@ -173,6 +179,11 @@ export function requiredAppsVersion(m: PluginManifest): string {
         format(w.format);
         break;
       case 'record':
+        break;
+      case 'list':
+        values(w.badge);
+        values(w.badge_of);
+        values(w.more?.badge);
         break;
     }
   }

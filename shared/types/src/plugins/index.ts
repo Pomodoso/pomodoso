@@ -14,7 +14,7 @@ export * from './manifest.ts';
 export { applyMigration, type MigrationResult } from './migrate.ts';
 export { parsePluginFile, validatePluginData, type PluginParseResult } from './parse.ts';
 export { addDays, localDayOf } from './dates.ts';
-export { applyRules, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, templateFormat, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';
+export { applyRules, cascadeIds, recordTitle, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, templateFormat, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';
 export { STARTER_PROMPT, TOP_LEVEL_DOCS, llmsFullTxt, llmsTxt, remixPrompt } from './llms.ts';
 export { BLOCK_DOCS, COLLECTION_DOCS, COMPUTED_DOCS, FIELD_DOCS, FORMAT_DOCS, HOOK_DOCS, WIDGET_DOCS } from './docs.ts';
 export { GUIDE_BLOCK_EXAMPLES, GUIDE_COMPUTED_EXAMPLES, GUIDE_FIRST_APP, GUIDE_HOOK_EXAMPLES, GUIDE_PLAYGROUND, GUIDE_WIDGET_EXAMPLES, guideManifestData, guideSeedRecords } from './guide.ts';

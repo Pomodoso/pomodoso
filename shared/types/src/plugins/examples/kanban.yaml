@@ -1,0 +1,81 @@
+schema_version: 1
+id: kanban
+name: Kanban
+version: 1.0.0
+icon: check
+description: Boards with To do, In progress and Done. Link a board to a task to open it from there.
+author: Pomodoso
+license: MIT
+
+collections:
+  - key: board
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text, label: Name }
+      - { key: task, type: task, label: Linked task, optional: true }
+      - { key: notes, type: longtext, optional: true }
+      - key: state
+        type: select
+        options: [open, closed]
+        default: open
+  - key: card
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: board, type: ref, collection: board }
+      - key: status
+        type: select
+        user_editable: true
+        options:
+          - { value: todo, label: To do, color: "#B9B4A7" }
+          - { value: doing, label: In progress, color: "#E0B04A" }
+          - { value: done, label: Done, color: "#2D8A7A" }
+        default: todo
+      - { key: notes, type: longtext, optional: true }
+
+views:
+  - id: main
+    label: Boards
+    blocks:
+      - { type: add-button, label: New board, adds: board }
+      - type: list
+        collection: board
+        filter: { state: open }
+        primary: title
+        secondary: [task]
+        sort: { field: created_at, order: desc }
+        opens: kanban
+        swipe: { label: Close, set: { state: closed } }
+  - id: closed
+    label: Closed
+    blocks:
+      - type: list
+        collection: board
+        filter: { state: closed }
+        primary: title
+        opens: kanban
+        swipe: { label: Reopen, set: { state: open } }
+  - id: kanban
+    of: board
+    layout: wide
+    blocks:
+      - { type: add-button, label: Add a task, adds: card, prefill: { board: $record } }
+      - type: board
+        collection: card
+        filter: { board: $record }
+        group_by: status
+        card: { title: title }
+
+today:
+  default_on: true
+  widget:
+    type: list
+    label: Kanban
+    collection: board
+    where: { state: open }
+    opens: kanban
+    # Per board: its cards done, out of all of them (in progress counts as not done).
+    badge: { count: card, where: { board: $record, status: done } }
+    badge_of: { count: card, where: { board: $record } }

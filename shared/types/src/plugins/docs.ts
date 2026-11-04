@@ -33,6 +33,8 @@ export const FIELD_DOCS: Record<FieldType, string> = {
   rating: 'Stars (default 1–5).',
   duration: 'Minutes.',
   image_url: 'An image link (https), shown as a cover in boards.',
+  ref: 'A record of another item collection (`collection`) this one belongs to: a card of an issue, a note of a book. Picked from a list; shows its title. Deleting that record deletes the ones that point to it.',
+  task: "A task from the user's Pomodoso task list, picked from them. The app stores only its id and shows its title; the task shows the record back, to open it. Apps can't read or change tasks.",
 };
 
 export const COMPUTED_DOCS: Record<ComputedOp, string> = {
@@ -58,9 +60,9 @@ export const BLOCK_DOCS: Record<BlockType, string> = {
   'stat-row': 'Up to four stats side by side.',
   progress: 'A bar of `value` against `max`. `invert: true` for limits (going over is bad). `format` says how the numbers read (`share` shows only the percent). `style`: `bar` (default), `ring` (a ring of dots) or `dots` (one dot per unit when `max` is a whole number up to 400, like the days of a year); it can be a `$setting` so the user picks.',
   chart: 'A bar or line chart of a grouped series (`count` / `sum` / … with `group`). Optional dashed `reference` line.',
-  list: 'Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field) and a `swipe` action that sets fields.',
+  list: 'Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field), a `swipe` action that sets fields, and `opens` (a view with `of` this collection: tapping a row opens that record\'s screen).',
   'tag-filter': 'Chips that filter the lists and boards of the same view by a tags, multiselect or select field.',
-  board: 'Items grouped in columns by a select field (`group_by`), as cards with title, subtitle, image and badge.',
+  board: 'Items grouped in columns by a select field (`group_by`), as cards with title, subtitle, image and badge; optional `filter` (in a record\'s screen, `{ issue: $record }` shows its cards) and `opens`. Full width (`layout: wide`) the columns sit side by side, cards drag between them and each column has its own add.',
   'year-grid': 'Every day of the year as a colored cell (like a contribution graph), colored by a select field.',
   'day-picker': 'Pick a select value for today, or move to other days.',
   breakdown: 'How many records have each option of a select, multiselect or tags field, as bars.',
@@ -74,6 +76,7 @@ export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
   stat: 'A single value with a `format`.',
   progress: 'A bar of `value` against `max` (default 1), with an optional `format`, a `caption` line under it (`{$name}` works) and a `style` (`bar`, `ring` or `dots`, or a `$setting`). Ring and dots take the whole row.',
   record: 'The latest item of a collection matching `where` (the book you are reading), by its `title` field, with a number `field` you edit right on the card (the page you are on), against an optional `max` field (its pages, as a bar). Optional `caption` line with `{$name}` values.',
+  list: "The records of a collection matching `where` as rows (the open boards), each opening its screen (`opens`, a view with `of`), with an optional `badge` per row (a value that reads the row as `$record`: its cards done) and `badge_of` (what the badge is out of, shown as 3/5), and an optional `more` row opening another view of the app. Takes the whole row on Today.",
   stats: 'Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.',
 };
 

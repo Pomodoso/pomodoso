@@ -27,7 +27,7 @@ export const TOP_LEVEL_DOCS: Record<string, string> = {
   settings: 'Values the user sets on install (a starting limit, a goal). Readable as `$key`.',
   collections: 'What the plugin stores. Each has a `key`, a `kind` and `fields`. Empty (`[]`) for an app that keeps no data, like a year progress bar.',
   computed: 'Named values calculated from the records, readable as `$name`.',
-  views: 'The screens of the plugin, each a list of blocks.',
+  views: 'The screens of the plugin, each a list of blocks. A view with `of: <collection>` is the screen of one record (opened from a list or board with `opens`); its blocks read `$record` (the id) and `$record.<field>`. `layout: wide` opens a view full width (a browser tab in the extension). The first view is the main screen and has no `of`.',
   today: 'Optional widget for the Today tab; the user switches it on. `default_on` suggests a starting state.',
   hooks: 'Optional questions after pomodoros or at day end, and lines in reports.',
   rules: 'Fields set automatically when a record starts matching `when` (stamp a date when a book becomes read). `only_if_empty` keeps a value the user set.',
@@ -101,7 +101,7 @@ export function llmsTxt(): string {
 
 ## Reference
 
-- [Full reference with every block, field type, computed value, hook and five complete examples](/llms-full.txt)
+- [Full reference with every block, field type, computed value, hook, and complete examples](/llms-full.txt)
 - [JSON Schema](${PLUGIN_JSON_SCHEMA_URL})
 
 ## Blocks

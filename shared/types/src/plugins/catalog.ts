@@ -40,6 +40,8 @@ export const FIELD_TYPES = [
   'rating',
   'duration',
   'image_url',
+  'ref',
+  'task',
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -64,7 +66,7 @@ export const BLOCK_TYPES = [
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
-export const TODAY_WIDGET_TYPES = ['mini-counter', 'select-today', 'count-badge', 'stat', 'stats', 'progress', 'record'] as const;
+export const TODAY_WIDGET_TYPES = ['mini-counter', 'select-today', 'count-badge', 'stat', 'stats', 'progress', 'record', 'list'] as const;
 export type TodayWidgetType = (typeof TODAY_WIDGET_TYPES)[number];
 
 export const COMPUTED_OPS = ['count', 'sum', 'avg', 'min', 'max', 'last', 'first', 'streak', 'taper', 'delta', 'calendar', 'ratio'] as const;
@@ -112,5 +114,12 @@ export const RANGE_PATTERN = /^[1-9][0-9]{0,2}(d|mo)$/;
  * active tab's DOM (extension only); it never triggers a network call.
  * `$tab.image` is the page's og:image (https only).
  */
-export const BUILTIN_REFS = ['today_date', 'now', 'tab.url', 'tab.title', 'tab.image'] as const;
+export const BUILTIN_REFS = ['today_date', 'now', 'tab.url', 'tab.title', 'tab.image', 'record'] as const;
+
+/**
+ * A view with `of` is the screen of one record (an issue's board): its
+ * blocks read that record as `$record` (its id) and `$record.<field>`.
+ * `layout: wide` opens it full width (a browser tab in the extension).
+ */
+export const VIEW_LAYOUTS = ['wide'] as const;
 export type BuiltinRef = (typeof BUILTIN_REFS)[number];

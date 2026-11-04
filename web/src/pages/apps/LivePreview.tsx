@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { createEvaluator, humanize, initialRecordData, localDayOf, normalizeOption, reportLines, type PluginManifest, type PluginRecord } from '@pomodoso/types/plugins';
-import { PluginView, TodayWidget, type PluginEnv } from '@pomodoso/ui/plugins';
+import { cascadeIds, createEvaluator, humanize, initialRecordData, localDayOf, normalizeOption, recordTitle, reportLines, type PluginManifest, type PluginRecord } from '@pomodoso/types/plugins';
+import { PluginView, TodayWidget, type PluginEnv, type PluginTasks } from '@pomodoso/ui/plugins';
 
 // An app's screen and Today widget, rendered from its file with the same
 // components as the extension, on data that lives only in this page: try the
@@ -26,9 +26,18 @@ function merged(base: Record<string, unknown>, data: Record<string, unknown>) {
 }
 
 /** `initialRecords` seeds the preview (the docs' sample data); edits stay local. */
+/** Sample tasks for `task` fields: the preview has no task list of its own. */
+const SAMPLE_TASKS = [
+  { value: 'sample-task-1', label: 'Publish the app' },
+  { value: 'sample-task-2', label: 'Write the release notes' },
+];
+const sampleTasks: PluginTasks = { list: () => SAMPLE_TASKS, title: (id) => SAMPLE_TASKS.find((t) => t.value === id)?.label };
+
 export function LivePreview({ manifest, initialRecords = [] }: { manifest: PluginManifest; initialRecords?: PluginRecord[] }) {
   const [records, setRecords] = useState<PluginRecord[]>(initialRecords);
   const [viewId, setViewId] = useState(manifest.views[0]!.id);
+  // A record's screen (a view with `of`), opened from a list or board.
+  const [opened, setOpened] = useState<{ view: string; record: string } | null>(null);
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const now = new Date().toISOString();
   const today = localDayOf(now, timeZone);
@@ -47,7 +56,12 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
     const at = new Date().toISOString();
     setRecords((rs) => [...rs, { id: crypto.randomUUID(), collection: key, occurred_at: c.kind === 'event' ? opts?.occurredAt ?? at : null, created_at: at, updated_at: at, data: merged(initialRecordData(c), data) }]);
   };
-  const remove = (rec: PluginRecord) => setRecords((rs) => rs.filter((r) => r.id !== rec.id));
+  // A record takes what belongs to it (records whose `ref` points at it).
+  const remove = (rec: PluginRecord) =>
+    setRecords((rs) => {
+      const gone = new Set(cascadeIds(manifest, rs, rec.id));
+      return rs.filter((r) => !gone.has(r.id));
+    });
   const setDay = (key: string, day: string, data: Record<string, unknown>) => {
     const at = new Date().toISOString();
     setRecords((rs) => {
@@ -75,17 +89,28 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
       openUrl: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
     },
   };
-  const view = manifest.views.find((v) => v.id === viewId) ?? manifest.views[0]!;
+  const tabs = manifest.views.filter((v) => v.of === undefined);
+  const recordView = opened ? manifest.views.find((v) => v.id === opened.view) : undefined;
+  const record = opened ? records.find((r) => r.id === opened.record) : undefined;
+  const inRecord = recordView !== undefined && record !== undefined;
+  const view = inRecord ? recordView : tabs.find((v) => v.id === viewId) ?? tabs[0]!;
+  // A wide screen (a kanban) takes the whole preview, as it takes a whole tab in the extension.
+  const wide = view.layout === 'wide';
   const asks = (manifest.hooks ?? []).flatMap((h) => ('ask' in h ? [h] : []));
   const reports = (['daily_report', 'weekly_report'] as const).flatMap((on) => reportLines(manifest, on, evaluator, now).map((line) => ({ on, line })));
 
   return (
     <div style={{ background: '#F4F2EC', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24, display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start' }}>
-      <div style={{ width: 340, maxWidth: '100%', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '12px 14px 16px', display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>In Apps</div>
-        {manifest.views.length > 1 ? (
+      <div style={{ width: wide ? '100%' : 340, maxWidth: '100%', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '12px 14px 16px', display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{wide ? 'In its own tab' : 'In Apps'}</div>
+        {inRecord ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" onClick={() => setOpened(null)} aria-label="Back" style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--color-text-muted)', padding: 0 }}>‹</button>
+            <span style={{ fontWeight: 600 }}>{recordTitle(manifest, record)}</span>
+          </div>
+        ) : tabs.length > 1 ? (
           <div role="tablist" aria-label="Screens" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {manifest.views.map((v) => (
+            {tabs.map((v) => (
               <button
                 key={v.id}
                 type="button"
@@ -99,7 +124,7 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
             ))}
           </div>
         ) : null}
-        <PluginView env={env} view={view} />
+        <PluginView key={`${view.id}:${record?.id ?? ''}`} env={{ ...env, wide, openRecord: (v, r) => setOpened({ view: v, record: r }), tasks: sampleTasks }} view={view} record={inRecord ? record.id : undefined} />
       </div>
 
       {manifest.today || asks.length > 0 || reports.length > 0 ? (
@@ -107,7 +132,7 @@ export function LivePreview({ manifest, initialRecords = [] }: { manifest: Plugi
           {manifest.today ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>On Today</div>
-              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} timeZone={timeZone} weekStart={0} readOnly={false} add={add} remove={remove} update={env.actions.update} setDay={setDay} onOpen={() => setViewId(manifest.views[0]!.id)} />
+              <TodayWidget manifest={manifest} settings={settings} evaluator={evaluator} today={today} now={now} timeZone={timeZone} weekStart={0} readOnly={false} add={add} remove={remove} update={env.actions.update} setDay={setDay} onOpen={() => { setOpened(null); setViewId(tabs[0]!.id); }} open={(v, r) => (r ? setOpened({ view: v, record: r }) : (setOpened(null), setViewId(v)))} />
             </div>
           ) : null}
           {asks.map((h, i) => (

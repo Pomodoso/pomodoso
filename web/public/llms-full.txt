@@ -5,7 +5,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 ## Rules that matter
 
 - Keys (collections, fields, settings, computed, views) are lower_snake_case, up to 40 characters, starting with a letter. The plugin `id` is lower-kebab-case.
-- Read a value anywhere a value goes with `$name`: a setting, a computed value or a built-in (`$today_date`, `$now`, `$tab.url`, `$tab.title`, `$tab.image`). `$tab.*` only works in an add-button's `prefill`.
+- Read a value anywhere a value goes with `$name`: a setting, a computed value or a built-in (`$today_date`, `$now`, `$tab.url`, `$tab.title`, `$tab.image`, `$record`). `$tab.*` only works in an add-button's `prefill`.
 - Put a value inside a label or text with `{$name}`.
 - A one-tap action (counter-button, mini-counter, hook `yes`, day picks) has no form, so every required field of its collection must be optional, have a `default`, or be set by the action.
 - Every record also has built-in fields you can list, sort and filter by without declaring them: `created_at` and `updated_at`, plus `occurred_at` on events and `day` on dailies.
@@ -26,7 +26,7 @@ A plugin is one YAML file. Pomodoso validates it, stores it, and renders it with
 - `settings`: list of object. Values the user sets on install (a starting limit, a goal). Readable as `$key`.
 - `collections` (required): list of object. What the plugin stores. Each has a `key`, a `kind` and `fields`. Empty (`[]`) for an app that keeps no data, like a year progress bar.
 - `computed`: map of key → computed value. Named values calculated from the records, readable as `$name`.
-- `views` (required): list of object. The screens of the plugin, each a list of blocks.
+- `views` (required): list of object. The screens of the plugin, each a list of blocks. A view with `of: <collection>` is the screen of one record (opened from a list or board with `opens`); its blocks read `$record` (the id) and `$record.<field>`. `layout: wide` opens a view full width (a browser tab in the extension). The first view is the main screen and has no `of`.
 - `today`: object. Optional widget for the Today tab; the user switches it on. `default_on` suggests a starting state.
 - `hooks`: list of object. Optional questions after pomodoros or at day end, and lines in reports.
 - `rules`: list of object. Fields set automatically when a record starts matching `when` (stamp a date when a book becomes read). `only_if_empty` keeps a value the user set.
@@ -51,7 +51,7 @@ Each setting:
 
 Each field:
   - `key` (required): key
-  - `type` (required): text | longtext | number | scale | boolean | date | url | select | multiselect | tags | rating | duration | image_url
+  - `type` (required): text | longtext | number | scale | boolean | date | url | select | multiselect | tags | rating | duration | image_url | ref | task
   - `label`: text
   - `optional`: true | false
   - `default`: text | number | true | false | list of text
@@ -60,6 +60,7 @@ Each field:
   - `min`: number
   - `max`: number
   - `unit`: text
+  - `collection`: key
 
 Field types:
 
@@ -76,6 +77,8 @@ Field types:
 - `rating`: Stars (default 1–5).
 - `duration`: Minutes.
 - `image_url`: An image link (https), shown as a cover in boards.
+- `ref`: A record of another item collection (`collection`) this one belongs to: a card of an issue, a note of a book. Picked from a list; shows its title. Deleting that record deletes the ones that point to it.
+- `task`: A task from the user's Pomodoso task list, picked from them. The app stores only its id and shows its title; the task shows the record back, to open it. Apps can't read or change tasks.
 
 ## Computed values
 
@@ -257,13 +260,14 @@ A bar or line chart of a grouped series (`count` / `sum` / … with `group`). Op
 
 ### `list`
 
-Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field) and a `swipe` action that sets fields.
+Records as rows: `primary` field, up to three `secondary` ones, optional `filter`, `sort`, `open` (a url field), a `swipe` action that sets fields, and `opens` (a view with `of` this collection: tapping a row opens that record's screen).
 
   - `collection` (required): key
   - `filter`: map of key → text | number | true | false | object
   - `primary` (required): key
   - `secondary`: list of key
   - `open`: key
+  - `opens`: key
   - `sort`: object
     - `field` (required): key
     - `order`: asc | desc
@@ -280,15 +284,17 @@ Chips that filter the lists and boards of the same view by a tags, multiselect o
 
 ### `board`
 
-Items grouped in columns by a select field (`group_by`), as cards with title, subtitle, image and badge.
+Items grouped in columns by a select field (`group_by`), as cards with title, subtitle, image and badge; optional `filter` (in a record's screen, `{ issue: $record }` shows its cards) and `opens`. Full width (`layout: wide`) the columns sit side by side, cards drag between them and each column has its own add.
 
   - `collection` (required): key
+  - `filter`: map of key → text | number | true | false | object
   - `group_by` (required): key
   - `card` (required): object
     - `title` (required): key
     - `subtitle`: key
     - `image`: key
     - `badge`: key
+  - `opens`: key
 
 ### `year-grid`
 
@@ -379,6 +385,21 @@ The latest item of a collection matching `where` (the book you are reading), by 
   - `field` (required): key
   - `max`: key
   - `caption`: text
+
+### `list`
+
+The records of a collection matching `where` as rows (the open boards), each opening its screen (`opens`, a view with `of`), with an optional `badge` per row (a value that reads the row as `$record`: its cards done) and `badge_of` (what the badge is out of, shown as 3/5), and an optional `more` row opening another view of the app. Takes the whole row on Today.
+
+  - `label` (required): text
+  - `collection` (required): key
+  - `where`: map of key → text | number | true | false | object
+  - `opens` (required): key
+  - `badge`: value (number, $reference or computed)
+  - `badge_of`: value (number, $reference or computed)
+  - `more`: object
+    - `label` (required): text
+    - `view` (required): key
+    - `badge`: value (number, $reference or computed)
 
 ### `stats`
 
@@ -796,4 +817,90 @@ rules:
     when: { status: watched }
     set: { watched_on: $today_date }
     only_if_empty: true
+```
+
+### kanban
+
+```yaml
+schema_version: 1
+id: kanban
+name: Kanban
+version: 1.0.0
+icon: check
+description: Boards with To do, In progress and Done. Link a board to a task to open it from there.
+author: Pomodoso
+license: MIT
+
+collections:
+  - key: board
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text, label: Name }
+      - { key: task, type: task, label: Linked task, optional: true }
+      - { key: notes, type: longtext, optional: true }
+      - key: state
+        type: select
+        options: [open, closed]
+        default: open
+  - key: card
+    kind: item
+    title_field: title
+    fields:
+      - { key: title, type: text }
+      - { key: board, type: ref, collection: board }
+      - key: status
+        type: select
+        user_editable: true
+        options:
+          - { value: todo, label: To do, color: "#B9B4A7" }
+          - { value: doing, label: In progress, color: "#E0B04A" }
+          - { value: done, label: Done, color: "#2D8A7A" }
+        default: todo
+      - { key: notes, type: longtext, optional: true }
+
+views:
+  - id: main
+    label: Boards
+    blocks:
+      - { type: add-button, label: New board, adds: board }
+      - type: list
+        collection: board
+        filter: { state: open }
+        primary: title
+        secondary: [task]
+        sort: { field: created_at, order: desc }
+        opens: kanban
+        swipe: { label: Close, set: { state: closed } }
+  - id: closed
+    label: Closed
+    blocks:
+      - type: list
+        collection: board
+        filter: { state: closed }
+        primary: title
+        opens: kanban
+        swipe: { label: Reopen, set: { state: open } }
+  - id: kanban
+    of: board
+    layout: wide
+    blocks:
+      - { type: add-button, label: Add a task, adds: card, prefill: { board: $record } }
+      - type: board
+        collection: card
+        filter: { board: $record }
+        group_by: status
+        card: { title: title }
+
+today:
+  default_on: true
+  widget:
+    type: list
+    label: Kanban
+    collection: board
+    where: { state: open }
+    opens: kanban
+    # Per board: its cards done, out of all of them (in progress counts as not done).
+    badge: { count: card, where: { board: $record, status: done } }
+    badge_of: { count: card, where: { board: $record } }
 ```

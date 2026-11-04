@@ -21,6 +21,7 @@ import {
   PLUGIN_SCHEMA_VERSION,
   PROGRESS_STYLES,
   RANGE_PATTERN,
+  VIEW_LAYOUTS,
   SETTING_TYPES,
   STAT_FORMATS,
   TODAY_WIDGET_TYPES,
@@ -70,13 +71,14 @@ const whereCondition = z.union([
   z
     .strictObject({
       in: z.array(literal).min(1).optional(),
+      not_in: z.array(literal).min(1).optional(),
       exists: z.boolean().optional(),
       lt: comparable.optional(),
       lte: comparable.optional(),
       gt: comparable.optional(),
       gte: comparable.optional(),
     })
-    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, exists, lt, lte, gt, gte' })
+    .refine((o) => Object.keys(o).length > 0, { message: 'needs at least one of in, not_in, exists, lt, lte, gt, gte' })
     .meta({ minProperties: 1 }),
 ]);
 
@@ -245,8 +247,12 @@ export const fieldSchema = z
     min: z.number().optional(),
     max: z.number().optional(),
     unit: z.string().max(20).optional(),
+    /** A ref field: the collection its records point to. */
+    collection: key.optional(),
   })
   .superRefine((f, ctx) => {
+    if (f.type === 'ref' && !f.collection) ctx.addIssue({ code: 'custom', path: ['collection'], message: 'a ref field needs the collection it points to' });
+    if (f.type !== 'ref' && f.collection) ctx.addIssue({ code: 'custom', path: ['collection'], message: 'only ref fields take a collection' });
     if (OPTION_TYPES.has(f.type) && !f.options) ctx.addIssue({ code: 'custom', path: ['options'], message: `a ${f.type} field needs options` });
     if (!OPTION_TYPES.has(f.type) && f.options) ctx.addIssue({ code: 'custom', path: ['options'], message: 'only select and multiselect fields take options' });
     if (f.user_editable && f.type !== 'select') ctx.addIssue({ code: 'custom', path: ['user_editable'], message: 'only select fields can be user_editable' });
@@ -260,6 +266,7 @@ export const fieldSchema = z
       // zod only rejects a true user_editable; false is fine on any field.
       whenType(['select'], {}, { properties: { user_editable: { const: false } } }),
       whenType([...RANGED_TYPES], {}, { allOf: [forbids('min'), forbids('max')] }),
+      whenType(['ref'], { required: ['collection'] }, forbids('collection')),
     ],
   });
 export type PluginField = z.infer<typeof fieldSchema>;
@@ -318,6 +325,8 @@ const blockSchemas = {
     primary: key,
     secondary: z.array(key).max(3).optional(),
     open: key.optional(),
+    /** A view with `of` this collection: tapping a row opens that record's screen. */
+    opens: key.optional(),
     sort: sortField.optional(),
     swipe: z.strictObject({ label: label.optional(), set: valueMap }).optional(),
   }),
@@ -325,8 +334,11 @@ const blockSchemas = {
   board: z.strictObject({
     type: z.literal('board'),
     collection: key,
+    filter: whereSchema.optional(),
     group_by: key,
     card: z.strictObject({ title: key, subtitle: key.optional(), image: key.optional(), badge: key.optional() }),
+    /** A view with `of` this collection: tapping a card opens it instead of editing it. */
+    opens: key.optional(),
   }),
   'year-grid': z.strictObject({
     type: z.literal('year-grid'),
@@ -351,6 +363,10 @@ export const blockSchema = z.discriminatedUnion('type', blockSchemaList);
 export const viewSchema = z.strictObject({
   id: key,
   label: label.optional(),
+  /** The screen of one record of this collection, opened from a list or board (`opens`). */
+  of: key.optional(),
+  /** `wide`: full width (a browser tab in the extension), for boards. */
+  layout: z.enum(VIEW_LAYOUTS).optional(),
   blocks: z.array(blockSchema).min(1).max(30),
 });
 export type PluginView = z.infer<typeof viewSchema>;
@@ -397,6 +413,20 @@ const widgetSchemas = {
     /** A number field of the same record it's measured against (a bar). */
     max: key.optional(),
     caption: label.optional(),
+  }),
+  list: z.strictObject({
+    type: z.literal('list'),
+    label,
+    collection: key,
+    where: whereSchema.optional(),
+    /** A view with `of` this collection: tapping a row opens that record's screen. */
+    opens: key,
+    /** A value per row, read with `$record` as that row (its cards done). */
+    badge: valueRefSchema.optional(),
+    /** With badge: what it's out of, shown as "badge/badge_of" (done of all its cards). */
+    badge_of: valueRefSchema.optional(),
+    /** One more row, after the records, opening a view of the app (the cards with no issue). */
+    more: z.strictObject({ label, view: key, badge: valueRefSchema.optional() }).optional(),
   }),
   stats: z.strictObject({
     type: z.literal('stats'),
