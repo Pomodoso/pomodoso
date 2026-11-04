@@ -39,8 +39,11 @@ export const routes: RouteRecord[] = [
       { path: 'pricing', element: <Pricing /> },
       { path: 'support', element: <Support /> },
       // The public app directory. The app page and the build guide bring the
-      // plugin validator and components (zod, yaml), so they load on their own.
+      // plugin validator and components (zod, yaml), so they load on their own;
+      // so do the docs, which render every block live.
       { path: 'apps', element: <Directory /> },
+      { path: 'apps/docs', lazy: () => import('./pages/apps/DocsPage.tsx').then((m) => ({ Component: m.default })) },
+      { path: 'apps/validate', lazy: () => import('./pages/apps/ValidatePage.tsx').then((m) => ({ Component: m.default })) },
       { path: 'apps/build', lazy: () => import('./pages/apps/BuildPage.tsx').then((m) => ({ Component: m.default })) },
       { path: 'apps/:slug', lazy: () => import('./pages/apps/AppPage.tsx').then((m) => ({ Component: m.default })) },
       {

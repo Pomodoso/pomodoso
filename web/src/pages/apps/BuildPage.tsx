@@ -68,6 +68,9 @@ export default function BuildPage() {
           <p style={{ margin: 0, color: '#44423C', maxWidth: 680 }}>
             Most apps get written by an assistant. Point yours at these files and describe what you want to track. Each one covers the whole format, so the model doesn't have to guess.
           </p>
+          <p style={{ margin: 0, color: '#44423C', maxWidth: 680 }}>
+            Rather write it yourself, or want to understand what the assistant wrote? Read the <Link to="/apps/docs">app docs</Link>: every block, with a live example.
+          </p>
         </section>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
@@ -104,7 +107,7 @@ export default function BuildPage() {
         <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>Check it, then install or publish</h2>
           <p style={{ margin: 0, color: '#44423C' }}>
-            Paste the file into Pomodoso: in the extension, Apps → Add an app → From a file, or in your <Link to="/dashboard/apps">dashboard → Apps</Link> to publish it. Both run the same checks as the directory, say exactly what to fix, and show the app before anything is saved.
+            Paste the file into Pomodoso: in the extension, Apps → Add an app → From a file, or in your <Link to="/dashboard/apps">dashboard → Apps</Link> to publish it. Both run the same checks as the directory, say exactly what to fix, and show the app before anything is saved. To check and try a file without installing it, use the <Link to="/apps/validate">validator</Link>.
           </p>
           <p style={{ margin: 0, color: '#44423C' }}>
             Or from a terminal, with the same validator. It's what agents run to fix their own mistakes:
