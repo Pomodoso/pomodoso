@@ -1,7 +1,7 @@
 schema_version: 1
 id: quit-smoking
 name: Quit smoking
-version: 1.0.0
+version: 1.1.0
 icon: no-smoking
 description: A daily limit that drops every week. Log each one and watch the trend go down.
 author: Pomodoso
@@ -34,7 +34,7 @@ computed:
 views:
   - id: main
     blocks:
-      - { type: counter-button, label: Smoked one, adds: cigarette }
+      - { type: counter-button, label: Smoked one, adds: cigarette, subtract: true }
       - { type: progress, value: $today, max: $limit, invert: true }
       - type: stat-row
         items:
@@ -49,11 +49,13 @@ views:
   - id: log
     label: Log with details
     blocks:
+      - type: text
+        text: Forgot one? Set "When" to the time you smoked it.
       - { type: form, collection: cigarette }
 
 today:
   default_on: true
-  widget: { type: mini-counter, label: Cigarettes, value: $today, max: $limit, adds: cigarette }
+  widget: { type: mini-counter, label: Cigarettes, value: $today, max: $limit, adds: cigarette, subtract: true }
 
 hooks:
   - on: pomodoro_end

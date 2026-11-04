@@ -19,6 +19,7 @@ import {
 } from '@pomodoso/types/plugins';
 
 import { BreakdownBars, Legend, SeriesChart, YearGrid } from './charts.js';
+import { DotGrid, DotRing, progressUnits } from './progress.js';
 import { RecordForm, chipStyle } from './RecordForm.js';
 import { buttonStyle, cardStyle, labelStyle } from './styles.js';
 
@@ -27,9 +28,11 @@ import { buttonStyle, cardStyle, labelStyle } from './styles.js';
  * stamps timestamps. A returned promise settles when the write is stored.
  */
 export interface PluginActions {
-  add(collection: string, data: Record<string, unknown>): void | Promise<unknown>;
+  /** `occurredAt` (events): when it happened, if not now. */
+  add(collection: string, data: Record<string, unknown>, opts?: { occurredAt?: string | undefined }): void | Promise<unknown>;
   setDay(collection: string, day: string, data: Record<string, unknown>): void | Promise<unknown>;
-  update(record: PluginRecord, data: Record<string, unknown>): void | Promise<unknown>;
+  /** `occurredAt` (events): moves the record to another moment. */
+  update(record: PluginRecord, data: Record<string, unknown>, opts?: { occurredAt?: string | undefined }): void | Promise<unknown>;
   remove(record: PluginRecord): void | Promise<unknown>;
   openUrl(url: string): void;
 }
@@ -149,15 +152,32 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const c = ctx.collection(b.adds);
       if (!c) return null;
       const initial = initialRecordData(c, resolveMap(ctx, b.set));
-      return (
+      const add = (
         <button
           type="button"
           disabled={ctx.readOnly}
           onClick={() => (b.details === 'form' ? ctx.edit({ mode: 'new', collection: c, initial, title: ctx.text(b.label) }) : ctx.actions.add(c.key, initial))}
-          style={{ ...buttonStyle('primary'), padding: '12px', fontSize: 14, opacity: ctx.readOnly ? 0.5 : 1 }}
+          style={{ ...buttonStyle('primary'), padding: '12px', fontSize: 14, opacity: ctx.readOnly ? 0.5 : 1, flex: 1 }}
         >
           + {ctx.text(b.label)}
         </button>
+      );
+      if (!b.subtract) return add;
+      const last = latestToday(ctx.evaluator.records(c.key), ctx.today, ctx.timeZone);
+      return (
+        <div style={{ display: 'flex', gap: 6 }}>
+          {add}
+          <button
+            type="button"
+            aria-label={`Remove the last one from today`}
+            title="Remove the last one from today"
+            disabled={ctx.readOnly || !last}
+            onClick={() => last && ctx.actions.remove(last)}
+            style={{ ...buttonStyle('secondary'), padding: '12px 16px', fontSize: 14, opacity: ctx.readOnly || !last ? 0.5 : 1 }}
+          >
+            −
+          </button>
+        </div>
       );
     }
 
@@ -206,17 +226,44 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       const over = max !== undefined && v > max;
       const reached = max !== undefined && v >= max;
       const color = b.invert ? (over ? 'var(--color-accent)' : 'var(--color-success)') : reached ? 'var(--color-success)' : 'var(--color-accent)';
+      const style = progressStyleOf(ctx.resolve(b.style));
+      // A percent reads alone ("43.3%"); a count reads against its max ("158 / 365").
+      const alone = b.format === 'share' || b.format === 'percent';
+      const label = b.label !== undefined ? ctx.text(b.label) : b.invert ? 'Today' : 'Progress';
+      // `share` is the value as a share of max: 158 of 365 reads 43.3%.
+      const headline = b.format === 'share' && max ? ctx.stat(v / max, 'share') : ctx.stat(v, b.format);
+      const numbers = (
+        <span style={{ fontSize: 13, fontWeight: 700, color: over && b.invert ? 'var(--color-accent)' : 'var(--color-text)' }}>
+          {headline}
+          {alone ? null : <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> / {max === undefined ? '—' : ctx.stat(max, b.format)}</span>}
+        </span>
+      );
+      if (style === 'ring') {
+        return (
+          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <DotRing fraction={pct / 100} units={progressUnits(max, 120, 60)} size={150}>
+              <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text)' }}>{alone ? headline : `${Math.round(pct)}%`}</span>
+              <span style={{ ...labelStyle, fontSize: 10 }}>{label}</span>
+            </DotRing>
+            {alone ? null : numbers}
+          </div>
+        );
+      }
       return (
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={labelStyle}>{b.label !== undefined ? ctx.text(b.label) : b.invert ? 'Today' : 'Progress'}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: over && b.invert ? 'var(--color-accent)' : 'var(--color-text)' }}>
-              {ctx.stat(v)} <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>/ {max === undefined ? '—' : ctx.stat(max)}</span>
-            </span>
+            <span style={labelStyle}>{label}</span>
+            {numbers}
           </div>
-          <div style={{ height: 6, background: 'var(--color-border)', borderRadius: 99, marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: color, transition: 'width 0.2s' }} />
-          </div>
+          {style === 'dots' ? (
+            <div style={{ marginTop: 8 }}>
+              <DotGrid fraction={pct / 100} units={progressUnits(max, 400, 100)} />
+            </div>
+          ) : (
+            <div style={{ height: 6, background: 'var(--color-border)', borderRadius: 99, marginTop: 6, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: color, transition: 'width 0.2s' }} />
+            </div>
+          )}
         </div>
       );
     }
@@ -342,6 +389,21 @@ function num(v: PluginValue): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
+/** A progress style from the file or a setting; anything else draws a bar. */
+export function progressStyleOf(v: unknown): 'bar' | 'ring' | 'dots' {
+  return v === 'ring' || v === 'dots' ? v : 'bar';
+}
+
+/** The most recent event of `today` (local), for a − button. */
+export function latestToday(records: readonly PluginRecord[], today: string, timeZone: string): PluginRecord | undefined {
+  let best: PluginRecord | undefined;
+  for (const r of records) {
+    if (!r.occurred_at || localDayOf(r.occurred_at, timeZone) !== today) continue;
+    if (!best || r.occurred_at > best.occurred_at!) best = r;
+  }
+  return best;
+}
+
 // ─── Blocks with state ───────────────────────────────────────────────────────
 
 function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockCtx }) {
@@ -361,10 +423,10 @@ function InlineForm({ collectionKey, ctx }: { collectionKey: string; ctx: BlockC
         initial={initialRecordData(c, todays?.data)}
         submitLabel={saved ? 'Saved ✓' : 'Save'}
         disabled={ctx.readOnly}
-        onSubmit={async (data) => {
+        onSubmit={async (data, occurredAt) => {
           // Reset only after the write is stored, so the form never restarts from the old values.
           if (c.kind === 'daily') await ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
-          else await ctx.actions.add(c.key, data);
+          else await ctx.actions.add(c.key, data, occurredAt ? { occurredAt } : undefined);
           setRound((n) => n + 1);
           setSaved(true);
           setTimeout(() => setSaved(false), 1500);
@@ -555,6 +617,7 @@ function EditSheet({ editing, ctx, onClose }: { editing: Editing; ctx: BlockCtx;
           collection={c}
           settings={ctx.settings}
           initial={initial}
+          occurredAt={editing.mode === 'edit' ? editing.record.occurred_at ?? undefined : undefined}
           submitLabel={editing.mode === 'new' ? 'Add' : 'Save'}
           disabled={ctx.readOnly}
           onCancel={onClose}
@@ -566,11 +629,12 @@ function EditSheet({ editing, ctx, onClose }: { editing: Editing; ctx: BlockCtx;
                 }
               : undefined
           }
-          onSubmit={(data) => {
-            if (editing.mode === 'edit') ctx.actions.update(editing.record, data);
+          onSubmit={(data, occurredAt) => {
+            const opts = occurredAt ? { occurredAt } : undefined;
+            if (editing.mode === 'edit') ctx.actions.update(editing.record, data, opts);
             else if (editing.mode === 'day') ctx.actions.setDay(c.key, editing.day, fullDay(c, data));
             else if (c.kind === 'daily') ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
-            else ctx.actions.add(c.key, data);
+            else ctx.actions.add(c.key, data, opts);
             onClose();
           }}
         />

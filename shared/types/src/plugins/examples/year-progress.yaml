@@ -1,0 +1,60 @@
+schema_version: 1
+id: year-progress
+name: Year progress
+version: 1.0.0
+icon: calendar
+description: How much of the year has gone by. Pick a bar, a ring or one dot per day.
+author: Pomodoso
+license: MIT
+
+settings:
+  - key: style
+    type: select
+    label: Show it as
+    options:
+      - { value: bar, label: A bar }
+      - { value: ring, label: A ring }
+      - { value: dots, label: One dot per day }
+    default: bar
+
+# Nothing to store: everything comes from the date.
+collections: []
+
+computed:
+  year_done: { calendar: year }
+  year_passed: { calendar: year, show: passed }
+  year_left: { calendar: year, show: left }
+  year_total: { calendar: year, show: total }
+  month_passed: { calendar: month, show: passed }
+  month_total: { calendar: month, show: total }
+  month_left: { calendar: month, show: left }
+  week_passed: { calendar: week, show: passed }
+  week_total: { calendar: week, show: total }
+
+views:
+  - id: main
+    blocks:
+      - { type: progress, label: This year, value: $year_passed, max: $year_total, format: share, style: $style }
+      - type: stat-row
+        items:
+          - { label: Days passed, value: $year_passed }
+          - { label: Days left, value: $year_left }
+      - { type: progress, label: This month, value: $month_passed, max: $month_total, format: share }
+      - { type: progress, label: This week, value: $week_passed, max: $week_total, format: share }
+      - type: text
+        text: "{$year_left} days left this year, {$month_left} this month."
+
+today:
+  default_on: true
+  widget:
+    type: progress
+    label: Year progress
+    value: $year_passed
+    max: $year_total
+    format: share
+    caption: "{$year_left} days left"
+    style: $style
+
+hooks:
+  - on: weekly_report
+    line: "The year is {$year_done} done, {$year_left} days to go"

@@ -24,7 +24,7 @@ export const TOP_LEVEL_DOCS: Record<string, string> = {
   author: 'Your name.',
   license: 'Default MIT.',
   settings: 'Values the user sets on install (a starting limit, a goal). Readable as `$key`.',
-  collections: 'What the plugin stores. Each has a `key`, a `kind` and `fields`.',
+  collections: 'What the plugin stores. Each has a `key`, a `kind` and `fields`. Empty (`[]`) for an app that keeps no data, like a year progress bar.',
   computed: 'Named values calculated from the records, readable as `$name`.',
   views: 'The screens of the plugin, each a list of blocks.',
   today: 'Optional widget for the Today tab; the user switches it on. `default_on` suggests a starting state.',

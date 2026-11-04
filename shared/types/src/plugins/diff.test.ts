@@ -14,7 +14,8 @@ type Mutable = Record<string, any>; // eslint-disable-line @typescript-eslint/no
 const v1 = (() => {
   const r = parsePluginFile(readFileSync(new URL('./examples/bookshelf.yaml', import.meta.url), 'utf8'));
   if (!r.ok) assert.fail(JSON.stringify(r.issues));
-  return r.manifest;
+  // Pinned to 1.0.0, so the tests' "next" versions stay valid as the example moves on.
+  return { ...r.manifest, version: '1.0.0' };
 })();
 
 /** A valid next version of bookshelf: clone v1, change it, validate it. */
@@ -27,6 +28,14 @@ function next(change: (m: Mutable) => void): PluginManifest {
 }
 
 const book = (m: Mutable) => m.collections[0];
+/** The main view's board block, wherever it sits. */
+const board = (m: Mutable) => m.views[0].blocks.find((b: Mutable) => b.type === 'board');
+/** Removes the cover field and every place that names it. */
+const dropCover = (m: Mutable) => {
+  book(m).fields = book(m).fields.filter((f: Mutable) => f.key !== 'cover');
+  delete board(m).card.image;
+  for (const b of m.views[0].blocks) if (b.prefill) delete b.prefill.cover;
+};
 const fieldOf = (m: Mutable, key: string) => book(m).fields.find((f: Mutable) => f.key === key);
 /** Replays a migration over records written under bookshelf v1. */
 const replay = (records: PluginRecord[], migrate: Parameters<typeof applyMigration>[1]) => applyMigration(records, migrate, v1);
@@ -76,7 +85,7 @@ test('the id can not change', () => {
 
 const renameAuthor = (m: Mutable) => {
   fieldOf(m, 'author').key = 'authors';
-  m.views[0].blocks[2].card.subtitle = 'authors';
+  board(m).card.subtitle = 'authors';
 };
 
 test('renaming a field without a migration needs a major version and a migrate block', () => {
@@ -123,8 +132,7 @@ test('a removed option is covered by mapping it to a remaining one', () => {
 test('a removed field is covered by drop_field', () => {
   const r = checkUpdate(v1, next((m) => {
     m.version = '2.0.0';
-    book(m).fields = book(m).fields.filter((f: Mutable) => f.key !== 'cover');
-    delete m.views[0].blocks[2].card.image;
+    dropCover(m);
     m.migrate = { from: '1.x', steps: [{ drop_field: { collection: 'book', field: 'cover' } }] };
   }));
   assert.deepEqual(r.issues, []);
@@ -239,8 +247,7 @@ test('map_values maps every element of a multiselect and drops duplicates', () =
 test('a rename onto a field that already exists is rejected', () => {
   const r = checkUpdate(v1, next((m) => {
     m.version = '2.0.0';
-    book(m).fields = book(m).fields.filter((f: Mutable) => f.key !== 'cover');
-    m.views[0].blocks[2].card.image = undefined;
+    dropCover(m);
     m.migrate = { from: '1.x', steps: [{ rename_field: { collection: 'book', from: 'cover', to: 'title' } }] };
   }));
   assert.match(messages(r.issues), /"title" already exists in "book"/);
@@ -296,13 +303,14 @@ test('a daily collection cannot be renamed: its record ids derive from the name'
   const pixels = (() => {
     const r = parsePluginFile(readFileSync(new URL('./examples/year-in-pixels.yaml', import.meta.url), 'utf8'));
     if (!r.ok) assert.fail(JSON.stringify(r.issues));
-    return r.manifest;
+    return { ...r.manifest, version: '1.0.0' };
   })();
   const m = structuredClone(pixels) as Mutable;
+  delete m.migrate;
   m.version = '2.0.0';
   m.collections[0].key = 'mood';
   for (const b of m.views[0].blocks) if (b.collection) b.collection = 'mood';
-  m.computed.logged_this_year.count = 'mood';
+  for (const c of Object.values(m.computed) as Mutable[]) for (const op of ['count', 'streak']) if (c[op] === 'day_state') c[op] = 'mood';
   m.today.widget.collection = 'mood';
   m.hooks[0].pick.collection = 'mood';
   m.migrate = { from: '1.x', steps: [{ rename_collection: { from: 'day_state', to: 'mood' } }] };

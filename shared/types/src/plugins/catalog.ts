@@ -64,20 +64,34 @@ export const BLOCK_TYPES = [
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
-export const TODAY_WIDGET_TYPES = ['mini-counter', 'select-today', 'count-badge', 'stat'] as const;
+export const TODAY_WIDGET_TYPES = ['mini-counter', 'select-today', 'count-badge', 'stat', 'stats', 'progress'] as const;
 export type TodayWidgetType = (typeof TODAY_WIDGET_TYPES)[number];
 
-export const COMPUTED_OPS = ['count', 'sum', 'avg', 'min', 'max', 'last', 'first', 'streak', 'taper', 'delta'] as const;
+export const COMPUTED_OPS = ['count', 'sum', 'avg', 'min', 'max', 'last', 'first', 'streak', 'taper', 'delta', 'calendar'] as const;
 export type ComputedOp = (typeof COMPUTED_OPS)[number];
 
 export const HOOK_EVENTS = ['pomodoro_end', 'day_end', 'daily_report', 'weekly_report'] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-export const STAT_FORMATS = ['number', 'time_ago', 'days', 'percent', 'duration', 'date'] as const;
+export const STAT_FORMATS = ['number', 'time_ago', 'days', 'percent', 'share', 'duration', 'date'] as const;
 export type StatFormat = (typeof STAT_FORMATS)[number];
 
 export const GROUP_PERIODS = ['day', 'week', 'month'] as const;
 export type GroupPeriod = (typeof GROUP_PERIODS)[number];
+
+/** Calendar periods `calendar` measures, and what it reports about one. */
+export const CALENDAR_PERIODS = ['week', 'month', 'year'] as const;
+export type CalendarPeriod = (typeof CALENDAR_PERIODS)[number];
+export const CALENDAR_SHOWS = ['progress', 'passed', 'left', 'total'] as const;
+export type CalendarShow = (typeof CALENDAR_SHOWS)[number];
+
+/**
+ * How a progress block or widget draws: a bar, a ring of dots, or a grid of
+ * dots (one per unit when `max` is a whole number up to 400). A select
+ * setting may pick it.
+ */
+export const PROGRESS_STYLES = ['bar', 'ring', 'dots'] as const;
+export type ProgressStyle = (typeof PROGRESS_STYLES)[number];
 
 /** Named ranges. A rolling window is written `14d` or `12mo` (RANGE_PATTERN). */
 export const NAMED_RANGES = [
@@ -96,6 +110,7 @@ export const RANGE_PATTERN = /^[1-9][0-9]{0,2}(d|mo)$/;
 /**
  * Values a plugin can read without declaring them. `$tab.*` comes from the
  * active tab's DOM (extension only); it never triggers a network call.
+ * `$tab.image` is the page's og:image (https only).
  */
-export const BUILTIN_REFS = ['today_date', 'now', 'tab.url', 'tab.title'] as const;
+export const BUILTIN_REFS = ['today_date', 'now', 'tab.url', 'tab.title', 'tab.image'] as const;
 export type BuiltinRef = (typeof BUILTIN_REFS)[number];

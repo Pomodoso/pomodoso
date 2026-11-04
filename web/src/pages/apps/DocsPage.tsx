@@ -197,7 +197,7 @@ export default function DocsPage() {
           <p style={muted}>A collection is a kind of record your app keeps. Pick its <code>kind</code> by how the records behave:</p>
           <Table head={['Kind', 'Use it for']} rows={COLLECTION_KINDS.map((k) => [k, COLLECTION_DOCS[k]])} />
           <p style={muted}>
-            Each collection has <code>fields</code>. Every field needs a <code>key</code> and a <code>type</code>; <code>label</code> is what the form shows (the key, humanized, by default). Fields are required unless you add <code>optional: true</code> or give them a <code>default</code>. Every record also has built-in fields you can sort and filter by without declaring them: <code>created_at</code>, <code>updated_at</code>, plus <code>occurred_at</code> on events and <code>day</code> on dailies. On an item, <code>title_field</code> says which field names the record.
+            Each collection has <code>fields</code>. Every field needs a <code>key</code> and a <code>type</code>; <code>label</code> is what the form shows (the key, humanized, by default). Fields are required unless you add <code>optional: true</code> or give them a <code>default</code>. Every record also has built-in fields you can sort and filter by without declaring them: <code>created_at</code>, <code>updated_at</code>, plus <code>occurred_at</code> on events and <code>day</code> on dailies. On an item, <code>title_field</code> says which field names the record. Forms for events also ask <b>When</b> (now by default), so one you forgot can be logged at the time it happened.
           </p>
           <Table head={['Field type', 'What it holds']} rows={FIELD_TYPES.map((t) => [t, FIELD_DOCS[t]])} />
           <p style={muted}>
@@ -210,7 +210,7 @@ export default function DocsPage() {
             <code>settings</code> are values the user fills in on install, like a starting limit or a goal. Each has a <code>key</code>, a <code>type</code> (number, text, boolean or select), a <code>label</code> and usually a <code>default</code>.
           </p>
           <p style={muted}>
-            Wherever the file expects a value, write a number or a <code>$reference</code>: a setting, a computed value, or a built-in ({BUILTIN_REFS.map((r, i) => <span key={r}>{i > 0 ? ', ' : ''}<code>${r}</code></span>)}). <code>$tab.url</code> and <code>$tab.title</code> are the page open in the browser, and only work in an add-button's <code>prefill</code>. Inside text, labels and report lines, wrap it in braces: <code>{'"{$today} of {$goal} glasses"'}</code>.
+            Wherever the file expects a value, write a number or a <code>$reference</code>: a setting, a computed value, or a built-in ({BUILTIN_REFS.map((r, i) => <span key={r}>{i > 0 ? ', ' : ''}<code>${r}</code></span>)}). <code>$tab.url</code>, <code>$tab.title</code> and <code>$tab.image</code> (the page's preview image, the one shown when you share a link) are the page open in the browser, and only work in an add-button's <code>prefill</code>: one tap saves the book, movie or article you're looking at. Inside text, labels and report lines, wrap it in braces: <code>{'"{$today} of {$goal} glasses"'}</code>.
           </p>
         </Section>
 

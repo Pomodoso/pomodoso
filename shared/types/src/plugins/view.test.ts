@@ -46,7 +46,7 @@ test('a user_editable select reads the user options from settings, else the file
   const mine = [{ value: 'calm', label: 'Calm', color: '#000000' }];
   assert.deepEqual(fieldOptions('day_state', field, { [optionsSettingKey('day_state', 'state')]: mine }), mine);
   // A malformed override falls back to the file's options instead of showing nothing.
-  assert.equal(fieldOptions('day_state', field, { [optionsSettingKey('day_state', 'state')]: 'oops' }).length, 4);
+  assert.equal(fieldOptions('day_state', field, { [optionsSettingKey('day_state', 'state')]: 'oops' }).length, field.options!.length);
 });
 
 test('options of a plain select ignore settings and get humanized labels', () => {

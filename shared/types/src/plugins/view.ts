@@ -136,7 +136,8 @@ export function applyRules(
 export function templateFormat(manifest: PluginManifest, now: string): (v: PluginValue, name: string) => string {
   return (v, name) => {
     const expr = manifest.computed?.[name];
-    return formatStat(v, expr && 'delta' in expr ? 'percent' : undefined, now);
+    const share = expr && 'calendar' in expr && (expr.show ?? 'progress') === 'progress';
+    return formatStat(v, expr && 'delta' in expr ? 'percent' : share ? 'share' : undefined, now);
   };
 }
 
@@ -181,6 +182,8 @@ export function formatStat(v: PluginValue, format: StatFormat = 'number', now: s
       const pct = Math.round(v * 100);
       return `${pct > 0 ? '+' : ''}${pct}%`;
     }
+    case 'share':
+      return typeof v === 'number' ? `${Math.round(v * 1000) / 10}%` : v;
     case 'days':
       return typeof v === 'number' ? plural(v, 'day', 'days') : v;
     case 'duration':

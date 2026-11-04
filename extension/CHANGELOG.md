@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.4.1 (In progress)
+
+### Today
+
+- **Fold Habits, Challenges and Apps** — Tap a section's title to fold it. Folded, it keeps a one-line summary: "2 / 5 done", "2 / 3 active · 1 needs you", "4 apps". Challenges start folded, Habits and Apps open; each remembers your choice.
+
+### Apps
+
+- **Log one you forgot** — Forms for things that happen at a moment (a cigarette, a glass of water) now ask **When**, so you can log it at the time it happened, on an earlier day too. Editing one lets you move it.
+- **Undo a tap** — Apps can show a **−** next to their counter, on Today and in the app, that removes the last one from today. Quit smoking has it.
+- **Save the page you're on** — Bookshelf and Movieshelf can add the book or movie on the current page, with its title, link and cover image.
+- **Several numbers on Today** — An app's Today card can show up to four numbers. Reading list shows what's left to read and what you read this week, month and year.
+- **Year in Pixels, twice** — Year in Pixels is now about happiness; productivity has its own app, Year in Pixels: Productivity. Updating moves your productivity states to the closest mood. Once you pick today's state, its Today card shows your year in pixels (tap **Change** to pick again).
+- **New app: Year progress** — How much of the year has gone by, on Today and in its own screen with the month and week too. Choose in its settings how it looks: a bar, a ring, or one dot per day.
+- **Installed and Browse apps, side by side** — The Apps tab has two tabs: your installed apps, and Browse apps to search the directory and install more (already installed ones say so and open directly). Installing from a file is a link under Browse.
+- **Updates in one place** — When apps have new versions, Apps shows "N updates available": review each one with what it changes, update them one by one or all at once. Tapping an app's **Update** badge opens its settings with the update at the top. With nothing pending, Apps → Updates says everything is up to date.
+- **Pomodoso's apps show on Today** — Every app we publish suggests its Today card, and an update that starts suggesting it turns it on once.
+
 ## v1.4.0
 
 ### Apps

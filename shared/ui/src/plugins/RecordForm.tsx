@@ -16,14 +16,23 @@ interface RecordFormProps {
   initial: Record<string, unknown>;
   submitLabel: string;
   disabled?: boolean | undefined;
-  /** May return a promise; Save stays disabled until it settles. */
-  onSubmit: (data: Record<string, unknown>) => void | Promise<unknown>;
+  /**
+   * Event collections only: when it happened (ISO). The form shows a "When"
+   * input starting here, so a forgotten one can be logged on its real day.
+   */
+  occurredAt?: string | undefined;
+  /** May return a promise; Save stays disabled until it settles. `occurredAt` is set for events. */
+  onSubmit: (data: Record<string, unknown>, occurredAt?: string) => void | Promise<unknown>;
   onCancel?: (() => void) | undefined;
   onDelete?: (() => void) | undefined;
 }
 
 /** One input per field of a collection. Submitting is blocked until required fields are filled. */
-export function RecordForm({ collection, settings, initial, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
+export function RecordForm({ collection, settings, initial, occurredAt, submitLabel, disabled, onSubmit, onCancel, onDelete }: RecordFormProps) {
+  const isEvent = collection.kind === 'event';
+  const [when, setWhen] = useState(() => toLocalInput(occurredAt ?? new Date().toISOString()));
+  // Untouched, a new event happens when it's saved, not when the form opened.
+  const [whenTouched, setWhenTouched] = useState(false);
   // A checkbox has no "unanswered" look: an unset boolean starts as its
   // default (a record may predate it), else as the false it shows.
   const [data, setData] = useState<Record<string, unknown>>(() => {
@@ -41,7 +50,8 @@ export function RecordForm({ collection, settings, initial, submitLabel, disable
       onSubmit={(e) => {
         e.preventDefault();
         if (missing.length > 0 || disabled || pending) return;
-        const result = onSubmit(clean(data));
+        const at = isEvent && whenTouched ? fromLocalInput(when) : undefined;
+        const result = onSubmit(clean(data), at);
         if (result instanceof Promise) {
           setPending(true);
           void result.finally(() => setPending(false));
@@ -49,6 +59,22 @@ export function RecordForm({ collection, settings, initial, submitLabel, disable
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
     >
+      {isEvent ? (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={labelStyle}>When</span>
+          <input
+            type="datetime-local"
+            value={when}
+            max={toLocalInput(new Date().toISOString())}
+            disabled={disabled}
+            onChange={(e) => {
+              setWhen(e.target.value);
+              setWhenTouched(true);
+            }}
+            style={inputStyle}
+          />
+        </label>
+      ) : null}
       {collection.fields.map((f) => (
         <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={labelStyle}>
@@ -75,6 +101,20 @@ export function RecordForm({ collection, settings, initial, submitLabel, disable
       </div>
     </form>
   );
+}
+
+/** An ISO timestamp as a datetime-local value, in the browser's time zone. */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** A datetime-local value back to ISO; empty or invalid means "now". */
+function fromLocalInput(v: string): string {
+  const d = v ? new Date(v) : new Date();
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
 /** Drops empty strings so an untouched optional field isn't stored as "". */
