@@ -77,3 +77,16 @@ test('the backend knows the same APPS_VERSION', () => {
   assert.match(rust, new RegExp(`pub const APPS_VERSION: &str = "${APPS_VERSION.replace('.', '\\.')}";`));
   assert.match(rust, new RegExp(`pub const BASE_APPS_VERSION: &str = "${BASE_APPS_VERSION.replace('.', '\\.')}";`));
 });
+
+test('every apps version says which Pomodoso opens it', async () => {
+  const { APPS_VERSION_CLIENTS, worksWith } = await import('./apps-version.ts');
+  for (const v of [...frozen, APPS_VERSION]) assert.ok(APPS_VERSION_CLIENTS[v]?.extension, `${v} needs its extension release`);
+  assert.equal(worksWith('0.1'), 'Pomodoso 1.4.0 or later');
+  assert.equal(worksWith('9.9'), 'a newer version of Pomodoso');
+  // Later formats need the same release or a later one.
+  const releases = Object.entries(APPS_VERSION_CLIENTS).sort(([a], [b]) => compareAppsVersions(a, b)).map(([, c]) => c.extension.split('.').map(Number));
+  for (let i = 1; i < releases.length; i++) {
+    const [a, b] = [releases[i - 1]!, releases[i]!];
+    assert.ok(b[0]! > a[0]! || (b[0] === a[0] && (b[1]! > a[1]! || (b[1] === a[1] && b[2]! >= a[2]!))), 'releases go up with the format');
+  }
+});

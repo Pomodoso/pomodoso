@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { checkUpdate, parsePluginFile, requiredAppsVersion, type PluginIssue, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
+import { checkUpdate, parsePluginFile, requiredAppsVersion, worksWith, type PluginIssue, type PluginManifest, type UpdateReport } from '@pomodoso/types/plugins';
 
 export interface ValidateResult {
   ok: boolean;
@@ -68,7 +68,7 @@ export function format(file: string, r: ValidateResult): string {
     return out.join('\n');
   }
   out.push(`✓ ${file} is a valid plugin file`);
-  if (r.apps_version) out.push(`  needs app format ${r.apps_version} or later (Pomodoso shows it only to clients that support it)`);
+  if (r.apps_version) out.push(`  works with ${worksWith(r.apps_version)} (app format ${r.apps_version}); older versions don't see it in the directory`);
   if (r.update) {
     out.push(`  update: ${r.update.kind}${r.update.migrates ? ' (runs its migrate block)' : ''}`);
     for (const c of r.update.changes) out.push(`  ${c.kind === 'breaking' ? '!' : '+'} ${c.path}: ${c.message}`);

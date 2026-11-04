@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { stringify } from 'yaml';
 import { ApiError, getDirectoryPage, reportPlugin, type DirectoryPage } from '@pomodoso/api';
-import { remixPrompt, validatePluginData, type PluginManifest } from '@pomodoso/types/plugins';
+import { remixPrompt, requiredAppsVersion, validatePluginData, worksWith, type PluginManifest } from '@pomodoso/types/plugins';
 import { api } from '../../lib/api.ts';
 import { useAuth } from '../../lib/AuthContext.tsx';
 import { Seo } from '../../seo.tsx';
@@ -113,6 +113,8 @@ export default function AppPage() {
 
   const checked = useMemo(() => (page ? validatePluginData(page.manifest) : null), [page]);
   const file = useMemo(() => (page ? stringify(inFormatOrder(page.manifest), { lineWidth: 0 }) : ''), [page]);
+  // What the directory recorded for the version shown, else what the file itself needs.
+  const needs = page?.versions.find((v) => v.version === page.latest_version)?.min_apps_version ?? (checked?.ok ? requiredAppsVersion(checked.manifest) : undefined);
 
   const download = () => {
     const url = URL.createObjectURL(new Blob([file], { type: 'text/yaml' }));
@@ -173,9 +175,12 @@ export default function AppPage() {
                   {page.author ? <> · by {page.author}</> : null}
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: 420 }}>
-                <InstallAppButton slug={page.slug} name={page.name} label="Install in Pomodoso" className="pomo-site-btn pomo-site-btn-primary" />
-                <button type="button" className="pomo-site-btn pomo-site-btn-secondary" onClick={download}>Download file</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 420 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <InstallAppButton slug={page.slug} name={page.name} label="Install in Pomodoso" className="pomo-site-btn pomo-site-btn-primary" />
+                  <button type="button" className="pomo-site-btn pomo-site-btn-secondary" onClick={download}>Download file</button>
+                </div>
+                {needs ? <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Works with {worksWith(needs)}</span> : null}
               </div>
             </section>
 
@@ -218,6 +223,7 @@ export default function AppPage() {
                         <span style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
                           <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{v.version}</span>
                           <span style={{ fontSize: 12, color: v.change_kind === 'breaking' ? '#A8432D' : 'var(--color-text-muted)' }}>{v.change_kind === 'initial' ? 'first version' : v.change_kind}</span>
+                          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>· {worksWith(v.min_apps_version)}</span>
                           <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 'auto' }}>{timeAgo(v.created_at)}</span>
                         </span>
                         {v.changelog ? <span style={{ fontSize: 14, color: '#44423C', whiteSpace: 'pre-wrap' }}>{v.changelog}</span> : null}
@@ -231,8 +237,8 @@ export default function AppPage() {
                 <dl style={{ margin: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 18, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 8px', fontSize: 14 }}>
                   <dt style={{ color: 'var(--color-text-muted)' }}>Version</dt><dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>{page.latest_version}</dd>
                   <dt style={{ color: 'var(--color-text-muted)' }}>Updated</dt><dd style={{ margin: 0 }}>{timeAgo(page.updated_at)}</dd>
-                  <dt style={{ color: 'var(--color-text-muted)' }}>Format</dt>
-                  <dd style={{ margin: 0, fontFamily: 'var(--font-mono)' }}>v1 {checked?.ok ? <span style={{ color: '#3F6E3F' }}>✓ valid</span> : <span style={{ color: '#A8432D' }}>newer</span>}</dd>
+                  <dt style={{ color: 'var(--color-text-muted)' }}>Works with</dt>
+                  <dd style={{ margin: 0 }}>{needs ? worksWith(needs) : <span style={{ color: '#A8432D' }}>a newer Pomodoso</span>}</dd>
                   <dt style={{ color: 'var(--color-text-muted)' }}>License</dt><dd style={{ margin: 0 }}>{checked?.ok ? checked.manifest.license ?? 'MIT' : '—'}</dd>
                   {page.author ? <><dt style={{ color: 'var(--color-text-muted)' }}>Author</dt><dd style={{ margin: 0 }}>{page.author}</dd></> : null}
                   <dt style={{ color: 'var(--color-text-muted)' }}>Today widget</dt><dd style={{ margin: 0 }}>{page.has_today ? 'Yes' : 'No'}</dd>

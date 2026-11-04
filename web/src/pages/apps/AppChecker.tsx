@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
-import { PLUGIN_FILE_MAX_BYTES, parsePluginFile, type PluginRecord } from '@pomodoso/types/plugins';
+import { PLUGIN_FILE_MAX_BYTES, parsePluginFile, requiredAppsVersion, worksWith, type PluginRecord } from '@pomodoso/types/plugins';
 import { LivePreview } from './LivePreview.tsx';
 
 // Paste, upload or drop an app file: it's checked as you type with the same
@@ -70,7 +70,7 @@ export function AppChecker({ initial = '', seed, placeholder, minRows = 14 }: {
         {result ? (
           <span style={{ fontSize: 14, fontWeight: 600, color: result.ok ? '#2D8A7A' : '#A8432D' }}>
             {result.ok
-              ? `Valid: ${result.manifest.name} · ${result.manifest.id} · v${result.manifest.version}`
+              ? `Valid: ${result.manifest.name} · ${result.manifest.id} · v${result.manifest.version} · works with ${worksWith(requiredAppsVersion(result.manifest))}`
               : `${result.issues.length} problem${result.issues.length === 1 ? '' : 's'} to fix`}
           </span>
         ) : (

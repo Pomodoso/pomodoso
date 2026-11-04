@@ -19,6 +19,23 @@ export const APPS_VERSION = '0.2';
 /** What a client that doesn't send its version understands. */
 export const BASE_APPS_VERSION = '0.1';
 
+/**
+ * The first release of each client that opens each APPS_VERSION, so people
+ * read "Pomodoso 1.4.1 or later" instead of a format number. Every
+ * APPS_VERSION needs its row (a test checks it); a client that doesn't
+ * open apps yet (mobile) has no column.
+ */
+export const APPS_VERSION_CLIENTS: Record<string, { extension: string }> = {
+  '0.1': { extension: '1.4.0' },
+  '0.2': { extension: '1.4.1' },
+};
+
+/** "Pomodoso 1.4.1 or later": what opens a file needing `appsVersion`. */
+export function worksWith(appsVersion: string): string {
+  const ext = APPS_VERSION_CLIENTS[appsVersion]?.extension;
+  return ext ? `Pomodoso ${ext} or later` : `a newer version of Pomodoso`;
+}
+
 /** Negative when a < b. `0.10` is after `0.9`. */
 export function compareAppsVersions(a: string, b: string): number {
   const x = a.split('.').map(Number);
