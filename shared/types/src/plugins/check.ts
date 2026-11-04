@@ -281,6 +281,12 @@ export function checkManifest(m: PluginManifest): PluginIssue[] {
         value([...path, 'delta', 1], b);
         return;
       }
+      case 'ratio': {
+        const [a, b] = (e as Extract<ComputedExpr, { ratio: unknown }>).ratio;
+        value([...path, 'ratio', 0], a);
+        value([...path, 'ratio', 1], b);
+        return;
+      }
       case 'calendar':
         return;
     }

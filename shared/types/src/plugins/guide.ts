@@ -195,6 +195,9 @@ export const GUIDE_COMPUTED_EXAMPLES: Record<ComputedOp, string> = {
   ramp_up: { taper: { from: 3, up_by: 1, every: week, max: $goal } }`,
   delta: `computed:
   vs_last_week: { delta: [$week, $last_week] }`,
+  ratio: `computed:
+  ml_today: { sum: glass, field: size, range: today }
+  ml_per_glass: { ratio: [$ml_today, $today] }`,
   calendar: `computed:
   year_done: { calendar: year }                  # 0.43 on day 158 of 365
   days_left: { calendar: year, show: left }`,

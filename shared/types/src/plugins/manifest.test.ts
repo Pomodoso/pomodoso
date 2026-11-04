@@ -62,8 +62,9 @@ for (const name of EXAMPLES) {
   });
 }
 
+// The main screens match; each one's stats are its own (pages are for books).
 test('movieshelf is bookshelf with other fields: same blocks, no special case', () => {
-  const types = (m: PluginManifest) => m.views.flatMap((v) => v.blocks.map((b) => b.type));
+  const types = (m: PluginManifest) => m.views[0]!.blocks.map((b) => b.type);
   assert.deepEqual(types(parseExample('movieshelf')), types(parseExample('bookshelf')));
 });
 

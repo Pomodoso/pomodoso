@@ -1,7 +1,7 @@
 schema_version: 1
 id: bookshelf
 name: Bookshelf
-version: 1.1.0
+version: 1.2.0
 icon: book
 description: Books you want to read, are reading and have read.
 author: Pomodoso
@@ -15,6 +15,8 @@ collections:
       - { key: title, type: text }
       - { key: author, type: text, optional: true }
       - { key: status, type: select, options: [want, reading, read], default: want }
+      - { key: pages, type: number, label: Pages, optional: true, min: 1 }
+      - { key: current_page, type: number, label: On page, optional: true, min: 0 }
       - { key: rating, type: rating, optional: true }
       - { key: tags, type: tags, optional: true }
       - { key: cover, type: image_url, optional: true }
@@ -23,7 +25,13 @@ collections:
 
 computed:
   reading: { count: book, where: { status: reading } }
+  read_this_month: { count: book, where: { status: read }, range: this_month, by: finished_on }
   read_this_year: { count: book, where: { status: read }, range: this_year, by: finished_on }
+  # Pages of the books finished this year, and per day so far this year.
+  pages_this_year: { sum: book, field: pages, where: { status: read }, range: this_year, by: finished_on }
+  days_this_year: { calendar: year, show: passed }
+  pages_per_day: { ratio: [$pages_this_year, $days_this_year] }
+  pages_in_progress: { sum: book, field: current_page, where: { status: reading } }
 
 views:
   - id: main
@@ -41,7 +49,17 @@ views:
   - id: stats
     label: Stats
     blocks:
-      - { type: stat, label: Read this year, value: $read_this_year }
+      - type: stat-row
+        items:
+          - { label: Read this month, value: $read_this_month }
+          - { label: Read this year, value: $read_this_year }
+      - type: stat-row
+        items:
+          - { label: Pages read this year, value: $pages_this_year }
+          - { label: Pages a day, value: $pages_per_day }
+          - { label: In current books, value: $pages_in_progress }
+      - type: text
+        text: Add each book's pages to count them. Open a book you're reading to note the page you're on.
       - type: chart
         label: Books per month
         kind: bar
@@ -54,7 +72,8 @@ today:
     label: Bookshelf
     items:
       - { label: Reading, value: $reading }
-      - { label: Read this year, value: $read_this_year }
+      - { label: This month, value: $read_this_month }
+      - { label: This year, value: $read_this_year }
 
 rules:
   - collection: book

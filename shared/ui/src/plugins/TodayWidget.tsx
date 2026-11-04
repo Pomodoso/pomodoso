@@ -161,11 +161,11 @@ export function TodayWidget(props: TodayWidgetProps) {
     case 'stats': {
       const fmt = templateFormat(manifest, now);
       return (
-        // More than two numbers don't fit half a column: the card takes the row.
-        <Card {...props} label={label} wide={w.items.length > 2}>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${w.items.length}, minmax(0, 1fr))`, gap: 6 }}>
+        // Two per row, each number centered over its label: four fit half a row.
+        <Card {...props} label={label}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(2, w.items.length)}, minmax(0, 1fr))`, gap: '6px 4px' }}>
             {w.items.map((it, i) => (
-              <div key={i} style={{ minWidth: 0 }}>
+              <div key={i} style={{ minWidth: 0, textAlign: 'center' }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>{formatStat(evaluator.value(it.value), it.format ?? 'number', now)}</div>
                 <div style={{ fontSize: 10, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{evaluator.template(it.label, fmt)}</div>
               </div>

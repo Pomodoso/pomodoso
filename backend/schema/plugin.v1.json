@@ -3176,9 +3176,54 @@
             "calendar"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ratio": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  ]
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "ratio"
+          ],
+          "additionalProperties": false
         }
       ],
-      "description": "Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta or calendar."
+      "description": "Exactly one operator: count, sum, avg, min, max, last, first, streak, taper, delta, calendar or ratio."
     }
   }
 }

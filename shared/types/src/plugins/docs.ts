@@ -46,6 +46,7 @@ export const COMPUTED_DOCS: Record<ComputedOp, string> = {
   streak: 'Consecutive days, ending today, with a count within `at_least` / `at_most`. Optional `where`.',
   taper: 'A value that changes by a step every period since install: `from`, `down_by` or `up_by`, `every` (day | week | month), optional `min` / `max`. For limits that tighten over time.',
   delta: 'Relative change between two values, `[a, b]` → (a − b) / b. Reads as a percent in templates.',
+  ratio: 'One value divided by another, `[a, b]` → a / b: pages per day, cost per item. Empty when b is 0.',
   calendar: 'How far the current `week`, `month` or `year` has gone, from the date alone (no collection). `show`: `progress` (default, a fraction: 0.43 on day 158 of 365), `passed` (days so far, today included), `left` (days after today) or `total` (days in the period).',
 };
 
@@ -72,7 +73,7 @@ export const WIDGET_DOCS: Record<TodayWidgetType, string> = {
   'count-badge': 'A single number.',
   stat: 'A single value with a `format`.',
   progress: 'A bar of `value` against `max` (default 1), with an optional `format`, a `caption` line under it (`{$name}` works) and a `style` (`bar`, `ring` or `dots`, or a `$setting`). Ring and dots take the whole row.',
-  stats: 'Up to four values side by side, each with its `label` and optional `format` (`items`). More than two take the whole row on Today.',
+  stats: 'Up to four values, two per row, each with its `label` and optional `format` (`items`). Fits half a row on Today, like the other widgets.',
 };
 
 export const HOOK_DOCS: Record<HookEvent, string> = {

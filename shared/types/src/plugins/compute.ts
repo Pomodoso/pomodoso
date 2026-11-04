@@ -323,6 +323,14 @@ export function createEvaluator(manifest: PluginManifest, ctx: EvalContext): Plu
         return (x - y) / y;
       }
 
+      case 'ratio': {
+        const [a, b] = (e as Extract<ComputedExpr, { ratio: unknown }>).ratio;
+        const x = numberAt(a, asOf);
+        const y = numberAt(b, asOf);
+        if (x === undefined || y === undefined || y === 0) return null;
+        return x / y;
+      }
+
       case 'calendar': {
         // Days of the period, today included in `passed`: on the last day it's 100%.
         const x = e as Extract<ComputedExpr, { calendar: unknown }>;

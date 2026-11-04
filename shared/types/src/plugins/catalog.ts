@@ -67,7 +67,7 @@ export type BlockType = (typeof BLOCK_TYPES)[number];
 export const TODAY_WIDGET_TYPES = ['mini-counter', 'select-today', 'count-badge', 'stat', 'stats', 'progress'] as const;
 export type TodayWidgetType = (typeof TODAY_WIDGET_TYPES)[number];
 
-export const COMPUTED_OPS = ['count', 'sum', 'avg', 'min', 'max', 'last', 'first', 'streak', 'taper', 'delta', 'calendar'] as const;
+export const COMPUTED_OPS = ['count', 'sum', 'avg', 'min', 'max', 'last', 'first', 'streak', 'taper', 'delta', 'calendar', 'ratio'] as const;
 export type ComputedOp = (typeof COMPUTED_OPS)[number];
 
 export const HOOK_EVENTS = ['pomodoro_end', 'day_end', 'daily_report', 'weekly_report'] as const;
