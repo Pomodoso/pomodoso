@@ -36,6 +36,7 @@
     },
     "plugins": [
       "./plugins/withoutPushEntitlement",
+      "./plugins/withSceneLifecycle",
       "expo-router",
       [
         "expo-splash-screen",
@@ -66,7 +67,9 @@
           ]
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
