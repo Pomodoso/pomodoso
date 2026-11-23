@@ -109,30 +109,39 @@ async function applySessionFromUrl(url: string): Promise<void> {
 // remounted. One shared value means a refresh anywhere reaches every screen.
 //
 // Every mounted screen still fetches /me, and the responses can land out of
-// order. Only the most recently *started* request may write, and a reset
-// (sign-out, account change, deletion) invalidates everything in flight, so a
-// slow response can neither undo a post-purchase refresh nor bring back the
-// previous account's plan.
+// order. A response is applied unless a newer one has already been applied
+// or the account has changed since it was sent (sign-out, switch, deletion).
+// So a slow response can neither undo a post-purchase refresh nor bring back
+// the previous account's plan, while a newer request that *fails* does not
+// throw away an older one that succeeded.
 let sharedEntitlements: Entitlements = FREE_ENTITLEMENTS;
 const entitlementListeners = new Set<() => void>();
-let entitlementGeneration = 0;
+let accountEpoch = 0;
+let requestSeq = 0;
+let appliedSeq = 0;
+
+interface EntitlementTicket { epoch: number; seq: number }
 
 function setEntitlements(next: Entitlements): void {
   sharedEntitlements = next;
   entitlementListeners.forEach(listener => listener());
 }
 
-/** Claims the right to write; a later claim or reset revokes it. */
-function beginEntitlementRequest(): number {
-  return ++entitlementGeneration;
+function beginEntitlementRequest(): EntitlementTicket {
+  return { epoch: accountEpoch, seq: ++requestSeq };
 }
 
-function isCurrentEntitlementRequest(generation: number): boolean {
-  return generation === entitlementGeneration;
+/** Writes the response if nothing newer or a reset got there first. */
+function applyEntitlements(ticket: EntitlementTicket, next: Entitlements): boolean {
+  if (ticket.epoch !== accountEpoch || ticket.seq < appliedSeq) return false;
+  appliedSeq = ticket.seq;
+  setEntitlements(next);
+  return true;
 }
 
 function resetEntitlements(): void {
-  entitlementGeneration++;
+  accountEpoch++;
+  appliedSeq = requestSeq;
   setEntitlements(FREE_ENTITLEMENTS);
 }
 
@@ -157,13 +166,12 @@ export function useAuth(): AuthState {
 
   const fetchEntitlements = useCallback(async (accessToken: string) => {
     if (!API_URL) return;
-    const generation = beginEntitlementRequest();
+    const ticket = beginEntitlementRequest();
     try {
       const client = new TokenApiClient(API_URL, accessToken);
       const me = await getMe(client);
-      // Superseded by a newer request or a reset while this one was out.
-      if (!isCurrentEntitlementRequest(generation)) return;
-      setEntitlements(me.entitlements);
+      // Superseded by a newer applied response or a reset while this was out.
+      if (!applyEntitlements(ticket, me.entitlements)) return;
 
       // syncNow() runs from triggers with no access to React state, so the
       // answer is cached where they can read it. Syncing right here when the
