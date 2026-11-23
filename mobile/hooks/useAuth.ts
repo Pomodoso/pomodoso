@@ -107,12 +107,33 @@ async function applySessionFromUrl(url: string): Promise<void> {
 // and used to hold its own copy, so a purchase made in the Paywall refreshed
 // the Paywall's copy only: Account & Sync went on showing "Free" until it was
 // remounted. One shared value means a refresh anywhere reaches every screen.
+//
+// Every mounted screen still fetches /me, and the responses can land out of
+// order. Only the most recently *started* request may write, and a reset
+// (sign-out, account change, deletion) invalidates everything in flight, so a
+// slow response can neither undo a post-purchase refresh nor bring back the
+// previous account's plan.
 let sharedEntitlements: Entitlements = FREE_ENTITLEMENTS;
 const entitlementListeners = new Set<() => void>();
+let entitlementGeneration = 0;
 
 function setEntitlements(next: Entitlements): void {
   sharedEntitlements = next;
   entitlementListeners.forEach(listener => listener());
+}
+
+/** Claims the right to write; a later claim or reset revokes it. */
+function beginEntitlementRequest(): number {
+  return ++entitlementGeneration;
+}
+
+function isCurrentEntitlementRequest(generation: number): boolean {
+  return generation === entitlementGeneration;
+}
+
+function resetEntitlements(): void {
+  entitlementGeneration++;
+  setEntitlements(FREE_ENTITLEMENTS);
 }
 
 function subscribeEntitlements(listener: () => void): () => void {
@@ -124,16 +145,24 @@ function getEntitlements(): Entitlements {
   return sharedEntitlements;
 }
 
+// Static web rendering has no store to read; nobody is signed in there.
+function getServerEntitlements(): Entitlements {
+  return FREE_ENTITLEMENTS;
+}
+
 export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
-  const entitlements = useSyncExternalStore(subscribeEntitlements, getEntitlements);
+  const entitlements = useSyncExternalStore(subscribeEntitlements, getEntitlements, getServerEntitlements);
   const [loading, setLoading] = useState(true);
 
   const fetchEntitlements = useCallback(async (accessToken: string) => {
     if (!API_URL) return;
+    const generation = beginEntitlementRequest();
     try {
       const client = new TokenApiClient(API_URL, accessToken);
       const me = await getMe(client);
+      // Superseded by a newer request or a reset while this one was out.
+      if (!isCurrentEntitlementRequest(generation)) return;
       setEntitlements(me.entitlements);
 
       // syncNow() runs from triggers with no access to React state, so the
@@ -181,7 +210,7 @@ export function useAuth(): AuthState {
       if (newSession) {
         void fetchEntitlements(newSession.access_token);
       } else {
-        setEntitlements(FREE_ENTITLEMENTS);
+        resetEntitlements();
       }
     });
 
@@ -251,7 +280,7 @@ export function useAuth(): AuthState {
   const signOut = useCallback(async () => {
     await supabaseSignOut(getMobileSupabase());
     setSession(null);
-    setEntitlements(FREE_ENTITLEMENTS);
+    resetEntitlements();
     // Cleared here too, not just in React state: the cache outlives this
     // component, and leaving it set would let the next account on this device
     // sync on the strength of the previous one's plan.
@@ -266,7 +295,7 @@ export function useAuth(): AuthState {
     // only the stored one on this device is cleared.
     await getMobileSupabase().auth.signOut({ scope: 'local' }).catch(err => console.warn('sign out after delete', err));
     setSession(null);
-    setEntitlements(FREE_ENTITLEMENTS);
+    resetEntitlements();
     recordSyncEntitlement(false);
   }, [session?.access_token]);
 
