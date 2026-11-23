@@ -84,7 +84,8 @@ version:
 # One-time setup, both in App Store Connect and both yours to do:
 #   1. Create the app (bundle id com.pomodoso.app).
 #   2. Users and Access → Integrations → App Store Connect API → generate a
-#      key with the "App Manager" role. Save the .p8 to
+#      key with the "Admin" role (App Manager can upload but cannot create the
+#      signing certificates a fresh Mac needs). Save the .p8 to
 #      ~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8 and note the Key ID
 #      and Issuer ID — the .p8 downloads exactly once.
 #
@@ -95,6 +96,14 @@ version:
 
 ARCHIVE := build/Pomodoso.xcarchive
 IPA_DIR := build/ipa
+
+# With ASC_KEY_ID/ASC_ISSUER_ID set, signing authenticates with the API key
+# instead of an Apple ID signed into Xcode. Xcode then creates the development
+# certificate and profiles itself, and export uses a cloud-managed
+# distribution certificate — so a Mac with no Xcode account can still ship.
+# The key needs the Admin role; App Manager cannot create certificates.
+ASC_KEY_PATH ?= $(HOME)/.appstoreconnect/private_keys/AuthKey_$(ASC_KEY_ID).p8
+SIGN_AUTH := $(if $(ASC_KEY_ID),-authenticationKeyPath $(ASC_KEY_PATH) -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
 
 # App Store Connect rejects a second upload carrying a buildNumber it has
 # already seen, even after the first was deleted. Rejection happens after the
@@ -114,12 +123,12 @@ archive:
 	  -configuration Release \
 	  -destination "generic/platform=iOS" \
 	  -archivePath ../$(ARCHIVE) \
-	  -allowProvisioningUpdates
+	  -allowProvisioningUpdates $(SIGN_AUTH)
 	xcodebuild -exportArchive \
 	  -archivePath $(ARCHIVE) \
 	  -exportOptionsPlist ExportOptions.plist \
 	  -exportPath $(IPA_DIR) \
-	  -allowProvisioningUpdates
+	  -allowProvisioningUpdates $(SIGN_AUTH)
 	@echo "→ $(IPA_DIR)/Pomodoso.ipa"
 
 upload:
