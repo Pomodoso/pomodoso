@@ -4,7 +4,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::{AppError, Result},
     middleware::auth::AuthUser,
     models::{Entitlements, Subscription, User},
     AppState,
@@ -50,6 +50,12 @@ pub async fn get_me(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<MeResponse>> {
+    // A deleted account's tokens outlive it; they must not bring it back.
+    // This is the fast answer; the trigger from migration 021 is the guarantee
+    // for a request already past this line when the deletion commits.
+    if crate::routes::account::is_deleted(&state, auth.id).await? {
+        return Err(AppError::Unauthorized);
+    }
     let user = upsert_user(&state, &auth).await?;
     let (sub, is_new) = get_or_create_subscription(&state, user.id).await?;
     if is_new {
@@ -69,6 +75,9 @@ pub async fn get_entitlements(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<Entitlements>> {
+    if crate::routes::account::is_deleted(&state, auth.id).await? {
+        return Err(AppError::Unauthorized);
+    }
     let (sub, _) = get_or_create_subscription(&state, auth.id).await?;
     Ok(Json(Entitlements::from_subscription(&sub)))
 }
@@ -134,7 +143,7 @@ async fn upsert_user(state: &AppState, auth: &AuthUser) -> Result<User> {
 
 /// Returns the user's subscription and whether it was just created on this call
 /// (used to fire the welcome email exactly once).
-async fn get_or_create_subscription(
+pub(crate) async fn get_or_create_subscription(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<(Subscription, bool)> {

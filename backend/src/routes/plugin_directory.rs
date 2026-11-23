@@ -551,7 +551,8 @@ pub async fn publish(
         Some(row) => {
             // An id belongs to its first publisher for good, taken down or not:
             // reusing it would push someone else's file to that app's users.
-            if row.owner_user_id != auth.id {
+            // An ownerless listing belonged to a deleted account; nobody gets it.
+            if row.owner_user_id != Some(auth.id) {
                 return Err(AppError::ForbiddenBecause(format!(
                     "the id \"{slug}\" belongs to another author's app; change `id` in the file to publish it as your own"
                 )));

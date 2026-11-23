@@ -11,6 +11,10 @@ pub struct Config {
     // Optional — legacy HS256 fallback for local dev without JWKS
     pub supabase_jwt_secret: Option<String>,
 
+    // Optional — needed only to delete accounts (Supabase admin API). A
+    // service_role JWT or a new-style `sb_secret_…` key both work.
+    pub supabase_service_role_key: Option<String>,
+
     // Optional — billing won't work without these, but server starts fine
     pub stripe_secret_key: Option<String>,
     pub stripe_webhook_secret: Option<String>,
@@ -29,6 +33,9 @@ impl Config {
             database_url: required("DATABASE_URL")?,
             supabase_url: required("SUPABASE_URL")?,
             supabase_jwt_secret: std::env::var("SUPABASE_JWT_SECRET").ok(),
+            supabase_service_role_key: std::env::var("SUPABASE_SERVICE_ROLE_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
             port: std::env::var("PORT")
                 .unwrap_or_else(|_| "8080".into())
                 .parse()
@@ -56,6 +63,9 @@ impl Config {
 
         if cfg.stripe_secret_key.is_none() {
             tracing::warn!("STRIPE_SECRET_KEY not set — billing endpoints will return 501");
+        }
+        if cfg.supabase_service_role_key.is_none() {
+            tracing::warn!("SUPABASE_SERVICE_ROLE_KEY not set — account deletion will fail");
         }
         if cfg.postmark_server_token.is_none() {
             tracing::warn!("POSTMARK_SERVER_TOKEN not set — emails will not be sent");

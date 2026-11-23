@@ -14,12 +14,46 @@ export default function AccountSettingsScreen(): React.JSX.Element {
   const auth = useAuth();
   const isPro = auth.entitlements.features.sync;
   const [syncing, setSyncing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   function handleSignOut(): void {
     Alert.alert('Sign out?', 'Sync stays off either way — this device keeps all its local data.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => void auth.signOut() },
     ]);
+  }
+
+  // Two steps on purpose: this cannot be undone, and an App Store subscription
+  // outlives the account unless the person cancels it themselves.
+  function handleDeleteAccount(): void {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your Pomodoso account and everything synced to it: tasks, sessions, habits and settings on our servers. It cannot be undone.\n\nIf you subscribed through the App Store, deleting your account does not cancel it. Cancel it in Settings → Apple ID → Subscriptions.\n\nData stored on this device stays here.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert('Are you sure?', `${auth.session?.user.email ?? 'This account'} will be deleted permanently.`, [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete permanently', style: 'destructive', onPress: () => void confirmDelete() },
+            ]),
+        },
+      ],
+    );
+  }
+
+  async function confirmDelete(): Promise<void> {
+    setDeleting(true);
+    try {
+      await auth.deleteAccount();
+      Alert.alert('Account deleted', 'Your account and its data have been removed.');
+    } catch (err) {
+      Alert.alert('Could not delete account', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleSyncNow(): Promise<void> {
@@ -75,6 +109,21 @@ export default function AccountSettingsScreen(): React.JSX.Element {
                 benefit="Sync across devices · Unlimited workspaces · Web dashboard · Full history"
               />
             )}
+
+            <Pressable
+              style={[styles.deleteBtn, deleting && styles.actionBtnDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={15} color={colors.accent} />
+                  <Text style={styles.deleteBtnText}>Delete account</Text>
+                </>
+              )}
+            </Pressable>
           </>
         ) : (
           <View style={styles.field}>
@@ -148,6 +197,15 @@ const styles = StyleSheet.create({
   },
   actionBtnOutlineText: { fontSize: 13.5, fontWeight: '700', color: colors.text },
   actionBtnDisabled: { opacity: 0.6 },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 28,
+    paddingVertical: 12,
+  },
+  deleteBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
   actionBtnOutlineFull: {
     flexDirection: 'row',
     alignItems: 'center',
