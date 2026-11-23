@@ -102,8 +102,11 @@ IPA_DIR := build/ipa
 # certificate and profiles itself, and export uses a cloud-managed
 # distribution certificate — so a Mac with no Xcode account can still ship.
 # The key needs the Admin role; App Manager cannot create certificates.
+# Made absolute here: archive runs from ios/ and export from this directory,
+# so a relative override would point at two different files.
 ASC_KEY_PATH ?= $(HOME)/.appstoreconnect/private_keys/AuthKey_$(ASC_KEY_ID).p8
-SIGN_AUTH := $(if $(ASC_KEY_ID),-authenticationKeyPath $(ASC_KEY_PATH) -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
+ASC_KEY_ABS  := $(abspath $(ASC_KEY_PATH))
+SIGN_AUTH := $(if $(ASC_KEY_ID),-authenticationKeyPath "$(ASC_KEY_ABS)" -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
 
 # App Store Connect rejects a second upload carrying a buildNumber it has
 # already seen, even after the first was deleted. Rejection happens after the
