@@ -51,6 +51,8 @@ pub async fn get_me(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<MeResponse>> {
     // A deleted account's tokens outlive it; they must not bring it back.
+    // This is the fast answer; the trigger from migration 021 is the guarantee
+    // for a request already past this line when the deletion commits.
     if crate::routes::account::is_deleted(&state, auth.id).await? {
         return Err(AppError::Unauthorized);
     }

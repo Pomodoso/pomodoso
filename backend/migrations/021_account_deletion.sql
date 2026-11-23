@@ -20,3 +20,23 @@ CREATE TABLE IF NOT EXISTS deleted_account (
   user_id    UUID        PRIMARY KEY,
   deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- The check in /me alone leaves a window: a request that passed it just before
+-- the deletion committed would insert the user right after. The database
+-- closes it. The deletion holds the "user" row locked until it commits, so a
+-- concurrent upsert waits on it and only then inserts — and this trigger,
+-- whose query takes a fresh snapshot at that moment (VOLATILE, READ
+-- COMMITTED), sees the committed deleted_account row and refuses.
+CREATE OR REPLACE FUNCTION refuse_deleted_account() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM deleted_account WHERE user_id = NEW.id) THEN
+    RAISE EXCEPTION 'account % was deleted', NEW.id USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql VOLATILE;
+
+DROP TRIGGER IF EXISTS refuse_deleted_account ON "user";
+CREATE TRIGGER refuse_deleted_account
+  BEFORE INSERT ON "user"
+  FOR EACH ROW EXECUTE FUNCTION refuse_deleted_account();
