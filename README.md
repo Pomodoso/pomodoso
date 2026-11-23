@@ -186,7 +186,8 @@ One-time setup, both in App Store Connect:
 
 1. Create the app with bundle id `com.pomodoso.app`.
 2. **Users and Access → Integrations → App Store Connect API** → generate a key
-   with the **App Manager** role. Save the `.p8` to
+   with the **Admin** role (App Manager can upload, but cannot create the
+   signing certificates a Mac with no Apple ID in Xcode needs). Save the `.p8` to
    `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8` — it downloads exactly
    once — and export `ASC_KEY_ID` and `ASC_ISSUER_ID` from your shell profile.
 
