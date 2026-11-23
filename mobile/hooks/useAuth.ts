@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { API_URL, getMobileSupabase, isAuthConfigured } from '@/lib/supabase';
 import { syncNow } from '@/utils/sync';
@@ -103,9 +103,30 @@ async function applySessionFromUrl(url: string): Promise<void> {
   }
 }
 
+// Entitlements live outside any one component. Every screen calls useAuth()
+// and used to hold its own copy, so a purchase made in the Paywall refreshed
+// the Paywall's copy only: Account & Sync went on showing "Free" until it was
+// remounted. One shared value means a refresh anywhere reaches every screen.
+let sharedEntitlements: Entitlements = FREE_ENTITLEMENTS;
+const entitlementListeners = new Set<() => void>();
+
+function setEntitlements(next: Entitlements): void {
+  sharedEntitlements = next;
+  entitlementListeners.forEach(listener => listener());
+}
+
+function subscribeEntitlements(listener: () => void): () => void {
+  entitlementListeners.add(listener);
+  return () => entitlementListeners.delete(listener);
+}
+
+function getEntitlements(): Entitlements {
+  return sharedEntitlements;
+}
+
 export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
-  const [entitlements, setEntitlements] = useState<Entitlements>(FREE_ENTITLEMENTS);
+  const entitlements = useSyncExternalStore(subscribeEntitlements, getEntitlements);
   const [loading, setLoading] = useState(true);
 
   const fetchEntitlements = useCallback(async (accessToken: string) => {
