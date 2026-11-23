@@ -1,4 +1,4 @@
-import { getMe, resetPasswordForEmail, sendMagicLink, signInWithEmail, signOut as supabaseSignOut, signUpWithEmail, TokenApiClient, updatePassword as supabaseUpdatePassword } from '@pomodoso/api';
+import { deleteAccount as apiDeleteAccount, getMe, resetPasswordForEmail, sendMagicLink, signInWithEmail, signOut as supabaseSignOut, signUpWithEmail, TokenApiClient, updatePassword as supabaseUpdatePassword } from '@pomodoso/api';
 import type { Entitlements } from '@pomodoso/types';
 import type { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
@@ -48,6 +48,9 @@ export interface AuthState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Deletes the account on the server (data and login), then signs out.
+   *  What lives on this device stays: it never needed an account. */
+  deleteAccount: () => Promise<void>;
   /** Re-reads entitlements from the backend. Called after a purchase: the app
    *  sends Apple's signed transaction to /iap/verify, which writes the
    *  subscription row, and only then does /me report Pro — so the app has to
@@ -234,6 +237,17 @@ export function useAuth(): AuthState {
     recordSyncEntitlement(false);
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || !API_URL) throw new Error('Not signed in');
+    await apiDeleteAccount(new TokenApiClient(API_URL, token));
+    // The login no longer exists, so there is no server session to revoke:
+    // only the stored one on this device is cleared.
+    await getMobileSupabase().auth.signOut({ scope: 'local' }).catch(err => console.warn('sign out after delete', err));
+    setSession(null);
+    setEntitlements(FREE_ENTITLEMENTS);
+    recordSyncEntitlement(false);
+  }, [session?.access_token]);
 
   const refreshEntitlements = useCallback(async () => {
     const token = session?.access_token;
@@ -253,5 +267,6 @@ export function useAuth(): AuthState {
     resetPassword,
     updatePassword,
     signOut,
+    deleteAccount,
   };
 }

@@ -134,7 +134,7 @@ async fn upsert_user(state: &AppState, auth: &AuthUser) -> Result<User> {
 
 /// Returns the user's subscription and whether it was just created on this call
 /// (used to fire the welcome email exactly once).
-async fn get_or_create_subscription(
+pub(crate) async fn get_or_create_subscription(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<(Subscription, bool)> {

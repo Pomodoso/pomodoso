@@ -106,7 +106,12 @@ async fn main() -> anyhow::Result<()> {
         // body is a JWS signed by Apple, and the signature is the credential.
         .route("/webhooks/app-store", post(routes::iap::app_store_webhook))
         // Protected routes — auth applied per-route to avoid affecting public routes after merge
-        .route("/me", get(routes::me::get_me).route_layer(auth.clone()))
+        .route(
+            "/me",
+            get(routes::me::get_me)
+                .delete(routes::account::delete_account)
+                .route_layer(auth.clone()),
+        )
         .route(
             "/plugins/publish",
             post(routes::plugin_directory::publish).route_layer(auth.clone()),

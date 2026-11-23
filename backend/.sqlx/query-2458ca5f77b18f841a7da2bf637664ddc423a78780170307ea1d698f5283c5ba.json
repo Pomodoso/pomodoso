@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugin_listing SET deleted_at = COALESCE(deleted_at, NOW()) WHERE owner_user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2458ca5f77b18f841a7da2bf637664ddc423a78780170307ea1d698f5283c5ba"
+}
