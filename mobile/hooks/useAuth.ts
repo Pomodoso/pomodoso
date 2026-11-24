@@ -36,6 +36,14 @@ const FREE_ENTITLEMENTS: Entitlements = {
 // deep link openable; no extra native config needed.
 const REDIRECT_URL = Linking.createURL('auth-callback');
 
+// Where auth *emails* send the user (sign-up confirmation, magic link,
+// password reset): a page on pomodoso.com that forwards to REDIRECT_URL.
+// Mail apps open links in in-app browsers that block a redirect straight to a
+// custom scheme, which left people on a blank page; that page offers a button
+// instead. Google sign-in keeps REDIRECT_URL, since the auth session it runs
+// in intercepts the scheme itself.
+const EMAIL_REDIRECT_URL = 'https://pomodoso.com/app-callback';
+
 export interface AuthState {
   session: Session | null;
   entitlements: Entitlements;
@@ -245,7 +253,7 @@ export function useAuth(): AuthState {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    await signUpWithEmail(getMobileSupabase(), email, password, REDIRECT_URL);
+    await signUpWithEmail(getMobileSupabase(), email, password, EMAIL_REDIRECT_URL);
   }, []);
 
   // Mirrors extension's oauthFlow (popup/useAuth.ts) — a popup/RN app can't
@@ -271,11 +279,11 @@ export function useAuth(): AuthState {
   }, []);
 
   const sendMagicLinkEmail = useCallback(async (email: string) => {
-    await sendMagicLink(getMobileSupabase(), email, REDIRECT_URL);
+    await sendMagicLink(getMobileSupabase(), email, EMAIL_REDIRECT_URL);
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
-    await resetPasswordForEmail(getMobileSupabase(), email, REDIRECT_URL);
+    await resetPasswordForEmail(getMobileSupabase(), email, EMAIL_REDIRECT_URL);
   }, []);
 
   const updatePassword = useCallback(async (newPassword: string) => {

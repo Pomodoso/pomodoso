@@ -6,6 +6,7 @@ import { ProtectedRoute } from './components/ProtectedRoute.tsx'
 import Landing from './pages/Landing.tsx'
 import Login from './pages/Login.tsx'
 import ResetPassword from './pages/ResetPassword.tsx'
+import AppCallback from './pages/AppCallback.tsx'
 import Dashboard from './pages/dashboard/Dashboard.tsx'
 import Billing from './pages/settings/Billing.tsx'
 import Pricing from './pages/Pricing.tsx'
@@ -25,6 +26,9 @@ declare global {
 }
 
 export const routes: RouteRecord[] = [
+  // Outside Root on purpose: AuthProvider would consume the session in the
+  // URL hash, which belongs to the mobile app (see AppCallback.tsx).
+  { path: '/app-callback', element: <AppCallback /> },
   {
     path: '/',
     element: <Root />,
@@ -117,6 +121,9 @@ export const routes: RouteRecord[] = [
 export const createRoot = ViteReactSSG({ routes }, ({ isClient }) => {
   // Browser-only side effects (skipped during static build render).
   if (!isClient) return
+  // The mobile auth bridge carries session tokens in its URL until it strips
+  // them; nothing that records page URLs should load there.
+  if (window.location.pathname === '/app-callback') return
 
   // Error reporting — only active when VITE_SENTRY_DSN is set.
   if (import.meta.env.VITE_SENTRY_DSN) {
