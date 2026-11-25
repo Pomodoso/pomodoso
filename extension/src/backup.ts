@@ -147,7 +147,14 @@ export async function importDb(json: string): Promise<void> {
       // Without the sync plan this backup is the only copy of a plugin's data.
       db.plugins.bulkPut(refreshSyncMeta(rows('plugins') as never[])),
       db.pluginRecords.bulkPut(refreshSyncMeta(rows('pluginRecords') as never[])),
-      db.settings.bulkPut((rows('settings') as { key: string }[]).filter(s => !isExcludedSetting(s.key)) as never[]),
+      // A restored preference's edit date is bumped, like a row's updatedAt in
+      // refreshSyncMeta: with the backup's older date, the server's later value
+      // would win the next sync and overwrite the restore.
+      db.settings.bulkPut(
+        (rows('settings') as { key: string; value: unknown }[])
+          .filter(s => !isExcludedSetting(s.key))
+          .map(s => (s.key.endsWith('_updated_at') ? { ...s, value: now() } : s)) as never[],
+      ),
     ]);
   });
 

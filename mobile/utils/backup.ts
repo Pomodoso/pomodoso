@@ -6,6 +6,7 @@ import { db } from '@/db/client';
 import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
+import { untouchedSeedIds } from '@/utils/seed';
 import { markTaskOrderDirty } from '@/utils/sync';
 
 // Tables whose rows carry a workspaceId FK — need special handling on
@@ -92,15 +93,24 @@ export interface BackupEnvelope {
 // Excludes soft-deleted rows (Fase B's deletedAt columns) — a backup is "my
 // current data", not my current data plus a growing pile of tombstones the
 // user already deleted. timerPrefs/settings have no deletedAt, exported as-is.
+//
+// Untouched demo rows stay out too. seed_row_ids is excluded (it lists this
+// device's ids), so on another phone they would be indistinguishable from
+// user data and get pushed into the account.
 export function exportBackup(): string {
+  const seed = untouchedSeedIds();
+  const notSeed = <T extends { id: string }>(ids: string[]) => {
+    const skip = new Set(ids);
+    return (rows: T[]) => rows.filter(r => !skip.has(r.id));
+  };
   const data: Record<string, unknown[]> = {
-    workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all(),
-    habits: db.select().from(habits).where(isNull(habits.deletedAt)).all(),
-    habitHistory: db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(),
+    workspace: notSeed(seed.workspace)(db.select().from(workspace).where(isNull(workspace.deletedAt)).all()),
+    habits: notSeed(seed.habits)(db.select().from(habits).where(isNull(habits.deletedAt)).all()),
+    habitHistory: notSeed(seed.habitHistory)(db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all()),
     achievements: db.select().from(achievements).where(isNull(achievements.deletedAt)).all(),
     pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),
     project: db.select().from(project).where(isNull(project.deletedAt)).all(),
-    task: db.select().from(task).where(isNull(task.deletedAt)).all(),
+    task: notSeed(seed.task)(db.select().from(task).where(isNull(task.deletedAt)).all()),
     meeting: db.select().from(meeting).where(isNull(meeting.deletedAt)).all(),
     timerPrefs: db.select().from(timerPrefs).all(),
     settings: db.select().from(settings).all().filter(s => !isExcludedSetting(s.key)),
@@ -213,7 +223,7 @@ export async function importBackup(json: string): Promise<void> {
           // other table's "included → wipe and replace" rule.
           tx.delete(table).run();
           if (rows.length > 0) {
-            tx.insert(table).values(rows as never[]).run();
+            tx.insert(table).values(refreshSyncMeta(name, rows) as never[]).run();
           }
         }
         // Re-query rather than trusting rows[0] either way: every imported
@@ -241,7 +251,13 @@ export async function importBackup(json: string): Promise<void> {
             tx.delete(settings).where(eq(settings.key, s.key)).run();
           }
         }
-        const restored = (rows as { key: string; value: string }[]).filter(s => !isExcludedSetting(s.key));
+        // A restored preference's edit date is bumped, like a row's updatedAt
+        // (see refreshSyncMeta): with the backup's older date, the server's
+        // later value would win the next sync and overwrite the restore.
+        const editedAt = JSON.stringify(new Date().toISOString());
+        const restored = (rows as { key: string; value: string }[])
+          .filter(s => !isExcludedSetting(s.key))
+          .map(s => (s.key.endsWith('_updated_at') ? { ...s, value: editedAt } : s));
         if (restored.length > 0) tx.insert(settings).values(restored).run();
         continue;
       }
