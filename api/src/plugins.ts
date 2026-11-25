@@ -69,6 +69,11 @@ export function getDirectoryVersion(client: IApiClient, slug: string, version: s
   return client.get(`/plugins/directory/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}`);
 }
 
+/** Counts one install of a directory app. Public and anonymous: only the count is stored. */
+export function recordInstall(client: IApiClient, slug: string): Promise<unknown> {
+  return client.post(`/plugins/directory/${encodeURIComponent(slug)}/installs`, {});
+}
+
 export interface PublishBody {
   manifest: unknown;
   changelog?: string;
