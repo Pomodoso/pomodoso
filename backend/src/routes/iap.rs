@@ -29,6 +29,7 @@ use crate::{
     apple::{self, Environment, Transaction},
     error::{AppError, Result},
     middleware::auth::AuthUser,
+    routes::account,
     AppState,
 };
 
@@ -270,6 +271,33 @@ pub fn resolve(event: &IapEvent) -> SubscriptionUpdate {
 
 fn grants_access(update: &SubscriptionUpdate) -> bool {
     matches!(update.plan, Some(plan) if plan != "free")
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DroppedSeverity {
+    Error,
+    Warn,
+    Info,
+}
+
+/// How loudly to report an event that found no subscription row to land on.
+///
+/// A missing row on a live account means it was never provisioned (the row is
+/// created on first /me), and silently dropping a real purchase there would be
+/// invisible until the user complained: an error.
+///
+/// A deleted account is different. Its row is gone on purpose, and an App
+/// Store subscription cannot be cancelled by a server, so Apple keeps sending
+/// notifications after the deletion. An expiry or refund is exactly what
+/// should happen to it: nothing to see. A grant is still worth a warning,
+/// since it means the Apple ID is being billed for an account that no longer
+/// exists — but there is no row to fix, so it is not an error either.
+fn dropped_event_severity(account_deleted: bool, grants: bool) -> DroppedSeverity {
+    match (account_deleted, grants) {
+        (false, _) => DroppedSeverity::Error,
+        (true, true) => DroppedSeverity::Warn,
+        (true, false) => DroppedSeverity::Info,
+    }
 }
 
 /// Which `payment_provider` a transaction is recorded under.
@@ -572,19 +600,22 @@ async fn apply_update(
     .execute(&mut *tx)
     .await?;
 
-    // No row means the account was never provisioned (the subscription row is
-    // created on first /me). Silently dropping a real purchase here would be
-    // invisible until the user complained, so make it loud.
     if result.rows_affected() == 0 {
-        tracing::error!(
-            "{origin}: no subscription row for user {} — {:?} dropped",
-            event.user_id,
-            event.kind
-        );
         // Rolled back rather than committed: if the grant found no row to land
         // on, releasing the transaction from its previous holder would strand
         // the purchase with nobody.
         tx.rollback().await?;
+
+        let deleted = account::is_deleted(state, event.user_id).await?;
+        let message = format!(
+            "{origin}: no subscription row for user {} — {:?} dropped",
+            event.user_id, event.kind
+        );
+        match dropped_event_severity(deleted, grants_access(update)) {
+            DroppedSeverity::Error => tracing::error!("{message}"),
+            DroppedSeverity::Warn => tracing::warn!("{message} (account deleted)"),
+            DroppedSeverity::Info => tracing::info!("{message} (account deleted)"),
+        }
         return Ok(());
     }
 
@@ -1002,6 +1033,35 @@ mod tests {
         assert_eq!(update.plan, None);
         assert_eq!(update.status, "past_due");
         assert_eq!(update.cancelled_at, CancelledAt::Leave);
+    }
+
+    // ─── Dropped events ───────────────────────────────────────────────────────
+
+    #[test]
+    fn a_missing_row_on_a_live_account_is_an_error() {
+        for kind in [EventKind::Grant, EventKind::Expired] {
+            let grants = grants_access(&resolve(&handled(kind, &tx())));
+            assert_eq!(
+                dropped_event_severity(false, grants),
+                DroppedSeverity::Error
+            );
+        }
+    }
+
+    #[test]
+    fn an_expiry_for_a_deleted_account_is_not_an_error() {
+        // Apple keeps notifying after the account is gone: a server cannot
+        // cancel an App Store subscription. Revoking a deleted account is fine.
+        for kind in [EventKind::Expired, EventKind::Revoked] {
+            let grants = grants_access(&resolve(&handled(kind, &tx())));
+            assert_eq!(dropped_event_severity(true, grants), DroppedSeverity::Info);
+        }
+    }
+
+    #[test]
+    fn a_grant_for_a_deleted_account_is_a_warning() {
+        let grants = grants_access(&resolve(&handled(EventKind::Grant, &tx())));
+        assert_eq!(dropped_event_severity(true, grants), DroppedSeverity::Warn);
     }
 
     // ─── Stripe guard ─────────────────────────────────────────────────────────
