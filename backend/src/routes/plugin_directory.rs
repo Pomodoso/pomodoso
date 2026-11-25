@@ -9,7 +9,8 @@
 // fields and $values are checked by every client again on install, so a file
 // that passes here but references something missing can't be installed.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::{Path, Query, State},
@@ -36,6 +37,10 @@ const REPORT_MAX_CHARS: usize = 1000;
 const PUBLISHES_PER_HOUR: i64 = 10;
 /// Reporting rate limit, per account.
 const REPORTS_PER_DAY: i64 = 20;
+/// Install-count rate limit, for everyone together. The route is anonymous and
+/// keeps no IP, so there is nothing to limit per caller; a global cap bounds
+/// both how fast the count can be inflated and the writes it costs.
+const INSTALLS_PER_MINUTE: u32 = 120;
 const SEARCH_LIMIT_MAX: i64 = 50;
 
 /// Slugs nobody can publish under: anything that could pass for an official
@@ -659,9 +664,22 @@ pub async fn record_install(
     State(state): State<AppState>,
     Path(slug): Path<String>,
 ) -> Result<StatusCode> {
+    static WINDOW: Mutex<Option<InstallWindow>> = Mutex::new(None);
+    let allowed = {
+        let mut window = WINDOW.lock().unwrap_or_else(|e| e.into_inner());
+        install_allowed(&mut window, Instant::now())
+    };
+    if !allowed {
+        return Err(AppError::TooManyRequests(
+            "too many installs; try again later".into(),
+        ));
+    }
+    // Public listings only: a private one answers 404 like a missing slug, so
+    // this anonymous route can't confirm a private app exists.
     let done = sqlx::query!(
         r#"INSERT INTO plugin_install_count (listing_id, installs)
-           SELECT id, 1 FROM plugin_listing WHERE slug = $1 AND deleted_at IS NULL
+           SELECT id, 1 FROM plugin_listing
+           WHERE slug = $1 AND deleted_at IS NULL AND visibility = 'public'
            ON CONFLICT (listing_id)
            DO UPDATE SET installs = plugin_install_count.installs + 1"#,
         slug,
@@ -672,6 +690,31 @@ pub async fn record_install(
         return Err(AppError::NotFound);
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A fixed one-minute window: when it started and how many installs it took.
+struct InstallWindow {
+    started: Instant,
+    count: u32,
+}
+
+fn install_allowed(window: &mut Option<InstallWindow>, now: Instant) -> bool {
+    match window {
+        Some(w) if now.duration_since(w.started) < Duration::from_secs(60) => {
+            if w.count >= INSTALLS_PER_MINUTE {
+                return false;
+            }
+            w.count += 1;
+            true
+        }
+        _ => {
+            *window = Some(InstallWindow {
+                started: now,
+                count: 1,
+            });
+            true
+        }
+    }
 }
 
 pub async fn report(
@@ -715,6 +758,22 @@ pub async fn report(
     .execute(&state.pool)
     .await?;
     Ok(StatusCode::ACCEPTED)
+}
+
+#[cfg(test)]
+mod install_limit_tests {
+    use super::*;
+
+    #[test]
+    fn installs_are_capped_per_minute_then_reset() {
+        let mut window = None;
+        let t0 = Instant::now();
+        for _ in 0..INSTALLS_PER_MINUTE {
+            assert!(install_allowed(&mut window, t0));
+        }
+        assert!(!install_allowed(&mut window, t0 + Duration::from_secs(59)));
+        assert!(install_allowed(&mut window, t0 + Duration::from_secs(60)));
+    }
 }
 
 #[cfg(test)]
