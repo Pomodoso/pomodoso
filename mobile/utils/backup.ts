@@ -1,38 +1,85 @@
-import { inArray, isNull } from 'drizzle-orm';
+import { eq, inArray, isNull } from 'drizzle-orm';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { habitHistory, habits, pomodoroSession, project, settings, task, timerPrefs, workspace } from '@/db/schema';
+import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
+import { markTaskOrderDirty } from '@/utils/sync';
 
 // Tables whose rows carry a workspaceId FK — need special handling on
 // import (see the "Ensure a workspace exists" block below), unlike the
 // otherwise fully generic per-table loop.
-const WORKSPACE_SCOPED_TABLES = new Set(['task', 'project', 'pomodoroSession']);
+const WORKSPACE_SCOPED_TABLES = new Set(['task', 'project', 'pomodoroSession', 'meeting']);
 
-// Ports extension's backup.ts. Simplified for what mobile actually has: no
-// taskOrders/meetings/detectionRules (none exist yet), and no
-// EXCLUDED_SETTINGS filtering — mobile has no auth/sync state living in the
-// settings table yet either. Once login/sync land, this needs the same
-// treatment extension's backup.ts gives auth_session/entitlements/device_id/
-// sync state: excluded from export, and cleared (not restored) on import so
-// a restored device re-syncs from scratch instead of inheriting another
-// device's identity.
+// Device and sync state, never exported, and kept as they are on import —
+// same rule as the extension's EXCLUDED_SETTINGS (extension/src/backup.ts):
+//   - device_id identifies this install; importing it clones another device.
+//   - sync_last_pull / *_synced_at are sync cursors: importing them makes
+//     sync believe data is already pulled or pushed, so it skips it.
+//   - sync_choice / can_sync answer questions about the device that made the
+//     backup, not this one.
+//   - active_timer_remote is a timer running on some other device, as last
+//     announced to the one that made the backup.
+//   - seed_row_ids lists *this* device's demo rows; another device's list
+//     would mark nothing, or the wrong rows, as demo.
+const EXCLUDED_SETTINGS = new Set([
+  'device_id',
+  'sync_last_pull',
+  'sync_choice',
+  'can_sync',
+  'active_timer_remote',
+  SEED_IDS_KEY,
+]);
+const isExcludedSetting = (key: string) => EXCLUDED_SETTINGS.has(key) || key.endsWith('_synced_at');
+
+// Ports extension's backup.ts.
+//
+// `task_order` is the one table not in the backup: it holds only sync
+// timestamps (Today/Priorities membership lives on the task rows, see
+// db/schema.ts). Import rebuilds it instead, marking every live workspace's
+// membership dirty so the restored Today and Priorities get pushed.
 //
 // `workspace` listed first so import's Object.entries loop below inserts it
-// before task/project/pomodoroSession, which carry its id as workspaceId.
+// before task/project/pomodoroSession/meeting, which carry its id as
+// workspaceId.
 const TABLES = {
   workspace,
   habits,
   habitHistory,
+  achievements,
   pomodoroSession,
   project,
   task,
+  meeting,
   timerPrefs,
   settings,
 } as const;
+
+// Imported rows must be dirty so the next sync pushes them (same as the
+// extension's refreshSyncMeta): syncedAt is dropped, and updatedAt is bumped
+// so Last-Write-Wins lets the restored data win on the server and other
+// devices' incremental pull picks it up.
+//
+// Except task.updatedAt, which is kept: a resolved task with no sessions is
+// grouped in History by that date (useTaskHistory.ts), so bumping it would
+// move every restored task into today's History (and keep resolved ones in
+// Today, see isUpdatedToday). Its syncedAt is still cleared, so it gets pushed.
+//
+// Never-edited rows (updatedAt === createdAt) keep theirs too: that equality
+// is how utils/seed.ts tells an untouched demo row from user data, and
+// bumping it would turn restored demo rows into real ones that sync.
+function refreshSyncMeta(name: string, rows: unknown[]): unknown[] {
+  const ts = new Date().toISOString();
+  return rows.map(r => {
+    const row = { ...(r as Record<string, unknown>) };
+    if ('syncedAt' in row) row.syncedAt = null;
+    const pristine = 'createdAt' in row && row.updatedAt === row.createdAt;
+    if (name !== 'task' && !pristine && 'updatedAt' in row) row.updatedAt = ts;
+    return row;
+  });
+}
 
 const REQUIRED_TABLES = ['task', 'habits'] as const;
 
@@ -50,11 +97,13 @@ export function exportBackup(): string {
     workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all(),
     habits: db.select().from(habits).where(isNull(habits.deletedAt)).all(),
     habitHistory: db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(),
+    achievements: db.select().from(achievements).where(isNull(achievements.deletedAt)).all(),
     pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),
     project: db.select().from(project).where(isNull(project.deletedAt)).all(),
     task: db.select().from(task).where(isNull(task.deletedAt)).all(),
+    meeting: db.select().from(meeting).where(isNull(meeting.deletedAt)).all(),
     timerPrefs: db.select().from(timerPrefs).all(),
-    settings: db.select().from(settings).all(),
+    settings: db.select().from(settings).all().filter(s => !isExcludedSetting(s.key)),
   };
   const envelope: BackupEnvelope = { version: '1', exportedAt: new Date().toISOString(), data };
   return JSON.stringify(envelope, null, 2);
@@ -180,18 +229,36 @@ export async function importBackup(json: string): Promise<void> {
       }
 
       if (!Array.isArray(rows)) continue;
+
+      if (name === 'settings') {
+        // Device and sync state stays this device's (see EXCLUDED_SETTINGS),
+        // except the sync cursors, which are cleared: after an import the next
+        // sync must do a full pull and re-push everything. Same as the
+        // extension's importDb.
+        const local = tx.select().from(settings).all();
+        for (const s of local) {
+          if (!isExcludedSetting(s.key) || s.key.endsWith('_synced_at') || s.key === 'sync_last_pull') {
+            tx.delete(settings).where(eq(settings.key, s.key)).run();
+          }
+        }
+        const restored = (rows as { key: string; value: string }[]).filter(s => !isExcludedSetting(s.key));
+        if (restored.length > 0) tx.insert(settings).values(restored).run();
+        continue;
+      }
+
       tx.delete(table).run();
       if (rows.length > 0) {
         // A row keeps its own workspaceId only if it's genuinely live (see
         // liveWorkspaceIds above); otherwise it's remapped to the resolved
         // fallback, whether its own value was absent (legacy backup) or
         // present-but-dangling (pointed at a tombstoned/dropped workspace).
-        const values = WORKSPACE_SCOPED_TABLES.has(name)
+        const scoped = WORKSPACE_SCOPED_TABLES.has(name)
           ? rows.map(r => {
               const row = r as { workspaceId?: string };
               return liveWorkspaceIds.has(row.workspaceId ?? '') ? row : { ...row, workspaceId };
             })
           : rows;
+        const values = refreshSyncMeta(name, scoped);
         tx.insert(table).values(values as never[]).run();
       }
     }
@@ -203,7 +270,18 @@ export async function importBackup(json: string): Promise<void> {
     // orphaned active/paused row permanently blocks startSession's atomic
     // "no active session" guard (useTimer.ts) from ever starting a new one.
     tx.delete(pomodoroSession).where(inArray(pomodoroSession.status, ['active', 'paused'])).run();
+
+    // task_order isn't in the backup (see TABLES); the old rows describe
+    // workspaces that may no longer exist.
+    tx.delete(taskOrder).run();
   });
+
+  // After the commit, so a rolled-back import doesn't leave orders marked.
+  // Today/Priorities membership came back on the task rows; marking each
+  // workspace dirty is what gets it pushed.
+  for (const w of db.select({ id: workspace.id }).from(workspace).where(isNull(workspace.deletedAt)).all()) {
+    markTaskOrderDirty(w.id);
+  }
 
   // Only reached if the transaction above actually committed (it throws on
   // rollback, which propagates out of this function before reaching here)
