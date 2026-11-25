@@ -101,6 +101,10 @@ async fn main() -> anyhow::Result<()> {
             "/plugins/directory/{slug}/versions/{version}",
             get(routes::plugin_directory::get_version),
         )
+        .route(
+            "/plugins/directory/{slug}/installs",
+            post(routes::plugin_directory::record_install),
+        )
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
         // App Store Server Notifications. No auth layer and none needed: the
         // body is a JWS signed by Apple, and the signature is the credential.

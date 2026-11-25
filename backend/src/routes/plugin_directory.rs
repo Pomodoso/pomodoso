@@ -652,6 +652,28 @@ pub async fn take_down(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /plugins/directory/{slug}/installs: the extension reporting that an
+/// app from the directory was installed. Public, like browsing, since
+/// installing needs no account, and it stores nothing but the count.
+pub async fn record_install(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<StatusCode> {
+    let done = sqlx::query!(
+        r#"INSERT INTO plugin_install_count (listing_id, installs)
+           SELECT id, 1 FROM plugin_listing WHERE slug = $1 AND deleted_at IS NULL
+           ON CONFLICT (listing_id)
+           DO UPDATE SET installs = plugin_install_count.installs + 1"#,
+        slug,
+    )
+    .execute(&state.pool)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn report(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,

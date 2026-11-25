@@ -29,7 +29,7 @@ import {
 import { defaultSettings, EditableOptions, SettingsFields } from './SettingsFields';
 import { isSupported } from './supported';
 import { Browse, directoryAvailable } from './Browse';
-import { openListing, SignInToOpen } from './directory';
+import { openListing, reportInstall, SignInToOpen } from './directory';
 import { describeStep, updateFor, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
 import { appPageUrl, pluginActions, usePluginTasks } from './appEnv';
 import { toEngineRecord } from '../../pluginRows';
@@ -640,8 +640,10 @@ function InstallPreview({ text, manifest, source, timezone, readOnly, onBack, on
           setBusy(true);
           const r = await installPlugin(text, timezone, { settings, showOnToday, source });
           setBusy(false);
-          if (r.ok) onInstalled(r.plugin.id);
-          else setIssues(r.issues);
+          if (r.ok) {
+            if (source === 'directory') reportInstall(r.plugin.slug);
+            onInstalled(r.plugin.id);
+          } else setIssues(r.issues);
         }}
         style={{ ...btn('primary'), opacity: readOnly ? 0.5 : 1 }}
       >
