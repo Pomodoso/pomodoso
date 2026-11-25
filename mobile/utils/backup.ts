@@ -112,8 +112,15 @@ export function exportBackup(): string {
   const allAchievements = db.select().from(achievements).where(isNull(achievements.deletedAt)).all();
   const allHistory = db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all();
 
+  const allHabits = db.select().from(habits).where(isNull(habits.deletedAt)).all();
+  const habitCreatedAt = new Map(allHabits.map(h => [h.id, h.createdAt]));
+  // A demo log is written with its habit's createdAt as its updatedAt
+  // (db/client.ts's initDb). Any other date means the user changed it, e.g.
+  // checked a day that already had a demo log.
+  const userLog = (h: (typeof allHistory)[number]) =>
+    !seedHistory.has(h.id) || h.updatedAt !== habitCreatedAt.get(h.habitId);
   const usedHabits = new Set([
-    ...allHistory.filter(h => !seedHistory.has(h.id)).map(h => h.habitId),
+    ...allHistory.filter(userLog).map(h => h.habitId),
     ...allAchievements.map(a => a.habitId).filter((id): id is string => id !== null),
   ]);
   const dropHabits = new Set(seed.habits.filter(id => !usedHabits.has(id)));
@@ -127,7 +134,7 @@ export function exportBackup(): string {
 
   const data: Record<string, unknown[]> = {
     workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all().filter(w => !dropWorkspaces.has(w.id)),
-    habits: db.select().from(habits).where(isNull(habits.deletedAt)).all().filter(h => !dropHabits.has(h.id)),
+    habits: allHabits.filter(h => !dropHabits.has(h.id)),
     // Demo logs go with their habit: kept when it's kept.
     habitHistory: allHistory.filter(h => !(seedHistory.has(h.id) && dropHabits.has(h.habitId))),
     achievements: allAchievements,
