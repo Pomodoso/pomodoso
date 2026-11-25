@@ -65,6 +65,8 @@ pomodoso/
 - Feature branches: `feat/<short-description>` or `fix/<short-description>`.
 - **Every change goes through a pull request. Always.** Never commit or push directly to `main`, however small the change. Work on a branch, push it, open the PR with `gh pr create`, and let it be merged from GitHub.
 - Squash and merge on PRs.
+- **A PR is ready to merge when CI is green and Greptile scores it 5/5.** Below 5/5, fix what it found (or explain why it doesn't apply), reply on each comment, and wait for the re-review.
+- **The PR description says what was done for mobile**: "Mobile: done", "Mobile: follow-up #N", or "Mobile: n/a, because ...". See *Extension and mobile parity*.
 
 ## Architectural rules (non-negotiable)
 
@@ -97,13 +99,53 @@ pomodoso/
 - **Don't** put business logic in components. Components consume hooks; hooks consume `@pomodoso/types`.
 - **Don't** call third-party APIs from the client (extension, web or mobile); new external calls go through the backend. The one exception today is Google Calendar: the extension (`extension/src/calendarSync.ts`) and mobile (`mobile/utils/googleCalendar.ts`) call Google directly with the user's own OAuth token.
 
-## Extension: IndexedDB schema changes
+## Extension and mobile parity
+
+The extension and the mobile app are the same product on two devices, and users move between them.
+
+- **Changes and fixes to something both clients have go to both, always, without asking.** A fix to habits, tasks, the timer, reports, sync or backup in one client is fixed in the other in the same PR. If it really can't be done there (missing infrastructure, a big separate effort), open the follow-up issue and link it from the PR.
+- **New features: ask** whether they go to mobile too, before starting. Don't assume either way.
+- **Before duplicating logic, check whether it belongs in `@pomodoso/types`.** Rules, validation, date math and formatting shared by both clients live there, so a fix lands once.
+- **Not everything has a counterpart.** Extension-only: ticket detection, the web bridge, apps (plugins). Mobile-only: widgets, Live Activities, in-app purchases. A change there doesn't need a mobile or extension twin, but say so in the PR.
+
+## Export and import always work
+
+Export and import are how a user keeps their data when sync is off, which is the default. Every PR leaves them working on every client:
+
+- **Every local table is in the backup.** A new table, or a new column that holds user data, isn't done until export writes it and import restores it.
+- **Device and sync state never travel**: auth tokens, device ids, sync cursors, sync choices, `*_synced_at`. Importing them clones another device's identity or makes sync skip data. A new key of that kind goes in the client's excluded list.
+- **Old backups keep importing.** A new table is optional on import, never required, and an import never fails because a field is missing.
+- **Imported rows sync**: clear `syncedAt` and bump `updatedAt`, like `refreshSyncMeta` in the extension.
+- **Check the round-trip:** export, wipe, import, and compare.
+
+### Extension: IndexedDB schema changes
 
 The extension uses Dexie.js (`extension/src/db.ts`). When adding or removing a table:
 
 1. **Add a new Dexie version** with the schema migration.
-2. **Update `extension/src/backup.ts`** — add the new table to `EXPECTED_TABLES`, the `exportDb()` reads, and the `importDb()` clears/bulkPuts. Omitting a table silently breaks import/export for that data.
+2. **Update `extension/src/backup.ts`** — add the new table to `ALL_TABLES`, the `exportDb()` reads, and the `importDb()` clears/bulkPuts. Omitting a table silently breaks import/export for that data. `REQUIRED_TABLES` stays as is: older backups don't have the new table.
 3. If the table contains sensitive data (e.g. OAuth tokens), add its key to `EXCLUDED_SETTINGS` instead of including it in the backup.
+
+### Mobile: SQLite schema changes
+
+Mobile uses `expo-sqlite` + Drizzle (`mobile/db/schema.ts`). When adding or removing a table:
+
+1. **Update `mobile/utils/backup.ts`**: add the table to `TABLES` and to `exportBackup()`. Tables whose rows carry a `workspaceId` also go in `WORKSPACE_SCOPED_TABLES`.
+2. **A new settings key with device or sync state** stays out of the backup, the same way the extension's `EXCLUDED_SETTINGS` works.
+3. **Wire it into sync** (`mobile/utils/sync.ts`) if the entity syncs.
+
+## Production data
+
+- **Read-only by default.** Inspecting production (Railway Postgres, Supabase Auth, logs, Sentry) is fine. Queries run inside `BEGIN READ ONLY`. Any write to production, even fixing one row, needs the user's explicit OK first.
+- **Don't store more about users than the feature needs.** No new user ids, emails, IPs or device details in a table, log or analytics event without asking. Counting something is not a reason to know who did it.
+- **Account deletion must keep working.** A new table with user data either cascades from `"user"` or is handled in `routes/account.rs`.
+
+## Public endpoints
+
+A route outside the auth layer is reachable by anyone:
+
+- **Never let it reveal what's private.** A private or deleted resource answers exactly like a missing one (404).
+- **Bound it.** Anything that writes, or is expensive, gets a rate limit like `publish` and `report` have.
 
 ## Apps (plugins)
 
@@ -135,6 +177,8 @@ When implementing a feature from the spec:
 4. **Backend endpoint before frontend integration.** Get the API working with `curl` before wiring UI.
 5. **Add to entitlements if it's a paid feature.** Default to `false` for the free tier.
 6. **Test the sync path.** Any new entity must round-trip through push/pull correctly.
+7. **Test the backup path.** Any new local data must round-trip through export/import on every client (see *Export and import always work*).
+8. **Mobile too**, per *Extension and mobile parity*.
 
 ## Phase awareness
 
