@@ -3,7 +3,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
 import { db } from '@/db/client';
-import { pomodoroSession, task, timerPrefs } from '@/db/schema';
+import { meeting, pomodoroSession, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, dismissDeliveredSessionAlerts, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
@@ -102,6 +102,16 @@ export function useTimer() {
     [scopeId],
   );
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]));
+  // A session can also run on a meeting: the Schedule tab starts a stopwatch
+  // with the meeting's id as its task_id, the same as the extension does.
+  // Only the title is needed from it.
+  const { data: meetings } = useLiveQuery(
+    db.select({ id: meeting.id, title: meeting.title }).from(meeting).where(isNull(meeting.deletedAt)),
+  );
+  const titleById = new Map<string, string>([
+    ...(meetings ?? []).map(m => [m.id, m.title] as [string, string]),
+    ...(tasks ?? []).map(t => [t.id, t.title] as [string, string]),
+  ]);
   const { settings } = useSettings();
 
   // spec 6.1: "the mode used is the one currently selected on the toggle" —
@@ -115,6 +125,7 @@ export function useTimer() {
   const active = (sessions ?? []).find(s => s.status === 'active' || s.status === 'paused');
   const isRunning = active?.status === 'active';
   const activeTask = active?.taskId ? taskById.get(active.taskId) : undefined;
+  const activeTitle = active?.taskId ? (titleById.get(active.taskId) ?? null) : null;
 
   // Live-update the display every second while a pomodoro/stopwatch is
   // actually counting (not while paused/idle — no point burning battery).
@@ -142,7 +153,7 @@ export function useTimer() {
     const presentation = {
       mode: active.mode as TimerMode,
       kind: active.kind,
-      taskTitle: activeTask?.title ?? null,
+      taskTitle: activeTitle,
       startedAtMs: new Date(active.startedAt).getTime(),
       plannedDurationSeconds: active.plannedDurationSeconds,
       pausedAtMs: active.status === 'paused' && active.pausedAt ? new Date(active.pausedAt).getTime() : null,
@@ -151,7 +162,7 @@ export function useTimer() {
     // Android's equivalent surface. Each is a no-op on the other platform, so
     // both can be driven from this one reconciliation without branching here.
     syncPomodoroNotification(active.id, presentation);
-  }, [active?.id, active?.status, active?.startedAt, active?.pausedAt, active?.kind, active?.mode, active?.plannedDurationSeconds, activeTask?.title]);
+  }, [active?.id, active?.status, active?.startedAt, active?.pausedAt, active?.kind, active?.mode, active?.plannedDurationSeconds, activeTitle]);
 
   // Reaching the end naturally (app stayed foregrounded) transitions the
   // session to completed — the notification itself already fired via the OS
@@ -291,7 +302,7 @@ export function useTimer() {
       // so an active/paused row can never actually be mode='manual'.
       mode: active.mode as TimerMode,
       kind: active.kind,
-      taskTitle: activeTask?.title ?? null,
+      taskTitle: activeTitle,
       ticketRef: activeTask?.ticketRef ?? null,
       elapsedSeconds: elapsed,
       remainingSeconds: remaining,
@@ -328,13 +339,17 @@ export function useTimer() {
     }
   }
 
-  async function startSession(mode: TimerMode, taskId: string | null): Promise<void> {
-    if (active || isMutatingRef.current) return; // fast path: same-instance rapid taps bail here
+  /** Starts a session; true when it was created, false when another one is
+   *  already running (in any workspace) or the task/meeting is gone. A
+   *  meeting's session goes to the meeting's own workspace (`workspaceId`),
+   *  which under "All workspaces" can differ from the active one. */
+  async function startSession(mode: TimerMode, taskId: string | null, opts: { workspaceId?: string } = {}): Promise<boolean> {
+    if (active || isMutatingRef.current) return false; // fast path: same-instance rapid taps bail here
     isMutatingRef.current = true;
     try {
       const plannedDurationSeconds = mode === 'pomodoro' ? settings.focusSeconds : null;
       const startedAt = nowIso();
-      const taskTitle = taskId ? (taskById.get(taskId)?.title ?? null) : null;
+      const taskTitle = taskId ? (titleById.get(taskId) ?? null) : null;
       let notificationId: string | null = null;
       if (mode === 'pomodoro' && plannedDurationSeconds) {
         const copy = notificationCopyFor('focus', taskTitle);
@@ -361,9 +376,11 @@ export function useTimer() {
       // running" check is inline here rather than a prior read.
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, workspace_id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
-        SELECT ${uid()}, ${workspaceId}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        SELECT ${uid()}, ${opts.workspaceId ?? workspaceId}, ${mode}, 'focus', ${taskId}, ${plannedDurationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
-          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
+          AND (${taskId} IS NULL
+            OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL)
+            OR EXISTS (SELECT 1 FROM meeting WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         // Lost the race — another instance's start already landed. Don't
@@ -376,7 +393,7 @@ export function useTimer() {
             console.warn('Orphaned notification from a lost session-start race could not be cancelled:', notificationId);
           }
         }
-        return;
+        return false;
       }
       resolveAllPendingPrompts(); // starting something new supersedes any dangling banner
       void dismissDeliveredSessionAlerts(); // and supersedes the previous session's shade banner too
@@ -397,6 +414,7 @@ export function useTimer() {
       // (only completed focus sessions are, per push()'s filter); that
       // happens at the completion effect above. Firing it here would just
       // reset the shared debounce window for nothing new to send.
+      return true;
     } finally {
       isMutatingRef.current = false;
     }
@@ -421,7 +439,9 @@ export function useTimer() {
         INSERT INTO pomodoro_session (id, workspace_id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
         SELECT ${uid()}, ${workspaceId}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
-          AND (${taskId} IS NULL OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL))
+          AND (${taskId} IS NULL
+            OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL)
+            OR EXISTS (SELECT 1 FROM meeting WHERE id = ${taskId} AND deleted_at IS NULL))
       `);
       if (result.changes === 0) {
         if (notificationId) {
@@ -514,7 +534,7 @@ export function useTimer() {
       let notificationId: string | null = null;
       if (active.mode === 'pomodoro' && active.plannedDurationSeconds) {
         const endsAt = new Date(new Date(shiftedStartedAt).getTime() + active.plannedDurationSeconds * 1000);
-        const copy = notificationCopyFor(active.kind, activeTask?.title ?? null);
+        const copy = notificationCopyFor(active.kind, activeTitle);
         notificationId = await tryScheduleNotification(endsAt, copy.title, copy.body);
       }
 

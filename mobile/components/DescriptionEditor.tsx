@@ -16,8 +16,10 @@ const BUTTONS: { kind: FormatKind; label: string; style?: object }[] = [
   { kind: 'code', label: '`', style: { fontFamily: fontMono } },
 ];
 
-export function DescriptionEditor({ value, onChange, onCommit }: {
+export function DescriptionEditor({ value, onChange, onCommit, label = 'Description', placeholder = 'Describe this task…' }: {
   value: string;
+  label?: string;
+  placeholder?: string;
   onChange: (value: string) => void;
   /** Called when editing ends (blur, or a format applied), to persist. */
   onCommit: (value: string) => void;
@@ -50,7 +52,7 @@ export function DescriptionEditor({ value, onChange, onCommit }: {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Text style={styles.label}>Description</Text>
+        <Text style={styles.label}>{label}</Text>
         <View style={styles.tabs}>
           {(['write', 'preview'] as const).map(t => (
             <Pressable key={t} onPress={() => switchTab(t)} style={[styles.tab, tab === t && styles.tabOn]}>
@@ -82,14 +84,14 @@ export function DescriptionEditor({ value, onChange, onCommit }: {
               setForced(undefined);
             }}
             onBlur={() => onCommit(value)}
-            placeholder="Describe this task…"
+            placeholder={placeholder}
             placeholderTextColor={colors.textTertiary}
             multiline
           />
         </>
       ) : (
         <View style={styles.preview}>
-          <FormattedText text={value} placeholder="No description yet." />
+          <FormattedText text={value} placeholder={`No ${label.toLowerCase()} yet.`} />
         </View>
       )}
     </View>

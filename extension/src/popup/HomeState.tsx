@@ -3392,7 +3392,13 @@ function MeetingDetailState({
   const previewHtml = marked.parse(notes || '_No notes yet._') as string;
   const descPreviewHtml = marked.parse(description || '_No description yet._') as string;
 
+  // Imported meetings take their title and description from Google, and
+  // every calendar refresh rewrites them (calendarSync.ts), so an edit here
+  // would be silently undone. Notes, project and time are ours to edit.
+  const fromCalendar = Boolean(meeting.googleEventId);
+
   const handleTitleBlur = () => {
+    if (fromCalendar) return;
     if (title.trim() && title !== meeting.title) onUpdate({ title: title.trim() });
   };
 
@@ -3478,6 +3484,8 @@ function MeetingDetailState({
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>Title</div>
         <input
           value={title}
+          readOnly={fromCalendar}
+          title={fromCalendar ? `From ${meeting.calendarName ?? 'Google Calendar'}` : undefined}
           onChange={e => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
           style={{
@@ -3490,6 +3498,26 @@ function MeetingDetailState({
       </div>
 
       {/* Description */}
+      {fromCalendar ? (
+        <div style={{ padding: '12px 14px 0' }}>
+          {description && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>Description</div>
+              {/* Plain text, never HTML: the event's author wrote it, and
+                  rendered as markup it could draw fake controls or load a
+                  remote image in the popup. */}
+              <div
+                style={{ padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 12, lineHeight: 1.7, color: 'var(--color-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                {description}
+              </div>
+            </>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
+            Title and description come from {meeting.calendarName ?? 'Google Calendar'}.
+          </div>
+        </div>
+      ) : (
       <div style={{ padding: '12px 14px 0' }}>
         {!showDescription ? (
           <MeetingAddFieldButton label="Add description" onClick={() => setShowDescription(true)} />
@@ -3553,6 +3581,7 @@ function MeetingDetailState({
           </>
         )}
       </div>
+      )}
 
       {/* Track mode */}
       <div style={{ padding: '12px 14px 0' }}>
