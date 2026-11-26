@@ -3503,11 +3503,14 @@ function MeetingDetailState({
           {description && (
             <>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 6 }}>Description</div>
+              {/* Plain text, never HTML: the event's author wrote it, and
+                  rendered as markup it could draw fake controls or load a
+                  remote image in the popup. */}
               <div
-                className="notes-preview"
-                dangerouslySetInnerHTML={{ __html: descPreviewHtml }}
-                style={{ padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 12, lineHeight: 1.7, color: 'var(--color-text)' }}
-              />
+                style={{ padding: '8px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 12, lineHeight: 1.7, color: 'var(--color-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                {description}
+              </div>
             </>
           )}
           <div style={{ fontSize: 11, color: 'var(--color-text-faint)', marginTop: 6 }}>
