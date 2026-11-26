@@ -254,6 +254,7 @@ export default function HomeScreen() {
         <ReorderableSection
           title="Today's priorities"
           items={priorities}
+          groupOf={t => t.workspaceId}
           keyOf={t => t.id}
           onReorder={reorderTasks}
           renderItem={t => (
@@ -280,6 +281,7 @@ export default function HomeScreen() {
             <ReorderableSection
               title="Today's tasks"
               items={todayTasks}
+              groupOf={t => t.workspaceId}
               keyOf={t => t.id}
               onReorder={reorderTasks}
               renderItem={t => (

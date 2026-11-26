@@ -116,6 +116,7 @@ export default function TasksScreen() {
               <ReorderableSection
                 title="Today's priorities"
                 items={priorities}
+                groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
                 renderItem={t => (
@@ -144,6 +145,7 @@ export default function TasksScreen() {
               <ReorderableSection
                 title="Today's tasks"
                 items={todayTasks}
+                groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
                 renderItem={t => (
@@ -173,6 +175,7 @@ export default function TasksScreen() {
               <ReorderableSection
                 title="Backlog"
                 items={backlog}
+                groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
                 renderItem={t => (

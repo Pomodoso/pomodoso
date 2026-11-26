@@ -23,6 +23,9 @@ interface ReorderableSectionProps<T> {
   };
   /** Extra controls for the header row, shown when not reordering. */
   headerRight?: ReactNode;
+  /** Rows only move within their group: a task's workspace, under "All
+   *  workspaces", whose lists each keep their own order. */
+  groupOf?: (item: T) => string;
 }
 
 /**
@@ -45,13 +48,20 @@ export function ReorderableSection<T>({
   renderItem,
   promote,
   headerRight,
+  groupOf,
 }: ReorderableSectionProps<T>) {
   const [editing, setEditing] = useState(false);
   const canReorder = items.length > 1;
 
-  function move(index: number, delta: number): void {
+  function canMove(index: number, delta: number): boolean {
     const target = index + delta;
-    if (target < 0 || target >= items.length) return;
+    if (target < 0 || target >= items.length) return false;
+    return !groupOf || groupOf(items[index]!) === groupOf(items[target]!);
+  }
+
+  function move(index: number, delta: number): void {
+    if (!canMove(index, delta)) return;
+    const target = index + delta;
     const ids = items.map(keyOf);
     const moved = ids[index];
     const displaced = ids[target];
@@ -99,18 +109,18 @@ export function ReorderableSection<T>({
                 </Pressable>
               )}
               <Pressable
-                style={[styles.ctrlBtn, index === 0 && styles.ctrlBtnDisabled]}
+                style={[styles.ctrlBtn, !canMove(index, -1) && styles.ctrlBtnDisabled]}
                 onPress={() => move(index, -1)}
-                disabled={index === 0}
+                disabled={!canMove(index, -1)}
                 accessibilityLabel={`Move ${title} item up`}
                 hitSlop={4}
               >
                 <Ionicons name="chevron-up" size={15} color={colors.textSecondary} />
               </Pressable>
               <Pressable
-                style={[styles.ctrlBtn, index === items.length - 1 && styles.ctrlBtnDisabled]}
+                style={[styles.ctrlBtn, !canMove(index, 1) && styles.ctrlBtnDisabled]}
                 onPress={() => move(index, 1)}
-                disabled={index === items.length - 1}
+                disabled={!canMove(index, 1)}
                 accessibilityLabel={`Move ${title} item down`}
                 hitSlop={4}
               >

@@ -149,7 +149,20 @@ export function useTasks() {
   // Adds parsed convenience fields alongside the raw JSON columns (still
   // present via the spread) — consumers that need the raw JSON (e.g.
   // writing it back unchanged) still can, without re-parsing.
-  const withMeta = (tasks ?? []).map(t => {
+  // Positions (sortOrder) count from 0 within each workspace's list, which is
+  // what task_order carries. Under "All workspaces" that would interleave the
+  // workspaces (every one has a position 0), so the lists go workspace by
+  // workspace instead, each in its own order: what the extension's merged
+  // "All" view shows. Its workspaces come in id order (Dexie returns
+  // taskOrders by primary key), so the same order is used here.
+  const ordered =
+    scopeId === null
+      ? [...(tasks ?? [])].sort((a, b) =>
+          a.workspaceId === b.workspaceId ? a.sortOrder - b.sortOrder : a.workspaceId < b.workspaceId ? -1 : 1,
+        )
+      : (tasks ?? []);
+
+  const withMeta = ordered.map(t => {
     const stats = statsByTask.get(t.id);
     const recurrenceRule = parseRecurrence(t.recurrence);
     const completedOccurrences = parseCompletedDates(t.completedDates);
@@ -496,9 +509,16 @@ export function useTasks() {
   function reorderTasks(orderedIds: string[]): void {
     const byId = new Map((tasks ?? []).map(t => [t.id, t]));
     const touched = new Set<string>();
-    orderedIds.forEach((id, index) => {
+    // Each workspace's tasks get positions from 0 in the order they now
+    // appear: under "All workspaces" the dragged list spans several, and a
+    // position shared across them would interleave them (see `ordered`).
+    const next = new Map<string, number>();
+    orderedIds.forEach(id => {
       const current = byId.get(id);
-      if (!current || current.sortOrder === index) return;
+      if (!current) return;
+      const index = next.get(current.workspaceId) ?? 0;
+      next.set(current.workspaceId, index + 1);
+      if (current.sortOrder === index) return;
       db.update(task).set({ sortOrder: index }).where(eq(task.id, id)).run();
       touched.add(current.workspaceId);
     });
