@@ -78,8 +78,8 @@ export function hasUserData(): boolean {
  *
  * Untouched means unedited *and* unused. A seeded row stops being a fixture
  * once the user edits it (updatedAt moves past createdAt) or once something
- * of theirs points at it, because pushing that something without its parent
- * would strand it server-side:
+ * live of theirs points at it, because pushing that something without its
+ * parent would strand it server-side:
  *   - a habit with a log the user wrote, or a demo log the user changed
  *     (initDb writes demo logs with the habit's createdAt as their
  *     updatedAt, so any other date means an edit), or an achievement;
@@ -88,25 +88,46 @@ export function hasUserData(): boolean {
  *     itself going to be pushed.
  * A habit's demo logs follow the habit: excluded while it is, pushed with it
  * once it's adopted.
+ *
+ * Adopting a row by use also stamps it (see adoptUsedSeedRows), so this is
+ * not a pure read.
  */
 export function untouchedSeedIds(): SeedIds {
   const seeded = readSeedIds();
   if (seeded.workspace.length + seeded.habits.length + seeded.task.length === 0) return EMPTY;
+  const { untouched, adopted } = seedState(seeded);
+  adoptUsedSeedRows(seeded, adopted);
+  return untouched;
+}
 
+interface SeedState {
+  untouched: SeedIds;
+  /** Seeded rows still carrying their seed dates but now in use. */
+  adopted: { workspace: string[]; habits: string[]; task: string[] };
+}
+
+function seedState(seeded: SeedIds): SeedState {
   const seedHistory = new Set(seeded.habitHistory);
 
+  // Only live rows count as use: a project created in the demo workspace and
+  // then deleted doesn't make the workspace the user's.
   const seedHabits = seeded.habits.length
     ? db.select().from(habits).where(inArray(habits.id, seeded.habits)).all()
     : [];
   const habitCreatedAt = new Map(seedHabits.map(h => [h.id, h.createdAt]));
   const usedHabits = new Set<string>();
-  for (const h of db.select({ id: habitHistory.id, habitId: habitHistory.habitId, updatedAt: habitHistory.updatedAt }).from(habitHistory).all()) {
+  for (const h of db
+    .select({ id: habitHistory.id, habitId: habitHistory.habitId, updatedAt: habitHistory.updatedAt })
+    .from(habitHistory)
+    .where(isNull(habitHistory.deletedAt))
+    .all()) {
     if (!seedHistory.has(h.id) || h.updatedAt !== habitCreatedAt.get(h.habitId)) usedHabits.add(h.habitId);
   }
-  for (const a of db.select({ habitId: achievements.habitId }).from(achievements).all()) {
+  for (const a of db.select({ habitId: achievements.habitId }).from(achievements).where(isNull(achievements.deletedAt)).all()) {
     if (a.habitId) usedHabits.add(a.habitId);
   }
-  const untouchedHabits = new Set(seedHabits.filter(h => h.updatedAt === h.createdAt && !usedHabits.has(h.id)).map(h => h.id));
+  const pristineHabits = seedHabits.filter(h => h.updatedAt === h.createdAt);
+  const untouchedHabits = new Set(pristineHabits.filter(h => !usedHabits.has(h.id)).map(h => h.id));
   const untouchedHistory = seeded.habitHistory.length
     ? db
         .select({ id: habitHistory.id, habitId: habitHistory.habitId })
@@ -118,35 +139,85 @@ export function untouchedSeedIds(): SeedIds {
     : [];
 
   const seedTasks = seeded.task.length
-    ? db.select({ id: task.id, workspaceId: task.workspaceId, createdAt: task.createdAt, updatedAt: task.updatedAt }).from(task).where(inArray(task.id, seeded.task)).all()
+    ? db.select({ id: task.id, createdAt: task.createdAt, updatedAt: task.updatedAt }).from(task).where(inArray(task.id, seeded.task)).all()
     : [];
   const usedTasks = new Set(
-    db.select({ taskId: pomodoroSession.taskId }).from(pomodoroSession).all().map(s => s.taskId).filter((id): id is string => id !== null),
+    db
+      .select({ taskId: pomodoroSession.taskId })
+      .from(pomodoroSession)
+      .where(isNull(pomodoroSession.deletedAt))
+      .all()
+      .map(s => s.taskId)
+      .filter((id): id is string => id !== null),
   );
-  const untouchedTasks = new Set(seedTasks.filter(t => t.updatedAt === t.createdAt && !usedTasks.has(t.id)).map(t => t.id));
+  const pristineTasks = seedTasks.filter(t => t.updatedAt === t.createdAt);
+  const untouchedTasks = new Set(pristineTasks.filter(t => !usedTasks.has(t.id)).map(t => t.id));
 
   const usedWorkspaces = new Set<string>([
-    ...db.select({ id: task.id, workspaceId: task.workspaceId }).from(task).all().filter(t => !untouchedTasks.has(t.id)).map(t => t.workspaceId),
-    ...db.select({ workspaceId: project.workspaceId }).from(project).all().map(r => r.workspaceId),
-    ...db.select({ workspaceId: pomodoroSession.workspaceId }).from(pomodoroSession).all().map(r => r.workspaceId),
-    ...db.select({ workspaceId: meeting.workspaceId }).from(meeting).all().map(r => r.workspaceId),
+    ...db
+      .select({ id: task.id, workspaceId: task.workspaceId })
+      .from(task)
+      .where(isNull(task.deletedAt))
+      .all()
+      .filter(t => !untouchedTasks.has(t.id))
+      .map(t => t.workspaceId),
+    ...db.select({ workspaceId: project.workspaceId }).from(project).where(isNull(project.deletedAt)).all().map(r => r.workspaceId),
+    ...db.select({ workspaceId: pomodoroSession.workspaceId }).from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all().map(r => r.workspaceId),
+    ...db.select({ workspaceId: meeting.workspaceId }).from(meeting).where(isNull(meeting.deletedAt)).all().map(r => r.workspaceId),
   ]);
-  const untouchedWorkspaces = seeded.workspace.length
+  const pristineWorkspaces = seeded.workspace.length
     ? db
         .select({ id: workspace.id, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt })
         .from(workspace)
         .where(inArray(workspace.id, seeded.workspace))
         .all()
-        .filter(w => w.updatedAt === w.createdAt && !usedWorkspaces.has(w.id))
-        .map(w => w.id)
+        .filter(w => w.updatedAt === w.createdAt)
     : [];
 
   return {
-    workspace: untouchedWorkspaces,
-    habits: [...untouchedHabits],
-    habitHistory: untouchedHistory,
-    task: [...untouchedTasks],
+    untouched: {
+      workspace: pristineWorkspaces.filter(w => !usedWorkspaces.has(w.id)).map(w => w.id),
+      habits: [...untouchedHabits],
+      habitHistory: untouchedHistory,
+      task: [...untouchedTasks],
+    },
+    adopted: {
+      workspace: pristineWorkspaces.filter(w => usedWorkspaces.has(w.id)).map(w => w.id),
+      habits: pristineHabits.filter(h => usedHabits.has(h.id)).map(h => h.id),
+      task: pristineTasks.filter(t => usedTasks.has(t.id)).map(t => t.id),
+    },
   };
+}
+
+/**
+ * Stamps demo rows the user has started using, so they sync like a fresh edit.
+ *
+ * A seeded row keeps its seed date until edited. Pushed with that date, other
+ * devices' incremental pull (`updated_at > since`) would skip it while
+ * receiving the newer log, session or task that points at it. Bumping
+ * updatedAt makes it visible to them, and also makes the adoption stick: the
+ * row is no longer pristine, so it never reads as demo again.
+ *
+ * Safe for tasks too: an adopted task has a session, and History groups a
+ * task with sessions by its sessions, not by updatedAt. A habit's demo logs
+ * are stamped with it, since they now sync too.
+ */
+function adoptUsedSeedRows(seeded: SeedIds, adopted: SeedState['adopted']): void {
+  if (adopted.workspace.length + adopted.habits.length + adopted.task.length === 0) return;
+  const ts = new Date().toISOString();
+  db.transaction(tx => {
+    if (adopted.workspace.length) tx.update(workspace).set({ updatedAt: ts }).where(inArray(workspace.id, adopted.workspace)).run();
+    if (adopted.task.length) tx.update(task).set({ updatedAt: ts }).where(inArray(task.id, adopted.task)).run();
+    if (adopted.habits.length) {
+      tx.update(habits).set({ updatedAt: ts }).where(inArray(habits.id, adopted.habits)).run();
+      if (seeded.habitHistory.length) {
+        tx.update(habitHistory)
+          .set({ updatedAt: ts })
+          .where(and(inArray(habitHistory.id, seeded.habitHistory), inArray(habitHistory.habitId, adopted.habits)))
+          .run();
+      }
+    }
+  });
 }
 
 /**
