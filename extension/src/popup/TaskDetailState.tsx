@@ -6,7 +6,7 @@ import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEnt
 import { db, localDate, type RecurrenceRule, type TaskRow } from '../db';
 import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
-import { resolveTaskStatus, taskStatusOptions } from '@pomodoso/types';
+import { applyFormat, resolveTaskStatus, taskStatusOptions, type FormatKind } from '@pomodoso/types';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { LinkedApps } from './apps/LinkedApps';
 
@@ -60,52 +60,6 @@ function formatNoteDate(isoDate: string, timezone: string | undefined): string {
   const day = d.toLocaleDateString('en-US', { day: 'numeric', timeZone: timezone });
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: timezone });
   return sameYear ? `${month} ${day} · ${time}` : `${month} ${day}, ${d.getFullYear()} · ${time}`;
-}
-
-function applyFormat(
-  ta: HTMLTextAreaElement,
-  prefix: string,
-  suffix: string,
-  lineMode: boolean,
-): { value: string; start: number; end: number } {
-  const s = ta.selectionStart;
-  const e = ta.selectionEnd;
-  const v = ta.value;
-
-  if (lineMode) {
-    const lineStart = v.lastIndexOf('\n', s - 1) + 1;
-    const blockEnd = s === e
-      ? (v.indexOf('\n', s) >= 0 ? v.indexOf('\n', s) : v.length)
-      : e;
-    const block = v.slice(lineStart, blockEnd);
-    const lines = block.split('\n');
-    const toggling = lines.every(l => l.startsWith(prefix));
-    const newBlock = toggling
-      ? lines.map(l => l.slice(prefix.length)).join('\n')
-      : lines.map(l => prefix + l).join('\n');
-    const delta = newBlock.length - block.length;
-    return {
-      value: v.slice(0, lineStart) + newBlock + v.slice(blockEnd),
-      start: s + (toggling ? -Math.min(prefix.length, s - lineStart) : prefix.length),
-      end: blockEnd + delta,
-    };
-  }
-
-  const sel = v.slice(s, e);
-  if (sel) {
-    if (sel.startsWith(prefix) && sel.endsWith(suffix) && sel.length > prefix.length + suffix.length) {
-      const inner = sel.slice(prefix.length, sel.length - suffix.length);
-      return { value: v.slice(0, s) + inner + v.slice(e), start: s, end: s + inner.length };
-    }
-    const wrapped = prefix + sel + suffix;
-    return { value: v.slice(0, s) + wrapped + v.slice(e), start: s, end: s + wrapped.length };
-  }
-
-  return {
-    value: v.slice(0, s) + prefix + suffix + v.slice(e),
-    start: s + prefix.length,
-    end: s + prefix.length,
-  };
 }
 
 export function TaskDetailState({ task, projects, workspaces, activeWsId, timezone, isInToday, isInPriorities, prioritiesFull, onBack, onDelete, onMoveToBacklog, onAddToPriorities, onAddToTasks, onUpdateTask, onAddProject, onUpdateProject, onDeleteProject, onStart, onSelectTask, onCreateFollowup }: TaskDetailStateProps) {
@@ -234,10 +188,10 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
     onUpdateTask?.({ noteEntries: updated });
   };
 
-  const handleDescFormat = (prefix: string, suffix = prefix, lineMode = false) => {
+  const handleDescFormat = (kind: FormatKind) => {
     const ta = descRef.current;
     if (!ta) return;
-    const result = applyFormat(ta, prefix, suffix, lineMode);
+    const result = applyFormat(ta.value, ta.selectionStart, ta.selectionEnd, kind);
     setDescription(result.value);
     onUpdateTask?.({ description: result.value });
     requestAnimationFrame(() => {
@@ -364,10 +318,10 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
             {descTab === 'write' && (
               <>
                 <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
-                  <FormatBtn label="B" bold title="Bold" onClick={() => handleDescFormat('**')} />
-                  <FormatBtn label="I" italic title="Italic" onClick={() => handleDescFormat('_')} />
-                  <FormatBtn label="•" title="Bullet list" onClick={() => handleDescFormat('- ', '', true)} />
-                  <FormatBtn label="`" mono title="Inline code" onClick={() => handleDescFormat('`')} />
+                  <FormatBtn label="B" bold title="Bold" onClick={() => handleDescFormat('bold')} />
+                  <FormatBtn label="I" italic title="Italic" onClick={() => handleDescFormat('italic')} />
+                  <FormatBtn label="•" title="Bullet list" onClick={() => handleDescFormat('bullet')} />
+                  <FormatBtn label="`" mono title="Inline code" onClick={() => handleDescFormat('code')} />
                 </div>
                 <textarea
                   ref={descRef}

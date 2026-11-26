@@ -11,6 +11,7 @@ import { ProjectPicker } from '@/components/ProjectPicker';
 import { RecurrenceFormModal } from '@/components/RecurrenceFormModal';
 import { StatusPicker } from '@/components/StatusPicker';
 import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR } from '@/constants/taskStatus';
+import { DescriptionEditor } from '@/components/DescriptionEditor';
 import { colors, fontMono } from '@/constants/theme';
 import { useProjectPicker } from '@/hooks/useProjectPicker';
 import { useProjects } from '@/hooks/useProjects';
@@ -138,9 +139,9 @@ export default function TaskDetailScreen() {
     }
   }
 
-  function handleDescriptionBlur(): void {
+  function commitDescription(value: string): void {
     if (!task) return;
-    const trimmed = description.trim();
+    const trimmed = value.trim();
     if (trimmed !== (task.description ?? '')) {
       updateTask(task.id, { description: trimmed || null });
     }
@@ -217,15 +218,7 @@ export default function TaskDetailScreen() {
         )}
 
         {showDescription ? (
-          <TextInput
-            style={styles.descriptionInput}
-            value={description}
-            onChangeText={setDescription}
-            onBlur={handleDescriptionBlur}
-            placeholder="Add a description…"
-            placeholderTextColor={colors.textTertiary}
-            multiline
-          />
+          <DescriptionEditor value={description} onChange={setDescription} onCommit={commitDescription} />
         ) : (
           <Pressable style={styles.addFieldBtn} onPress={() => setShowDescription(true)}>
             <Ionicons name="add" size={14} color={colors.textTertiary} />
@@ -478,18 +471,6 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.text },
   rowTextMuted: { flex: 1, fontSize: 14.5, fontWeight: '600', color: colors.textTertiary },
   metaText: { fontSize: 14, color: colors.textSecondary },
-  descriptionInput: {
-    fontSize: 14,
-    color: colors.text,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 18,
-    minHeight: 60,
-    textAlignVertical: 'top',
-  },
   addFieldBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, marginBottom: 18 },
   addFieldBtnText: { fontSize: 13, color: colors.textTertiary },
   sessionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
