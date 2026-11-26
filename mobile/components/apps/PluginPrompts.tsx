@@ -16,7 +16,7 @@ import {
 import { toEngineRecord } from '@pomodoso/types/plugins/rows';
 import { eq, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '@/constants/theme';
@@ -73,7 +73,14 @@ export function PluginPrompts({ inBreak, sessionId, pomosToday }: {
   }, [stateRows]);
   const today = localToday(clock.timeZone);
   const yesterday = addDays(today, -1);
-  const key = breakKey(sessionId, today, pomosToday);
+  // Fixed for as long as the break lasts: from pomo-done through the break
+  // itself it's one break, and a key that moved (a session lookup that came
+  // back different) would re-pick and rotate its question.
+  const liveKey = breakKey(sessionId, today, pomosToday);
+  const held = useRef<string | null>(null);
+  if (!inBreak) held.current = null;
+  else if (held.current === null) held.current = liveKey;
+  const key = held.current ?? liveKey;
 
   const usable = useMemo(() => plugins?.filter(isSupported), [plugins]);
   const breakCandidates = useMemo(() => (usable ? promptHooks(usable, 'pomodoro_end') : []), [usable]);

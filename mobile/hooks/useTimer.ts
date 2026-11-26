@@ -280,10 +280,14 @@ export function useTimer() {
   // break (pendingBreak) or during it. It identifies the break for apps'
   // `pomodoro_end` questions (one question per break, picked once), the same
   // key the extension uses. Null outside a break.
+  // During the break: the focus session that ended last before it started
+  // (the one pomo-done offered this break for), by end time.
   const breakFocusSessionId: string | null = pendingBreak
     ? mostRecentUnresolved!.id
     : active && active.kind !== 'focus'
-      ? ((sessions ?? []).find(s => s.kind === 'focus' && s.status === 'completed' && s.startedAt < active.startedAt)?.id ?? null)
+      ? ((sessions ?? [])
+          .filter(s => s.kind === 'focus' && s.status === 'completed' && s.endedAt !== null && s.endedAt <= active.startedAt)
+          .sort((a, b) => (b.endedAt! < a.endedAt! ? -1 : b.endedAt! > a.endedAt! ? 1 : 0))[0]?.id ?? null)
       : null;
   const inBreak = Boolean(pendingBreak) || Boolean(active && active.kind !== 'focus');
 
