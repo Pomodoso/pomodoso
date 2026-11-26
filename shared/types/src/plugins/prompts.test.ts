@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { PluginHook, PluginManifest, PluginRecord } from '@pomodoso/types/plugins';
-
-import type { PluginRow } from './db.ts';
-import { localDayOf } from '@pomodoso/types/plugins';
-
-import { EMPTY_PROMPT_STATE, breakKey, hookId, localNoon, pendingDayEnd, pickBreakPrompt, promptHooks } from './pluginHooks.ts';
+import type { PluginRecord } from './compute.ts';
+import { localDayOf } from './dates.ts';
+import type { PluginHook, PluginManifest } from './manifest.ts';
+import { EMPTY_PROMPT_STATE, breakKey, hookId, localNoon, pendingDayEnd, pickBreakPrompt, promptHooks } from './prompts.ts';
+import type { PluginRow } from './rows.ts';
 
 function plugin(id: string, hooks: PluginHook[], extra: Partial<PluginRow> = {}): PluginRow {
   return {

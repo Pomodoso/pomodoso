@@ -276,6 +276,17 @@ export function useTimer() {
     }
   }
 
+  // The focus session a break follows, while there is one: waiting for the
+  // break (pendingBreak) or during it. It identifies the break for apps'
+  // `pomodoro_end` questions (one question per break, picked once), the same
+  // key the extension uses. Null outside a break.
+  const breakFocusSessionId: string | null = pendingBreak
+    ? mostRecentUnresolved!.id
+    : active && active.kind !== 'focus'
+      ? ((sessions ?? []).find(s => s.kind === 'focus' && s.status === 'completed' && s.startedAt < active.startedAt)?.id ?? null)
+      : null;
+  const inBreak = Boolean(pendingBreak) || Boolean(active && active.kind !== 'focus');
+
   let display: TimerDisplay;
   if (!active) {
     display = {
@@ -680,6 +691,9 @@ export function useTimer() {
     trackedMinutesToday,
     pendingBreak,
     pendingNextFocus,
+    inBreak,
+    breakFocusSessionId,
+    pomosToday,
     startSession,
     startBreak,
     skipBreak,

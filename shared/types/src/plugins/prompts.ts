@@ -6,9 +6,9 @@
 // plugins so none of them takes every break; `day_end` asks about yesterday
 // on the first open of the next day, until it's answered or dismissed.
 
-import type { PluginHook, PluginRecord } from '@pomodoso/types/plugins';
-
-import type { PluginRow } from './db.ts';
+import type { PluginRecord } from './compute.ts';
+import type { PluginHook } from './manifest.ts';
+import type { PluginRow } from './rows.ts';
 
 export type PromptHook = Extract<PluginHook, { ask: string }>;
 

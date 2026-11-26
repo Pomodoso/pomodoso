@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { reorderSubset } from '@pomodoso/types';
 
+import { PluginPrompts } from '@/components/apps/PluginPrompts';
 import { TodayApps } from '@/components/apps/TodayApps';
 import { BreakBanner } from '@/components/BreakBanner';
 import { AddTaskModal } from '@/components/AddTaskModal';
@@ -57,6 +58,9 @@ export default function HomeScreen() {
     trackedMinutesToday,
     pendingBreak,
     pendingNextFocus,
+    inBreak,
+    breakFocusSessionId,
+    pomosToday,
     startSession,
     startBreak,
     skipBreak,
@@ -132,6 +136,8 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Only draws when some other device announced a running session. */}
         <RemoteTimerBanner />
+        {/* An app's question: during a break, or yesterday's day_end one. */}
+        <PluginPrompts inBreak={inBreak} sessionId={breakFocusSessionId} pomosToday={pomosToday} />
         <View style={styles.timerBlock}>
           {display.status === 'idle' && pendingBreak ? (
             <BreakBanner
