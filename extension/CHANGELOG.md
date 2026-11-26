@@ -1,6 +1,17 @@
 # Changelog
 
-## v1.4.1 (In progress)
+## v1.4.2 (In progress)
+
+### Meetings
+
+- **Calendar meetings keep their title and description from Google** — They're shown read-only in a meeting's detail, with where they come from, since every calendar refresh rewrote them and an edit there was silently lost. Notes, project, tracking and time logged are still yours to edit.
+- **Safer meeting descriptions** — A description imported from Google shows as plain text, so an event can't put buttons or forms into Pomodoso.
+
+### Data
+
+- **Restored settings stick** — After importing a backup, the preferences it restores (timer lengths, week start and so on) win the next sync instead of being replaced by the account's older values.
+
+## v1.4.1
 
 ### Today
 
