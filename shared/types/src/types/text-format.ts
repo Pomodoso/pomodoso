@@ -53,6 +53,19 @@ export function applyFormat(value: string, start: number, end: number, kind: For
   }
 
   const sel = value.slice(s, e);
+  // Markdown emphasis doesn't cross line breaks, so a multi-line selection is
+  // formatted line by line (blank lines left alone). Toggles off when every
+  // non-blank line is already wrapped.
+  if (sel.includes('\n')) {
+    const lines = sel.split('\n');
+    const filled = lines.filter(l => l.trim() !== '');
+    const wrapped = (l: string) => l.startsWith(prefix) && l.endsWith(suffix) && l.length > prefix.length + suffix.length;
+    const unwrapping = filled.length > 0 && filled.every(wrapped);
+    const out = lines
+      .map(l => (l.trim() === '' ? l : unwrapping ? l.slice(prefix.length, l.length - suffix.length) : prefix + l + suffix))
+      .join('\n');
+    return { value: value.slice(0, s) + out + value.slice(e), start: s, end: s + out.length };
+  }
   if (sel) {
     if (sel.startsWith(prefix) && sel.endsWith(suffix) && sel.length > prefix.length + suffix.length) {
       const inner = sel.slice(prefix.length, sel.length - suffix.length);
@@ -94,25 +107,50 @@ export function parseFormattedText(text: string): TextBlock[] {
   });
 }
 
-// `code` first (its content is literal), then **bold**, then _italic_ or
-// *italic*. Underscores inside a word (snake_case) don't open italics. No
-// lookbehind: the character before an italic marker is captured instead
-// (group 3 / 5) and kept as plain text, so Hermes on older React Native
-// versions parses it too.
-const INLINE = /`([^`]+)`|\*\*(.+?)\*\*|(^|[^\w])_(.+?)_(?!\w)|(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g;
+// Code spans are taken out first (swapped for placeholders) so their content
+// stays literal and a `**` inside one can't close the bold around it. Then
+// **bold**, then _italic_ or *italic*. Underscores inside a word (snake_case)
+// don't open italics. No lookbehind: the character before an italic marker is
+// captured instead (group 2 / 4) and kept as plain text, so Hermes on older
+// React Native versions parses it too.
+const CODE = /`([^`]+)`/g;
+const EMPHASIS = /\*\*(.+?)\*\*|(^|[^\w])_(.+?)_(?!\w)|(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g;
+// Private-use characters: never typed, so they can't collide with text.
+const OPEN = '\uE000';
+const CLOSE = '\uE001';
+const PLACEHOLDER = /\uE000(\d+)\uE001/g;
 
-function parseInline(line: string, inherited: Omit<TextSpan, 'text'> = {}): TextSpan[] {
+function parseInline(line: string): TextSpan[] {
+  const codes: string[] = [];
+  const masked = line.replace(CODE, (_m, code: string) => `${OPEN}${codes.push(code) - 1}${CLOSE}`);
+  return parseEmphasis(masked, codes, {});
+}
+
+function parseEmphasis(line: string, codes: string[], inherited: Omit<TextSpan, 'text'>): TextSpan[] {
   const spans: TextSpan[] = [];
   let last = 0;
-  for (const m of line.matchAll(INLINE)) {
-    const lead = m[3] ?? m[5] ?? '';
+  for (const m of line.matchAll(EMPHASIS)) {
+    const lead = m[2] ?? m[4] ?? '';
     const index = (m.index ?? 0) + lead.length;
-    if (index > last) spans.push({ ...inherited, text: line.slice(last, index) });
-    if (m[1] !== undefined) spans.push({ ...inherited, code: true, text: m[1] });
-    else if (m[2] !== undefined) spans.push(...parseInline(m[2], { ...inherited, bold: true }));
-    else spans.push(...parseInline(m[4] ?? m[6] ?? '', { ...inherited, italic: true }));
+    if (index > last) spans.push(...plain(line.slice(last, index), codes, inherited));
+    if (m[1] !== undefined) spans.push(...parseEmphasis(m[1], codes, { ...inherited, bold: true }));
+    else spans.push(...parseEmphasis(m[3] ?? m[5] ?? '', codes, { ...inherited, italic: true }));
     last = (m.index ?? 0) + m[0].length;
   }
-  if (last < line.length) spans.push({ ...inherited, text: line.slice(last) });
+  if (last < line.length) spans.push(...plain(line.slice(last), codes, inherited));
+  return spans;
+}
+
+/** Text with code placeholders put back as code spans. */
+function plain(text: string, codes: string[], inherited: Omit<TextSpan, 'text'>): TextSpan[] {
+  const spans: TextSpan[] = [];
+  let last = 0;
+  for (const m of text.matchAll(PLACEHOLDER)) {
+    const index = m.index ?? 0;
+    if (index > last) spans.push({ ...inherited, text: text.slice(last, index) });
+    spans.push({ ...inherited, code: true, text: codes[Number(m[1])] ?? '' });
+    last = index + m[0].length;
+  }
+  if (last < text.length) spans.push({ ...inherited, text: text.slice(last) });
   return spans;
 }

@@ -70,3 +70,18 @@ test('round-trips what the buttons write', () => {
   const { value } = applyFormat('note', 0, 4, 'bold');
   assert.deepEqual(parseFormattedText(value)[0]!.spans, [{ bold: true, text: 'note' }]);
 });
+
+test('a multi-line selection is formatted line by line and round-trips', () => {
+  const r = applyFormat('one\n\ntwo', 0, 8, 'bold');
+  assert.equal(r.value, '**one**\n\n**two**');
+  const blocks = parseFormattedText(r.value);
+  assert.deepEqual(blocks[0]!.spans, [{ bold: true, text: 'one' }]);
+  assert.deepEqual(blocks[2]!.spans, [{ bold: true, text: 'two' }]);
+  assert.equal(applyFormat(r.value, 0, r.value.length, 'bold').value, 'one\n\ntwo');
+});
+
+test('stars inside code do not close the bold around it', () => {
+  const r = applyFormat('`a**b`', 0, 6, 'bold');
+  assert.equal(r.value, '**`a**b`**');
+  assert.deepEqual(parseFormattedText(r.value)[0]!.spans, [{ bold: true, code: true, text: 'a**b' }]);
+});

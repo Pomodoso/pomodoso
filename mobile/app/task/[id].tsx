@@ -139,11 +139,14 @@ export default function TaskDetailScreen() {
     }
   }
 
+  // Saved as typed, not trimmed: a format applied mid-edit commits too, and
+  // trimming then would turn a fresh bullet's "- " into "-". Only a
+  // description that is all whitespace is cleared.
   function commitDescription(value: string): void {
     if (!task) return;
-    const trimmed = value.trim();
-    if (trimmed !== (task.description ?? '')) {
-      updateTask(task.id, { description: trimmed || null });
+    const next = value.trim() ? value : null;
+    if (next !== (task.description ?? null)) {
+      updateTask(task.id, { description: next });
     }
   }
 
@@ -196,7 +199,7 @@ export default function TaskDetailScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} onBlur={handleTitleBlur} multiline />
 
         {showTicketId ? (
