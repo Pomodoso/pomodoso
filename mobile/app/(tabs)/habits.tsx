@@ -94,6 +94,7 @@ export default function HabitsScreen() {
               onPress={() => openEdit(habit)}
               onToggle={() => toggleHabit(habit.id)}
               onIncrement={delta => incrementHabit(habit.id, delta)}
+              paused={habit.paused}
             />
           )}
         />

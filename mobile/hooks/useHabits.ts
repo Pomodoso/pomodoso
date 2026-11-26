@@ -5,6 +5,7 @@ import {
   challengeDaysOf,
   challengeEarnsBadge,
   challengeKeepGoing,
+  challengeNeedsDecision,
   challengeProgress,
   challengeRecordCompletion,
   challengeStartOver,
@@ -43,6 +44,9 @@ export interface HabitWithProgress {
   daysDone: number;
   /** The challenge run and its progress, or null for a plain habit. */
   challenge: { state: ChallengeState; progress: ChallengeProgress } | null;
+  /** A challenge run waiting on a missed day: today can't be logged until the
+   *  user keeps going or starts over (the extension's pausedHabitIds). */
+  paused: boolean;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
 }
 
@@ -55,6 +59,34 @@ function parseSkippedDays(raw: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The challenge run of a habit and its progress as of `day`, or null for a
+ * plain habit. The fallback start date covers the moment before the effect
+ * that stores one runs: a default for this render, never a substitute for
+ * storing it, because a stored date is what stops the run restarting.
+ */
+function challengeOn(
+  h: typeof habits.$inferSelect,
+  days: number[],
+  byDate: Map<string, { count: number; done: boolean }>,
+  day: string,
+): HabitWithProgress['challenge'] {
+  if (!h.challengeLengthDays) return null;
+  const state: ChallengeState = {
+    lengthDays: h.challengeLengthDays,
+    startedAt: h.challengeStartedAt ?? day,
+    completedAt: h.challengeCompletedAt ?? null,
+    skippedDays: parseSkippedDays(h.challengeSkippedDays),
+  };
+  const runDays = challengeDaysOf(
+    state.startedAt,
+    day,
+    date => days.length === 0 || days.includes(toMondayFirstDow(new Date(date + 'T12:00:00'))),
+    date => isDone(h.kind, h.goal, byDate.get(date)),
+  );
+  return { state, progress: challengeProgress(state, runDays, day) };
 }
 
 function todayStr(): string {
@@ -165,22 +197,7 @@ export function useHabits() {
     // moment before the effect below writes one — it is a default for this
     // render, never a substitute for storing it, because a stored date is what
     // stops the run restarting tomorrow.
-    let challenge: HabitWithProgress['challenge'] = null;
-    if (h.challengeLengthDays) {
-      const state: ChallengeState = {
-        lengthDays: h.challengeLengthDays,
-        startedAt: h.challengeStartedAt ?? today,
-        completedAt: h.challengeCompletedAt ?? null,
-        skippedDays: parseSkippedDays(h.challengeSkippedDays),
-      };
-      const runDays = challengeDaysOf(
-        state.startedAt,
-        today,
-        date => days.length === 0 || days.includes(toMondayFirstDow(new Date(date + 'T12:00:00'))),
-        date => isDone(h.kind, h.goal, byDate.get(date)),
-      );
-      challenge = { state, progress: challengeProgress(state, runDays, today) };
-    }
+    const challenge = challengeOn(h, days, byDate, today);
 
     return {
       ...h,
@@ -191,6 +208,7 @@ export function useHabits() {
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
       challenge,
+      paused: challenge !== null && challengeNeedsDecision(challenge.progress),
       weekFilled: weekFilled(h.kind, h.goal, byDate),
     };
   });
@@ -200,11 +218,25 @@ export function useHabits() {
   // read-then-write — otherwise two rapid taps racing on the same render-time
   // snapshot either drop an increment or double-insert the first row.
 
+  // A paused run is locked until it's answered: logging today on top of an
+  // unanswered miss would let the run keep advancing as if the gap weren't
+  // there. Guarded here so every screen that ticks inherits it, as in the
+  // extension. Checked against the day being written, not the last render's:
+  // just after midnight the screen still shows yesterday for a few seconds,
+  // and the day that just ended may be the miss that pauses the run.
+  function pausedOn(id: string, day: string): boolean {
+    const h = (habitRows ?? []).find(x => x.id === id);
+    if (!h) return false;
+    const c = challengeOn(h, parseDays(h.days), rowsByHabit.get(id) ?? new Map(), day);
+    return c !== null && challengeNeedsDecision(c.progress);
+  }
+
   function toggleHabit(id: string): void {
     // Recompute today's date here rather than closing over the render-time
     // `today` — a screen left open across local midnight would otherwise
     // keep writing to yesterday's row.
     const day = todayStr();
+    if (pausedOn(id, day)) return;
     const now = new Date().toISOString();
     db.insert(habitHistory)
       .values({ id: habitLogId(id, day), habitId: id, date: day, count: 0, done: true, updatedAt: now })
@@ -218,6 +250,7 @@ export function useHabits() {
   }
 
   function incrementHabit(id: string, delta: number): void {
+    if (pausedOn(id, todayStr())) return;
     // No upper clamp — going over goal is fine (13 glasses when the target is
     // 12 still means the habit is done), only floor at 0. `done` isn't
     // written here: for counter habits it's derived from count/goal (isDone
