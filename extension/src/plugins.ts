@@ -23,7 +23,7 @@ import {
 } from '@pomodoso/types/plugins';
 
 import { db, localDate, now, type PluginRecordRow, type PluginRow } from './db';
-import { rowsFromExport, toEngineRecord } from './pluginRows';
+import { rowsFromExport, toEngineRecord } from '@pomodoso/types/plugins';
 
 export type PluginWriteResult = { ok: true; plugin: PluginRow } | { ok: false; issues: PluginIssue[] };
 

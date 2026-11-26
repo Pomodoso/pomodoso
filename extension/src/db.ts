@@ -192,35 +192,10 @@ export interface DetectionRuleRow extends SyncMeta {
 }
 
 // ─── Plugin types ──────────────────────────────────────────────────────────────
-// A plugin is a declarative YAML mini-app (@pomodoso/types/plugins). The row
-// keeps the parsed, validated manifest — never the YAML text, which is only
-// an input format. Personal like habits: no workspaceId.
-export interface PluginRow extends SyncMeta {
-  id: string;                 // client-generated UUID
-  slug: string;               // manifest.id; one live install per slug
-  source: 'file' | 'directory';
-  directoryVersionId?: string | undefined;
-  manifest: PluginManifest;
-  // The user's values for manifest.settings, plus per-user state that must
-  // survive updates of the file (edited select options, Today on/off).
-  settings: Record<string, unknown>;
-  enabled: boolean;
-  autoUpdate: boolean;
-  installedOn: string;        // YYYY-MM-DD local — where taper starts, how far back streak looks
-  createdAt: string;
-}
-
-// One record of one of a plugin's collections. Same shape as the engine's
-// PluginRecord, in this file's camelCase; see toEngineRecord in plugins.ts.
-export interface PluginRecordRow extends SyncMeta {
-  id: string;                 // UUID; for daily collections derived by dailyRecordId()
-  pluginId: string;
-  collection: string;
-  day?: string | undefined;          // daily collections, YYYY-MM-DD
-  occurredAt?: string | undefined;   // event collections, ISO
-  data: Record<string, unknown>;
-  createdAt: string;
-}
+// Shared with mobile (@pomodoso/types/plugins' rows.ts), so both clients store
+// and sync apps the same way.
+import type { PluginRecordRow, PluginRow } from '@pomodoso/types/plugins/rows';
+export type { PluginRecordRow, PluginRow };
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 export interface SettingRow {

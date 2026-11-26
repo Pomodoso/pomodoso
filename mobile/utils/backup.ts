@@ -3,7 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, WELCOME_SEEN_KEY, workspace } from '@/db/schema';
+import { achievements, habitHistory, habits, meeting, plugin, pluginRecord, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, WELCOME_SEEN_KEY, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { untouchedSeedIds } from '@/utils/seed';
@@ -57,6 +57,8 @@ const TABLES = {
   project,
   task,
   meeting,
+  plugin,
+  pluginRecord,
   timerPrefs,
   settings,
 } as const;
@@ -117,6 +119,10 @@ export function exportBackup(): string {
     project: db.select().from(project).where(isNull(project.deletedAt)).all(),
     task: without(db.select().from(task).where(isNull(task.deletedAt)).all(), seed.task),
     meeting: db.select().from(meeting).where(isNull(meeting.deletedAt)).all(),
+    // Apps and their records travel like the extension's backup does: the
+    // app with its manifest and settings, and every live record.
+    plugin: db.select().from(plugin).where(isNull(plugin.deletedAt)).all(),
+    pluginRecord: db.select().from(pluginRecord).where(isNull(pluginRecord.deletedAt)).all(),
     timerPrefs: db.select().from(timerPrefs).all(),
     settings: db.select().from(settings).all().filter(s => !isExcludedSetting(s.key)),
   };

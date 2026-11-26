@@ -1,13 +1,61 @@
-// Pure conversions between the extension's plugin rows (camelCase, Dexie)
-// and the shared engine/export shapes (snake_case, as on the server). Split
-// from plugins.ts so they run in a plain Node test without IndexedDB.
+// How a client stores an installed app and its records (camelCase rows), the
+// conversions to the engine and export shapes (snake_case, as on the server),
+// and how those rows travel through sync. Shared by every client that runs
+// apps (extension, mobile), so both write the same wire shape, read pulls the
+// same way, and fold duplicate installs into the same result.
+//
+// Served on its own subpath (@pomodoso/types/plugins/rows), and importing
+// only types plus ids.ts: it runs in sync engines, which must not pull the
+// YAML parser and zod in through the plugins entry.
 
-import type { PluginExport, PluginRecord } from '@pomodoso/types/plugins';
-// The ids subpath, not the plugins entry: this module runs in the sync
-// engine, which must not pull the YAML parser and zod into the popup.
-import { dailyRecordId } from '@pomodoso/types/plugins/ids';
+import type { PluginRecord } from './compute.ts';
+import type { PluginExport } from './export.ts';
+import { dailyRecordId } from './ids.ts';
+import type { PluginManifest } from './manifest.ts';
 
-import type { PluginRecordRow, PluginRow } from './db.ts';
+/** Last-Write-Wins bookkeeping, as every syncable local row carries it. */
+interface RowSyncMeta {
+  updatedAt: string;
+  /** Tombstone: soft delete only. */
+  deletedAt?: string | null;
+  /** Undefined means dirty, not yet pushed. `| undefined` spelled out so code
+   *  can clear it to re-dirty a row under exactOptionalPropertyTypes. */
+  syncedAt?: string | undefined;
+}
+
+/** An installed app. Personal like habits: no workspace. The row keeps the
+ *  parsed, validated manifest, never the YAML text. */
+export interface PluginRow extends RowSyncMeta {
+  id: string;
+  /** manifest.id; one live install per slug. */
+  slug: string;
+  source: 'file' | 'directory';
+  directoryVersionId?: string | undefined;
+  manifest: PluginManifest;
+  /** The user's values for manifest.settings, plus per-user state that must
+   *  survive updates of the file (edited select options, Today on/off). */
+  settings: Record<string, unknown>;
+  enabled: boolean;
+  autoUpdate: boolean;
+  /** YYYY-MM-DD local: where taper starts, how far back streak looks. */
+  installedOn: string;
+  createdAt: string;
+}
+
+/** One record of one of an app's collections. Same shape as the engine's
+ *  PluginRecord, in camelCase; see toEngineRecord. */
+export interface PluginRecordRow extends RowSyncMeta {
+  /** UUID; for daily collections derived by dailyRecordId(). */
+  id: string;
+  pluginId: string;
+  collection: string;
+  /** Daily collections, YYYY-MM-DD. */
+  day?: string | undefined;
+  /** Event collections, ISO. */
+  occurredAt?: string | undefined;
+  data: Record<string, unknown>;
+  createdAt: string;
+}
 
 export function toEngineRecord(r: PluginRecordRow): PluginRecord {
   return {

@@ -17,7 +17,7 @@ import {
   type PromptCandidate,
   type PromptState,
 } from '../../pluginHooks';
-import { toEngineRecord } from '../../pluginRows';
+import { toEngineRecord } from '@pomodoso/types/plugins';
 import { isSupported } from './supported';
 import { usePluginData } from './usePluginData';
 
