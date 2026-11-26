@@ -74,6 +74,14 @@ interface BlockCtx extends PluginEnv {
   choices(field: PluginField): FieldChoice[] | undefined;
   /** Inner width of a card, for charts and grids. */
   width: number;
+  /** The same writes, for taps that don't wait on them: a failure has already
+   *  been shown (the actions alert), so it's swallowed rather than left as an
+   *  unhandled rejection. Forms await `actions` instead, to keep their draft. */
+  fire: { [K in Exclude<keyof PluginActions, 'openUrl'>]: (...args: Parameters<PluginActions[K]>) => void };
+}
+
+function swallow(r: void | Promise<unknown>): void {
+  if (r instanceof Promise) r.catch(() => {});
 }
 
 export function PluginView({ env: outer, view, record }: { env: PluginEnv; view: PluginViewSpec; record?: string | undefined }): React.JSX.Element {
@@ -88,6 +96,12 @@ export function PluginView({ env: outer, view, record }: { env: PluginEnv; view:
     ...env,
     // Screen padding (20 each side) and card padding (14 each side).
     width: Math.max(160, screen - 40 - 28),
+    fire: {
+      add: (...a) => swallow(env.actions.add(...a)),
+      setDay: (...a) => swallow(env.actions.setDay(...a)),
+      update: (...a) => swallow(env.actions.update(...a)),
+      remove: (...a) => swallow(env.actions.remove(...a)),
+    },
     collection: key => collections.get(key),
     resolve: v => (typeof v === 'string' && v.startsWith('$') ? env.evaluator.value(v) : v),
     stat: (v, format) => formatStat(v, format, env.now),
@@ -178,7 +192,7 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
           disabled={ctx.readOnly}
           style={{ flex: 1, paddingVertical: 14 }}
           textStyle={{ fontSize: 16 }}
-          onPress={() => (b.details === 'form' ? ctx.edit({ mode: 'new', collection: c, initial, title: ctx.text(b.label) }) : void ctx.actions.add(c.key, initial))}
+          onPress={() => (b.details === 'form' ? ctx.edit({ mode: 'new', collection: c, initial, title: ctx.text(b.label) }) : ctx.fire.add(c.key, initial))}
         />
       );
       if (!b.subtract) return add;
@@ -186,7 +200,7 @@ function Block({ block: b, ctx }: { block: PluginBlock; ctx: BlockCtx }): ReactN
       return (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {add}
-          <Button kind="secondary" label="−" disabled={ctx.readOnly || !last} style={{ paddingHorizontal: 20 }} textStyle={{ fontSize: 18 }} onPress={() => last && void ctx.actions.remove(last)} />
+          <Button kind="secondary" label="−" disabled={ctx.readOnly || !last} style={{ paddingHorizontal: 20 }} textStyle={{ fontSize: 18 }} onPress={() => last && ctx.fire.remove(last)} />
         </View>
       );
     }
@@ -476,7 +490,7 @@ function ListBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'lis
               {secondary ? <Text style={s.listMeta} numberOfLines={1}>{secondary}</Text> : null}
             </Pressable>
             {b.swipe && !ctx.readOnly ? (
-              <Chip label={b.swipe.label !== undefined ? ctx.text(b.swipe.label) : 'Done'} on={false} onPress={() => void ctx.actions.update(r, { ...r.data, ...resolveMap(ctx, b.swipe!.set) })} />
+              <Chip label={b.swipe.label !== undefined ? ctx.text(b.swipe.label) : 'Done'} on={false} onPress={() => ctx.fire.update(r, { ...r.data, ...resolveMap(ctx, b.swipe!.set) })} />
             ) : null}
             {!ctx.readOnly ? <EditButton onPress={() => ctx.edit({ mode: 'edit', collection: c, record: r })} /> : null}
           </View>
@@ -506,7 +520,7 @@ function BoardBlock({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'bo
 
   const tap = (r: PluginRecord) => (b.opens && ctx.openRecord ? ctx.openRecord(b.opens, r.id) : ctx.edit({ mode: 'edit', collection: c, record: r }));
   const move = (r: PluginRecord, to: string) => {
-    if (recordValue(c, r, groupField.key) !== to) void ctx.actions.update(r, { ...r.data, [groupField.key]: to });
+    if (recordValue(c, r, groupField.key) !== to) ctx.fire.update(r, { ...r.data, [groupField.key]: to });
   };
   const addTo = (group: string) =>
     ctx.edit({ mode: 'new', collection: c, title: `Add to ${groups.find(g => g.value === group)?.label ?? group}`, initial: initialRecordData(c, { ...filterFills(ctx, b.filter), [groupField.key]: group }) });
@@ -587,7 +601,7 @@ function DayPicker({ block: b, ctx }: { block: Extract<PluginBlock, { type: 'day
       </View>
       <View style={[s.wrapRow, { justifyContent: 'center' }]}>
         {fieldOptions(c.key, field, ctx.settings).map(o => (
-          <Chip key={o.value} label={o.label} color={o.color} on={current === o.value} disabled={ctx.readOnly} onPress={() => void ctx.actions.setDay(c.key, day, { [field.key]: o.value })} />
+          <Chip key={o.value} label={o.label} color={o.color} on={current === o.value} disabled={ctx.readOnly} onPress={() => ctx.fire.setDay(c.key, day, { [field.key]: o.value })} />
         ))}
       </View>
     </View>
@@ -627,17 +641,19 @@ function SheetBody({ editing, ctx, onClose }: { editing: Editing; ctx: BlockCtx;
           onDelete={
             editing.mode === 'edit'
               ? () => {
-                  void ctx.actions.remove(editing.record);
+                  ctx.fire.remove(editing.record);
                   onClose();
                 }
               : undefined
           }
-          onSubmit={(data, occurredAt) => {
+          // Closes only once the write is stored: a failed save (a value too
+          // large, say) keeps the sheet open with the draft.
+          onSubmit={async (data, occurredAt) => {
             const opts = occurredAt ? { occurredAt } : undefined;
-            if (editing.mode === 'edit') void ctx.actions.update(editing.record, data, opts);
-            else if (editing.mode === 'day') void ctx.actions.setDay(c.key, editing.day, fullDay(c, data));
-            else if (c.kind === 'daily') void ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
-            else void ctx.actions.add(c.key, data, opts);
+            if (editing.mode === 'edit') await ctx.actions.update(editing.record, data, opts);
+            else if (editing.mode === 'day') await ctx.actions.setDay(c.key, editing.day, fullDay(c, data));
+            else if (c.kind === 'daily') await ctx.actions.setDay(c.key, ctx.today, fullDay(c, data));
+            else await ctx.actions.add(c.key, data, opts);
             onClose();
           }}
         />

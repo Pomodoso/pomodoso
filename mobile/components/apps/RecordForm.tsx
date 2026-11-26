@@ -50,10 +50,19 @@ export function RecordForm({ collection, settings, initial, occurredAt, choices,
     return out;
   });
   const [pending, setPending] = useState(false);
-  const badDates = collection.fields.filter(f => f.type === 'date' && typeof data[f.key] === 'string' && data[f.key] !== '' && !DATE.test(data[f.key] as string));
+  const badDates = collection.fields.filter(f => f.type === 'date' && typeof data[f.key] === 'string' && data[f.key] !== '' && !isRealDate(data[f.key] as string));
+  // A number outside its field's range can't be saved (the extension's input
+  // enforces the same bounds).
+  const outOfRange = collection.fields.filter(f => {
+    const v = data[f.key];
+    if (typeof v !== 'number' || !['number', 'duration', 'scale', 'rating'].includes(f.type)) return false;
+    const min = f.min ?? (f.type === 'scale' || f.type === 'rating' ? 1 : undefined);
+    const max = f.max ?? (f.type === 'scale' || f.type === 'rating' ? 5 : undefined);
+    return (min !== undefined && v < min) || (max !== undefined && v > max);
+  });
   const whenBad = isEvent && whenTouched && fromLocalInput(when) === null;
   const missing = missingFields(collection, data);
-  const blocked = disabled || pending || missing.length > 0 || badDates.length > 0 || whenBad;
+  const blocked = disabled || pending || missing.length > 0 || badDates.length > 0 || outOfRange.length > 0 || whenBad;
   const set = (key: string, v: unknown) => setData(d => ({ ...d, [key]: v }));
 
   function submit(): void {
@@ -62,7 +71,8 @@ export function RecordForm({ collection, settings, initial, occurredAt, choices,
     const result = onSubmit(clean(data), at);
     if (result instanceof Promise) {
       setPending(true);
-      void result.finally(() => setPending(false));
+      // A failed save keeps the form as it is (the caller already said why).
+      void result.catch(() => {}).finally(() => setPending(false));
     }
   }
 
@@ -93,7 +103,8 @@ export function RecordForm({ collection, settings, initial, occurredAt, choices,
             {f.optional ? <Text style={{ color: colors.textTertiary, fontWeight: '400' }}> · optional</Text> : null}
           </Text>
           <FieldInput field={f} collection={collection.key} settings={settings} value={data[f.key]} disabled={disabled} choices={choices?.(f)} onChange={v => set(f.key, v)} />
-          {badDates.includes(f) ? <Text style={styles.hint}>Use YYYY-MM-DD.</Text> : null}
+          {badDates.includes(f) ? <Text style={styles.hint}>Use a real date, YYYY-MM-DD.</Text> : null}
+          {outOfRange.includes(f) ? <Text style={styles.hint}>{rangeHint(f)}</Text> : null}
         </View>
       ))}
       <View style={styles.actions}>
@@ -105,6 +116,21 @@ export function RecordForm({ collection, settings, initial, occurredAt, choices,
       </View>
     </View>
   );
+}
+
+/** YYYY-MM-DD that names a day on the calendar (no month 13, no Feb 30). */
+function isRealDate(v: string): boolean {
+  if (!DATE.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+function rangeHint(f: PluginField): string {
+  const min = f.min ?? (f.type === 'scale' || f.type === 'rating' ? 1 : undefined);
+  const max = f.max ?? (f.type === 'scale' || f.type === 'rating' ? 5 : undefined);
+  if (min !== undefined && max !== undefined) return `Between ${min} and ${max}.`;
+  return min !== undefined ? `At least ${min}.` : `At most ${max}.`;
 }
 
 /** An ISO timestamp as "YYYY-MM-DD HH:MM", local. */

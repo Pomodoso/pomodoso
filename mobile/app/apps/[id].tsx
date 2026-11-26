@@ -43,13 +43,19 @@ export default function AppScreen(): React.JSX.Element {
   return <Loaded plugin={plugin} />;
 }
 
-/** The writes an app's blocks perform. Errors (a value too large) show as an alert. */
+/**
+ * The writes an app's blocks perform. A failure (a value too large) shows as
+ * an alert and rejects, so a form that awaits it keeps its draft instead of
+ * closing or resetting as if it had saved.
+ */
 function actionsFor(plugin: PluginRow, clock: PluginClock): PluginActions {
-  const guard = (f: () => void) => {
+  const guard = (f: () => void): Promise<void> => {
     try {
       f();
+      return Promise.resolve();
     } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : 'Unknown error');
+      return Promise.reject(e);
     }
   };
   return {
