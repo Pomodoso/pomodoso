@@ -3,7 +3,7 @@ import { eq, inArray, not } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { hasUserData } from '@/utils/seed';
-import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, timerPrefs, workspace, SEED_IDS_KEY, WELCOME_SEEN_KEY } from '@/db/schema';
+import { habits, habitHistory, meeting, plugin, pluginRecord, pomodoroSession, project, settings, task, taskOrder, timerPrefs, workspace, SEED_IDS_KEY, WELCOME_SEEN_KEY } from '@/db/schema';
 
 // What happens the first time an account signs in on a device that already
 // has data of its own.
@@ -138,6 +138,8 @@ export function discardLocalData(): void {
   db.delete(pomodoroSession).run();
   db.delete(meeting).run();
   db.delete(taskOrder).run();
+  db.delete(pluginRecord).run();
+  db.delete(plugin).run();
   db.delete(timerPrefs).run();
   // `can_sync` survives alongside device_id. It describes the account that is
   // signing in, not the data being abandoned, and wiping it here would leave

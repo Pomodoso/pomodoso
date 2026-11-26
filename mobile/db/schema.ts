@@ -1,3 +1,4 @@
+import type { PluginManifest } from '@pomodoso/types/plugins';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 // Mirrors extension/backend's workspace shape (db.ts WorkspaceRow / backend
@@ -341,3 +342,40 @@ export interface SeedIds {
   habitHistory: string[];
   task: string[];
 }
+
+// ─── Apps (plugins) ───────────────────────────────────────────────────────────
+// Declarative YAML mini-apps (@pomodoso/types/plugins). Personal like habits:
+// keyed by the user, no workspace (CLAUDE.md rule 6). Same fields as the
+// extension's rows, which are shared with it as PluginRow / PluginRecordRow
+// (@pomodoso/types/plugins/rows); utils/pluginStore.ts converts between
+// these columns (nulls, JSON text) and that shape.
+export const plugin = sqliteTable('plugin', {
+  id: text('id').primaryKey(),
+  /** manifest.id; one live install per slug. */
+  slug: text('slug').notNull(),
+  source: text('source', { enum: ['file', 'directory'] }).notNull().default('file'),
+  directoryVersionId: text('directory_version_id'),
+  manifest: text('manifest', { mode: 'json' }).$type<PluginManifest>().notNull(),
+  settings: text('settings', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  autoUpdate: integer('auto_update', { mode: 'boolean' }).notNull().default(false),
+  installedOn: text('installed_on').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
+});
+
+export const pluginRecord = sqliteTable('plugin_record', {
+  /** UUID; for daily collections derived by dailyRecordId(). */
+  id: text('id').primaryKey(),
+  pluginId: text('plugin_id').notNull(),
+  collection: text('collection').notNull(),
+  day: text('day'),
+  occurredAt: text('occurred_at'),
+  data: text('data', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+  syncedAt: text('synced_at'),
+});

@@ -32,7 +32,7 @@ import { Browse, directoryAvailable } from './Browse';
 import { openListing, reportInstall, SignInToOpen } from './directory';
 import { describeStep, updateFor, useDirectoryUpdates, type AvailableUpdate } from './useDirectoryUpdates';
 import { appPageUrl, pluginActions, usePluginTasks } from './appEnv';
-import { toEngineRecord } from '../../pluginRows';
+import { toEngineRecord } from '@pomodoso/types/plugins';
 import { usePluginData } from './usePluginData';
 
 // The Apps tab: installed plugins, each one's views, its settings, and

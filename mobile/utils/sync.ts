@@ -5,10 +5,12 @@ import { and, asc, eq, inArray, isNull, not, or, lt, isNotNull } from 'drizzle-o
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 import { db } from '@/db/client';
-import { achievements, habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
+import { achievements, habits, habitHistory, meeting, plugin, pluginRecord, pomodoroSession, project, settings, task, taskOrder, workspace } from '@/db/schema';
 import type { MeetingRow } from '@/db/schema';
 import { API_URL, getMobileSupabase } from '@/lib/supabase';
 import { uid, habitLogId } from '@/utils/id';
+import { iso, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData } from '@pomodoso/types/plugins/rows';
+import { mergeDuplicatePluginInstalls, pluginFromColumns, putPlugins, putRecords, recordFromColumns } from '@/utils/pluginStore';
 import { untouchedSeedIds, dropSeedIfSupersededBy } from '@/utils/seed';
 import {
   WIRE_KEYS, acceptRemoteSetting, isSettingDirty, markSettingSynced, readWireSetting, settingUpdatedAt,
@@ -47,6 +49,8 @@ const DEVICE_ID_KEY = 'device_id';
 /** A timer running on some *other* device, as last announced. Local only —
  *  never pushed, since it describes someone else's session. */
 const REMOTE_TIMER_KEY = 'active_timer_remote';
+/** The pull scope that has had its one full pull with apps (see pull()). */
+const APPS_FULL_PULL_KEY = 'sync_apps_full_pull';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -425,6 +429,26 @@ async function push(client: TokenApiClient): Promise<void> {
     );
   }
 
+  // Apps and their records (user-scoped, like the extension's). Apps go
+  // first in the batch; the server also pushes them before records, for the
+  // foreign key.
+  const dirtyPlugins = db
+    .select()
+    .from(plugin)
+    .where(or(isNull(plugin.syncedAt), lt(plugin.syncedAt, plugin.updatedAt)))
+    .all();
+  for (const p of dirtyPlugins) {
+    entities.push(toEntity('plugin', p.id, p.updatedAt, p.deletedAt, pluginSyncData(pluginFromColumns(p))));
+  }
+  const dirtyRecords = db
+    .select()
+    .from(pluginRecord)
+    .where(or(isNull(pluginRecord.syncedAt), lt(pluginRecord.syncedAt, pluginRecord.updatedAt)))
+    .all();
+  for (const r of dirtyRecords) {
+    entities.push(toEntity('plugin_record', r.id, r.updatedAt, r.deletedAt, pluginRecordSyncData(recordFromColumns(r))));
+  }
+
   // Shared preferences. utils/syncedSettings.ts owns the reshaping between
   // mobile's one-row-per-setting storage and the wire's bundled
   // timer_settings — see that file for why neither side changed.
@@ -509,12 +533,28 @@ async function push(client: TokenApiClient): Promise<void> {
       .where(and(eq(taskOrder.workspaceId, o.workspaceId), eq(taskOrder.updatedAt, o.updatedAt)))
       .run();
   }
+  for (const p of dirtyPlugins) {
+    db.update(plugin)
+      .set({ syncedAt: ts })
+      .where(and(eq(plugin.id, p.id), eq(plugin.updatedAt, p.updatedAt)))
+      .run();
+  }
+  for (const r of dirtyRecords) {
+    db.update(pluginRecord)
+      .set({ syncedAt: ts })
+      .where(and(eq(pluginRecord.id, r.id), eq(pluginRecord.updatedAt, r.updatedAt)))
+      .run();
+  }
 }
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
 async function pull(client: TokenApiClient, scope: string): Promise<void> {
-  const since = readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope);
+  // One full pull the first time a build that stores apps syncs: older
+  // builds ignored plugin rows but still advanced the cursor past them, so an
+  // incremental pull would never bring back apps saved before the upgrade.
+  const appsPulled = getSetting(APPS_FULL_PULL_KEY) === scope;
+  const since = appsPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
   const response = await pullEntities(client, since);
 
   // task_order names task ids, so it has to land after the tasks it names —
@@ -534,6 +574,8 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   dropSeedIfSupersededBy(response.entities.length);
 
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
+  putSetting(APPS_FULL_PULL_KEY, scope);
+  mergeDuplicatePluginInstalls();
 }
 
 function applyEntity(entity: SyncEntity): void {
@@ -757,6 +799,25 @@ function applyEntity(entity: SyncEntity): void {
           set: { updatedAt: updated_at, syncedAt },
         })
         .run();
+      break;
+    }
+
+    // App timestamps are compared and stored in the client's ISO form, as in
+    // the extension: the server writes whole seconds without ".000", and as
+    // text "…00Z" sorts after a newer "…00.800Z".
+    case 'plugin': {
+      const updatedAt = iso(updated_at, updated_at);
+      const existing = db.select({ updatedAt: plugin.updatedAt }).from(plugin).where(eq(plugin.id, id)).all()[0];
+      if (existing && existing.updatedAt >= updatedAt) return;
+      putPlugins([pluginFromSync({ id, updatedAt, deletedAt: deleted_at ? iso(deleted_at, deleted_at) : null }, data)]);
+      break;
+    }
+
+    case 'plugin_record': {
+      const updatedAt = iso(updated_at, updated_at);
+      const existing = db.select({ updatedAt: pluginRecord.updatedAt }).from(pluginRecord).where(eq(pluginRecord.id, id)).all()[0];
+      if (existing && existing.updatedAt >= updatedAt) return;
+      putRecords([pluginRecordFromSync({ id, updatedAt, deletedAt: deleted_at ? iso(deleted_at, deleted_at) : null }, data)]);
       break;
     }
 

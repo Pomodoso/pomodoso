@@ -361,6 +361,35 @@ function initDb(): void {
       updated_at TEXT NOT NULL,
       synced_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS plugin (
+      id TEXT PRIMARY KEY NOT NULL,
+      slug TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'file',
+      directory_version_id TEXT,
+      manifest TEXT NOT NULL,
+      settings TEXT NOT NULL DEFAULT '{}',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      auto_update INTEGER NOT NULL DEFAULT 0,
+      installed_on TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS plugin_slug_idx ON plugin (slug);
+    CREATE TABLE IF NOT EXISTS plugin_record (
+      id TEXT PRIMARY KEY NOT NULL,
+      plugin_id TEXT NOT NULL,
+      collection TEXT NOT NULL,
+      day TEXT,
+      occurred_at TEXT,
+      data TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      synced_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS plugin_record_plugin_idx ON plugin_record (plugin_id, collection);
   `);
 
   // Additive on purpose, unlike the drop-and-recreate probes above. Those

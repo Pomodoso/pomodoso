@@ -5,7 +5,7 @@ import { recordTitle } from '@pomodoso/types/plugins';
 import { PluginIcon, PluginView, type PluginEnv } from '@pomodoso/ui/plugins';
 
 import { db, localDate, type PluginRow } from '../db';
-import { toEngineRecord } from '../pluginRows';
+import { toEngineRecord } from '@pomodoso/types/plugins';
 import { pluginActions, usePluginTasks } from '../popup/apps/appEnv';
 import { isSupported } from '../popup/apps/supported';
 import { usePluginData } from '../popup/apps/usePluginData';

@@ -1,7 +1,7 @@
 import { eq, inArray, isNull, not, and } from 'drizzle-orm';
 
 import { db } from '@/db/client';
-import { achievements, habits, habitHistory, meeting, pomodoroSession, project, settings, task, workspace, SEED_IDS_KEY, type SeedIds } from '@/db/schema';
+import { achievements, habits, habitHistory, meeting, plugin, pomodoroSession, project, settings, task, workspace, SEED_IDS_KEY, type SeedIds } from '@/db/schema';
 
 // The demo content initDb writes on first launch — a 'Personal' workspace,
 // four habits with a fortnight of history, and seven tasks with invented
@@ -70,6 +70,7 @@ export function hasUserData(): boolean {
   // Never seeded at all — anything here is the user's by definition.
   if (db.select({ id: project.id }).from(project).limit(1).all().length > 0) return true;
   if (db.select({ id: meeting.id }).from(meeting).limit(1).all().length > 0) return true;
+  if (db.select({ id: plugin.id }).from(plugin).limit(1).all().length > 0) return true;
   return db.select({ id: pomodoroSession.id }).from(pomodoroSession).limit(1).all().length > 0;
 }
 

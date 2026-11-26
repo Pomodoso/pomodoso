@@ -1,7 +1,7 @@
 import { TokenApiClient, pushEntities, pullEntities } from '@pomodoso/api';
 import type { SyncEntity } from '@pomodoso/api';
 import { db, now, setApplyingRemote, getDeviceId, normalizeWorkspaces, normalizeHabits, habitLogId } from './db';
-import { iso, planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData } from './pluginRows';
+import { iso, planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData } from '@pomodoso/types/plugins/rows';
 import { ensureFreshSession } from './supabaseClient';
 import {
   clearPendingSyncChoice, discardLocalData, needsSyncChoice, recordSyncChoice, requestSyncChoice,

@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { PluginExport } from '@pomodoso/types/plugins';
-
-import type { PluginRecordRow, PluginRow } from './db.ts';
-import { dailyRecordId } from '@pomodoso/types/plugins/ids';
-
-import { planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord } from './pluginRows.ts';
+import type { PluginExport } from './export.ts';
+import { dailyRecordId } from './ids.ts';
+import { type PluginRecordRow, type PluginRow, planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord } from './rows.ts';
 
 test('a stored row becomes the engine record shape', () => {
   const row: PluginRecordRow = {

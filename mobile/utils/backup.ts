@@ -3,7 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, WELCOME_SEEN_KEY, workspace } from '@/db/schema';
+import { achievements, habitHistory, habits, meeting, plugin, pluginRecord, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, WELCOME_SEEN_KEY, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { untouchedSeedIds } from '@/utils/seed';
@@ -35,6 +35,7 @@ const EXCLUDED_SETTINGS = new Set([
   'active_timer_remote',
   SEED_IDS_KEY,
   WELCOME_SEEN_KEY,
+  'sync_apps_full_pull',
 ]);
 const isExcludedSetting = (key: string) => EXCLUDED_SETTINGS.has(key) || key.endsWith('_synced_at');
 
@@ -57,6 +58,8 @@ const TABLES = {
   project,
   task,
   meeting,
+  plugin,
+  pluginRecord,
   timerPrefs,
   settings,
 } as const;
@@ -74,12 +77,17 @@ const TABLES = {
 // Never-edited rows (updatedAt === createdAt) keep theirs too: that equality
 // is how utils/seed.ts tells an untouched demo row from user data, and
 // bumping it would turn restored demo rows into real ones that sync.
+const SEEDED_TABLES = new Set(['workspace', 'habits', 'task']);
+
 function refreshSyncMeta(name: string, rows: unknown[]): unknown[] {
   const ts = new Date().toISOString();
   return rows.map(r => {
     const row = { ...(r as Record<string, unknown>) };
     if ('syncedAt' in row) row.syncedAt = null;
-    const pristine = 'createdAt' in row && row.updatedAt === row.createdAt;
+    // Only the tables the demo seeds: elsewhere (apps, say) a never-edited row
+    // is just new, and must be bumped like any other or a later deletion on
+    // the server wins over the restore.
+    const pristine = SEEDED_TABLES.has(name) && 'createdAt' in row && row.updatedAt === row.createdAt;
     if (name !== 'task' && !pristine && 'updatedAt' in row) row.updatedAt = ts;
     return row;
   });
@@ -117,6 +125,10 @@ export function exportBackup(): string {
     project: db.select().from(project).where(isNull(project.deletedAt)).all(),
     task: without(db.select().from(task).where(isNull(task.deletedAt)).all(), seed.task),
     meeting: db.select().from(meeting).where(isNull(meeting.deletedAt)).all(),
+    // Apps and their records travel like the extension's backup does: the
+    // app with its manifest and settings, and every live record.
+    plugin: db.select().from(plugin).where(isNull(plugin.deletedAt)).all(),
+    pluginRecord: db.select().from(pluginRecord).where(isNull(pluginRecord.deletedAt)).all(),
     timerPrefs: db.select().from(timerPrefs).all(),
     settings: db.select().from(settings).all().filter(s => !isExcludedSetting(s.key)),
   };

@@ -19,6 +19,10 @@
     "./plugins/ids": {
       "import": "./src/plugins/ids.ts",
       "types": "./src/plugins/ids.ts"
+    },
+    "./plugins/rows": {
+      "import": "./src/plugins/rows.ts",
+      "types": "./src/plugins/rows.ts"
     }
   },
   "scripts": {
