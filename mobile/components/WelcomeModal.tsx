@@ -53,7 +53,21 @@ export function WelcomeModal(): React.JSX.Element | null {
       show => { if (live) setVisible(show); },
       () => {},
     );
-    return () => { live = false; };
+    // A sign-in while the welcome is open (a magic link or password-reset
+    // link opening the app) answers it: the user is returning, and the link's
+    // own screen must not sit underneath.
+    const sub = isAuthConfigured()
+      ? getMobileSupabase().auth.onAuthStateChange((_event, session) => {
+          if (session && live) {
+            markWelcomeSeen();
+            setVisible(false);
+          }
+        }).data.subscription
+      : null;
+    return () => {
+      live = false;
+      sub?.unsubscribe();
+    };
   }, []);
 
   function close(then?: () => void): void {
