@@ -74,10 +74,13 @@ export default function MeetingDetailScreen(): React.JSX.Element {
     if (t && t !== m.title) updateMeeting(m.id, { title: t });
   }
 
+  // Saved as typed, like a task's description: trimming on a mid-edit format
+  // would turn a fresh bullet's "- " into "-".
   function commitText(field: 'description' | 'notes', value: string): void {
+    const next = value.trim() ? value : '';
     const current = field === 'description' ? (m.description ?? '') : m.notes;
-    if (value === current) return;
-    updateMeeting(m.id, field === 'description' ? { description: value || null } : { notes: value });
+    if (next === current) return;
+    updateMeeting(m.id, field === 'description' ? { description: next || null } : { notes: next });
   }
 
   function logTime(): void {
@@ -119,7 +122,7 @@ export default function MeetingDetailScreen(): React.JSX.Element {
         <DescriptionEditor
           value={description}
           onChange={setDescription}
-          onCommit={v => commitText('description', v.trim())}
+          onCommit={v => commitText('description', v)}
           placeholder="What's this meeting about…"
         />
 
