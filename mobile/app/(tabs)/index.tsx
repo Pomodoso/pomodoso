@@ -311,7 +311,7 @@ export default function HomeScreen() {
               // same in every workspace and under "All".
               onReorder={ids => reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
               renderItem={habit => (
-                <View style={styles.habitRow}>
+                <View style={[styles.habitRow, habit.paused && styles.habitRowPaused]}>
                   <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
                     <Ionicons
                       name={habit.icon as ComponentProps<typeof Ionicons>['name']}
@@ -321,6 +321,7 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.habitNameBlock}>
                     <Text style={styles.habitName}>{habit.name}</Text>
+                    {habit.paused && <Text style={styles.habitPaused}>⚠ Challenge paused</Text>}
                     {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
                       <Text style={styles.habitSubtext}>
                         {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
@@ -335,6 +336,7 @@ export default function HomeScreen() {
                     goal={habit.goal}
                     onToggle={() => toggleHabit(habit.id)}
                     onIncrement={delta => incrementHabit(habit.id, delta)}
+                    disabled={habit.paused}
                   />
                 </View>
               )}
@@ -415,6 +417,8 @@ const styles = StyleSheet.create({
   // 100, not 24: the add button floats over the bottom of this list, and the
   // last row has to be reachable underneath it. Matches the Tasks screen.
   scroll: { paddingHorizontal: 20, paddingBottom: 100 },
+  habitRowPaused: { backgroundColor: colors.warningSoft, borderRadius: 10 },
+  habitPaused: { fontSize: 12, fontWeight: '600', color: colors.warning, marginTop: 1 },
   timerBlock: { alignItems: 'center', paddingVertical: 12 },
   modeToggle: {
     flexDirection: 'row',

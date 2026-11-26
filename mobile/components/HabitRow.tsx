@@ -21,6 +21,8 @@ interface HabitRowProps {
   onPress?: () => void;
   onToggle: () => void;
   onIncrement: (delta: number) => void;
+  /** A challenge waiting on a missed day: the control is locked until it's answered. */
+  paused?: boolean;
 }
 
 export function HabitRow({
@@ -37,23 +39,28 @@ export function HabitRow({
   onPress,
   onToggle,
   onIncrement,
+  paused = false,
 }: HabitRowProps) {
   const schedule = daysSummary(days);
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, paused && styles.cardPaused]}>
       <View style={styles.top}>
         <View style={[styles.icon, !done && styles.iconPending]}>
           <Ionicons name={icon} size={19} color={done ? colors.success : colors.textTertiary} />
         </View>
         <Pressable style={styles.nameBlock} onPress={onPress} disabled={!onPress}>
           <Text style={styles.name}>{name}</Text>
-          <Text style={styles.streak}>
-            {streakLabel}
-            {schedule ? ` · ${schedule}` : ''}
-          </Text>
+          {paused ? (
+            <Text style={styles.paused}>⚠ Challenge paused</Text>
+          ) : (
+            <Text style={styles.streak}>
+              {streakLabel}
+              {schedule ? ` · ${schedule}` : ''}
+            </Text>
+          )}
         </Pressable>
-        <HabitControl kind={kind} done={done} count={count} goal={goal} onToggle={onToggle} onIncrement={onIncrement} />
+        <HabitControl kind={kind} done={done} count={count} goal={goal} onToggle={onToggle} onIncrement={onIncrement} disabled={paused} />
       </View>
       <View style={styles.week}>
         {weekFilled.map((filled, i) => (
@@ -72,6 +79,8 @@ export function HabitRow({
 }
 
 const styles = StyleSheet.create({
+  cardPaused: { backgroundColor: colors.warningSoft },
+  paused: { fontSize: 12.5, fontWeight: '600', color: colors.warning, marginTop: 2 },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,

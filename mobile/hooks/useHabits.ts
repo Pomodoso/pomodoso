@@ -5,6 +5,7 @@ import {
   challengeDaysOf,
   challengeEarnsBadge,
   challengeKeepGoing,
+  challengeNeedsDecision,
   challengeProgress,
   challengeRecordCompletion,
   challengeStartOver,
@@ -43,6 +44,9 @@ export interface HabitWithProgress {
   daysDone: number;
   /** The challenge run and its progress, or null for a plain habit. */
   challenge: { state: ChallengeState; progress: ChallengeProgress } | null;
+  /** A challenge run waiting on a missed day: today can't be logged until the
+   *  user keeps going or starts over (the extension's pausedHabitIds). */
+  paused: boolean;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday, current calendar week
 }
 
@@ -191,6 +195,7 @@ export function useHabits() {
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
       challenge,
+      paused: challenge !== null && challengeNeedsDecision(challenge.progress),
       weekFilled: weekFilled(h.kind, h.goal, byDate),
     };
   });
@@ -200,7 +205,14 @@ export function useHabits() {
   // read-then-write — otherwise two rapid taps racing on the same render-time
   // snapshot either drop an increment or double-insert the first row.
 
+  // A paused run is locked until it's answered: logging today on top of an
+  // unanswered miss would let the run keep advancing as if the gap weren't
+  // there. Guarded here so every screen that ticks inherits it, as in the
+  // extension.
+  const pausedIds = new Set(merged.filter(h => h.paused).map(h => h.id));
+
   function toggleHabit(id: string): void {
+    if (pausedIds.has(id)) return;
     // Recompute today's date here rather than closing over the render-time
     // `today` — a screen left open across local midnight would otherwise
     // keep writing to yesterday's row.
@@ -218,6 +230,7 @@ export function useHabits() {
   }
 
   function incrementHabit(id: string, delta: number): void {
+    if (pausedIds.has(id)) return;
     // No upper clamp — going over goal is fine (13 glasses when the target is
     // 12 still means the habit is done), only floor at 0. `done` isn't
     // written here: for counter habits it's derived from count/goal (isDone

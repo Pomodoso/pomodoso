@@ -10,22 +10,24 @@ interface HabitControlProps {
   goal: number | null;
   onToggle: () => void;
   onIncrement: (delta: number) => void;
+  /** A paused challenge: shown but not tappable. */
+  disabled?: boolean;
 }
 
 // Shared between the Habits tab and Home's Today strip — both need the exact
 // same boolean-check / counter-stepper interaction, matching how the
 // extension's Today view and Habits tab both reuse the same habit row shape.
-export function HabitControl({ kind, done, count, goal, onToggle, onIncrement }: HabitControlProps) {
+export function HabitControl({ kind, done, count, goal, onToggle, onIncrement, disabled = false }: HabitControlProps) {
   if (kind === 'counter') {
     return (
-      <View style={styles.counter}>
-        <Pressable style={styles.counterBtn} onPress={() => onIncrement(-1)} hitSlop={6}>
+      <View style={[styles.counter, disabled && styles.disabled]}>
+        <Pressable style={styles.counterBtn} onPress={() => onIncrement(-1)} hitSlop={6} disabled={disabled}>
           <Text style={styles.counterBtnText}>−</Text>
         </Pressable>
         <Text style={styles.counterValue}>
           {count}/{goal}
         </Text>
-        <Pressable style={styles.counterBtn} onPress={() => onIncrement(1)} hitSlop={6}>
+        <Pressable style={styles.counterBtn} onPress={() => onIncrement(1)} hitSlop={6} disabled={disabled}>
           <Text style={styles.counterBtnText}>+</Text>
         </Pressable>
       </View>
@@ -33,7 +35,13 @@ export function HabitControl({ kind, done, count, goal, onToggle, onIncrement }:
   }
 
   return (
-    <Pressable style={[styles.check, done && styles.checkDone]} onPress={onToggle} hitSlop={8}>
+    <Pressable
+      style={[styles.check, done && styles.checkDone, disabled && styles.disabled]}
+      onPress={onToggle}
+      hitSlop={8}
+      disabled={disabled}
+      accessibilityState={{ disabled, checked: done }}
+    >
       {done && <Ionicons name="checkmark" size={15} color={colors.surface} />}
     </Pressable>
   );
@@ -50,6 +58,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkDone: { backgroundColor: colors.success, borderColor: colors.success },
+  disabled: { opacity: 0.35 },
   counter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   counterBtn: {
     width: 28,
