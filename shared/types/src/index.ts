@@ -8,3 +8,4 @@ export * from './types/index';
 export * from './types/ordering';
 export * from './types/sync-wire';
 export * from './types/task-status';
+export * from './types/text-format';
