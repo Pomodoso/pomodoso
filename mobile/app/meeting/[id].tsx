@@ -5,12 +5,15 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DescriptionEditor } from '@/components/DescriptionEditor';
+import { FormattedText } from '@/components/FormattedText';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { colors, fontMono } from '@/constants/theme';
+import type { MeetingTrackMode } from '@/db/schema';
 import {
   durationLabel,
   isAllDayMeetingTime,
   parseMeetingTime,
+  startMeeting,
   updateMeeting,
   useMeeting,
   useMeetingHistory,
@@ -23,12 +26,18 @@ import { useTimer } from '@/hooks/useTimer';
 // description and notes with the same format buttons as a task, a project,
 // time logged by hand, and the last logged occurrences of a recurring series.
 
+const TRACK_MODES: { value: MeetingTrackMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'once', label: 'Today only' },
+  { value: 'always', label: 'Always' },
+];
+
 export default function MeetingDetailScreen(): React.JSX.Element {
   const { id } = useLocalSearchParams<{ id: string }>();
   const meeting = useMeeting(id);
   const history = useMeetingHistory(meeting);
   const { projects, addProject, updateProject, removeProject } = useProjects();
-  const { display, startSession } = useTimer();
+  const { startSession } = useTimer();
 
   const [title, setTitle] = useState(meeting?.title ?? '');
   const [description, setDescription] = useState(meeting?.description ?? '');
@@ -68,6 +77,10 @@ export default function MeetingDetailScreen(): React.JSX.Element {
     ? 'All day'
     : parseMeetingTime(m.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const project = m.projectId ? projects.find(p => p.id === m.projectId) : undefined;
+  // Imported meetings take their title and description from the calendar,
+  // and every refresh rewrites them (utils/googleCalendar.ts), so editing
+  // them here would be silently undone. Notes, project and time are ours.
+  const fromCalendar = m.googleEventId !== null;
 
   function commitTitle(): void {
     const t = title.trim();
@@ -89,13 +102,9 @@ export default function MeetingDetailScreen(): React.JSX.Element {
   }
 
   function start(): void {
-    if (display.status !== 'idle') {
-      Alert.alert('A session is running', 'Stop the current session before starting this meeting.');
-      return;
-    }
-    void startSession('stopwatch', m.id).then(() => {
-      updateMeeting(m.id, { logged: true, loggedMinutes: m.durationMinutes });
-      router.navigate('/');
+    void startMeeting(m, startSession).then(started => {
+      if (started) router.navigate('/');
+      else Alert.alert('A session is running', 'Stop the current session before starting this meeting.');
     });
   }
 
@@ -104,14 +113,18 @@ export default function MeetingDetailScreen(): React.JSX.Element {
       <Header onBack={() => router.back()} meta={`${time} · ${durationLabel(m.durationMinutes)}`} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
-        <TextInput
-          style={styles.titleInput}
-          value={title}
-          onChangeText={setTitle}
-          onBlur={commitTitle}
-          placeholder="Meeting"
-          placeholderTextColor={colors.textTertiary}
-        />
+        {fromCalendar ? (
+          <Text style={styles.titleInput}>{m.title || 'Meeting'}</Text>
+        ) : (
+          <TextInput
+            style={styles.titleInput}
+            value={title}
+            onChangeText={setTitle}
+            onBlur={commitTitle}
+            placeholder="Meeting"
+            placeholderTextColor={colors.textTertiary}
+          />
+        )}
 
         {!m.past && (
           <Pressable style={styles.startBtn} onPress={start}>
@@ -119,12 +132,35 @@ export default function MeetingDetailScreen(): React.JSX.Element {
           </Pressable>
         )}
 
-        <DescriptionEditor
-          value={description}
-          onChange={setDescription}
-          onCommit={v => commitText('description', v)}
-          placeholder="What's this meeting about…"
-        />
+        {fromCalendar ? (
+          m.description ? (
+            <View style={styles.readOnly}>
+              <Text style={styles.label}>Description</Text>
+              <FormattedText text={m.description} />
+            </View>
+          ) : null
+        ) : (
+          <DescriptionEditor
+            value={description}
+            onChange={setDescription}
+            onCommit={v => commitText('description', v)}
+            placeholder="What's this meeting about…"
+          />
+        )}
+        {fromCalendar && <Text style={styles.fromCalendar}>Title and description come from {m.calendarName ?? 'Google Calendar'}.</Text>}
+
+        <Text style={styles.label}>Show in Today</Text>
+        <View style={styles.modes}>
+          {TRACK_MODES.map(o => (
+            <Pressable
+              key={o.value}
+              style={[styles.mode, m.trackMode === o.value && styles.modeOn]}
+              onPress={() => updateMeeting(m.id, { trackMode: o.value })}
+            >
+              <Text style={[styles.modeText, m.trackMode === o.value && styles.modeTextOn]}>{o.label}</Text>
+            </Pressable>
+          ))}
+        </View>
 
         <Text style={styles.label}>Project</Text>
         <Pressable style={styles.row} onPress={() => requestProject(m.projectId)}>
@@ -224,6 +260,13 @@ const styles = StyleSheet.create({
   logBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   hint: { fontSize: 12, color: colors.success, marginTop: 6 },
   historyLabel: { marginTop: 22 },
+  readOnly: { marginBottom: 6 },
+  modes: { flexDirection: 'row', gap: 6, marginBottom: 18 },
+  mode: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.surface },
+  modeOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  modeText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  modeTextOn: { color: colors.accent },
+  fromCalendar: { fontSize: 12, color: colors.textTertiary, marginBottom: 18 },
   historyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   historyDate: { width: 52, fontSize: 12, color: colors.textTertiary },
   historyText: { flex: 1, fontSize: 13, color: colors.text },

@@ -10,6 +10,7 @@ import {
   isAllDayMeetingTime,
   nextTrackMode,
   parseMeetingTime,
+  startMeeting,
   updateMeeting,
   useMeetings,
   type TodayMeeting,
@@ -31,7 +32,7 @@ export default function ScheduleScreen(): React.JSX.Element {
   const { meetings } = useMeetings({ tracked: false });
   const { projects } = useProjects();
   const { settings, update } = useSettings();
-  const { display, startSession } = useTimer();
+  const { startSession } = useTimer();
   // Connected for the active workspace; meetings synced from another device
   // still show without it.
   const { connection, loading } = useGoogleCalendar();
@@ -43,15 +44,9 @@ export default function ScheduleScreen(): React.JSX.Element {
   const startingSoon = meetings.find(m => m.minutesUntil !== null && m.minutesUntil <= 30);
 
   function start(m: TodayMeeting): void {
-    if (display.status !== 'idle') {
-      Alert.alert('A session is running', 'Stop the current session before starting this meeting.');
-      return;
-    }
-    void startSession('stopwatch', m.id).then(() => {
-      // Same as the extension: starting a meeting logs its scheduled length;
-      // the detail screen corrects it.
-      updateMeeting(m.id, { logged: true, loggedMinutes: m.durationMinutes });
-      router.navigate('/');
+    void startMeeting(m, startSession).then(started => {
+      if (started) router.navigate('/');
+      else Alert.alert('A session is running', 'Stop the current session before starting this meeting.');
     });
   }
 

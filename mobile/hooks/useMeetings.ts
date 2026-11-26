@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { useEffect, useState } from 'react';
 
 import { db } from '@/db/client';
 import { meeting } from '@/db/schema';
@@ -34,6 +35,13 @@ function withTiming(m: MeetingRow, now: number): TodayMeeting {
  *  `minutesUntil` are computed, not stored: they're functions of time. */
 export function useMeetings({ tracked = true }: { tracked?: boolean } = {}): { meetings: TodayMeeting[] } {
   const { scopeId } = useWorkspace();
+  // Re-rendered every 30s so countdowns, the starting-soon banner and
+  // Start → Log move on with the clock even with no timer running.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick(n => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
   const { data: rows } = useLiveQuery(
     db.select().from(meeting).where(scopeId === null ? isNull(meeting.deletedAt) : and(isNull(meeting.deletedAt), eq(meeting.workspaceId, scopeId))),
     [scopeId],
@@ -64,6 +72,9 @@ export function useMeetingHistory(m: MeetingRow | undefined): MeetingRow[] {
       .where(
         and(
           eq(meeting.recurringEventId, m?.recurringEventId ?? ''),
+          // The same calendar connected in two workspaces imports a copy of
+          // the series into each; only this workspace's copy is its history.
+          eq(meeting.workspaceId, m?.workspaceId ?? ''),
           ne(meeting.id, m?.id ?? ''),
           eq(meeting.logged, true),
           isNull(meeting.deletedAt),
@@ -71,7 +82,7 @@ export function useMeetingHistory(m: MeetingRow | undefined): MeetingRow[] {
       )
       .orderBy(desc(meeting.time))
       .limit(5),
-    [m?.recurringEventId, m?.id],
+    [m?.recurringEventId, m?.id, m?.workspaceId],
   );
   return m?.recurringEventId ? (data ?? []) : [];
 }
@@ -82,6 +93,20 @@ export type MeetingUpdate = Partial<Pick<MeetingRow, 'title' | 'description' | '
 export function updateMeeting(id: string, patch: MeetingUpdate): void {
   db.update(meeting).set({ ...patch, updatedAt: new Date().toISOString() }).where(eq(meeting.id, id)).run();
   triggerSync();
+}
+
+/**
+ * Starts a stopwatch on a meeting, in the meeting's own workspace, and only
+ * when that worked logs its scheduled length (the extension's behaviour; the
+ * detail screen corrects it). False when another session is running.
+ */
+export async function startMeeting(
+  m: MeetingRow,
+  startSession: (mode: 'stopwatch', taskId: string, opts: { workspaceId: string }) => Promise<boolean>,
+): Promise<boolean> {
+  const started = await startSession('stopwatch', m.id, { workspaceId: m.workspaceId });
+  if (started) updateMeeting(m.id, { logged: true, loggedMinutes: m.durationMinutes });
+  return started;
 }
 
 /** Off → Today only → Always, the extension's badge cycle. */
