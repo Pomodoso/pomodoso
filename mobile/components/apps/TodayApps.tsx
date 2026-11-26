@@ -70,7 +70,10 @@ function Pinned({ plugin, clock, row }: { plugin: PluginRow; clock: PluginClock;
         update={(r, data) => guard(() => updateRecord(plugin, r.id, data, clock))}
         setDay={(c, day, data) => guard(() => setDaily(plugin, c, day, data, clock))}
         onOpen={() => router.push(`/apps/${plugin.id}`)}
-        open={() => router.push(`/apps/${plugin.id}`)}
+        // A list row opens its record's screen; the "more" row, another view.
+        open={(view, record) =>
+          router.push({ pathname: '/apps/[id]', params: { id: plugin.id, view, ...(record ? { record } : {}) } })
+        }
       />
     </View>
   );

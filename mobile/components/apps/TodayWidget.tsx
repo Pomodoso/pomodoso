@@ -260,7 +260,7 @@ function NumberBox({ value, disabled, onSave }: { value: number | undefined; dis
       style={s.numberBox}
       value={text}
       editable={!disabled}
-      keyboardType="number-pad"
+      keyboardType="decimal-pad"
       returnKeyType="done"
       accessibilityLabel="Value"
       onChangeText={setText}
