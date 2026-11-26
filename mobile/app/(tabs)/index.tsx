@@ -357,7 +357,7 @@ export default function HomeScreen() {
           <>
             <Text style={styles.sectionTitle}>Meetings today</Text>
             {meetings.map(m => (
-              <View key={m.id} style={[styles.meetingRow, m.past && styles.meetingRowPast]}>
+              <Pressable key={m.id} style={[styles.meetingRow, m.past && styles.meetingRowPast]} onPress={() => router.push(`/meeting/${m.id}`)}>
                 <View style={[styles.meetingDot, { backgroundColor: m.calendarColor ?? colors.textTertiary }]} />
                 <View style={styles.meetingBody}>
                   <Text style={[styles.meetingTitle, m.past && styles.meetingTitlePast]} numberOfLines={1}>
@@ -369,7 +369,7 @@ export default function HomeScreen() {
                       : `${parseMeetingTime(m.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${m.durationMinutes}m`}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </>
         )}
