@@ -36,6 +36,8 @@ const EXCLUDED_SETTINGS = new Set([
   SEED_IDS_KEY,
   WELCOME_SEEN_KEY,
   'sync_apps_full_pull',
+  // The running break and the focus session it follows (useTimer).
+  'break_focus_session',
 ]);
 const isExcludedSetting = (key: string) => EXCLUDED_SETTINGS.has(key) || key.endsWith('_synced_at');
 

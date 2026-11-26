@@ -3,7 +3,7 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 
 import { db } from '@/db/client';
-import { meeting, pomodoroSession, task, timerPrefs } from '@/db/schema';
+import { meeting, pomodoroSession, settings as settingsTable, task, timerPrefs } from '@/db/schema';
 import { cancelScheduledNotification, dismissDeliveredSessionAlerts, scheduleSessionEndNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { endPomodoroActivity, syncPomodoroActivity } from '@/utils/liveActivity';
@@ -71,6 +71,19 @@ function notificationCopyFor(kind: SessionKind, taskTitle: string | null): { tit
   return { title: `${label} complete`, body: 'Ready for the next pomodoro?' };
 }
 
+/** settings key: the running break and the focus session it follows. Device-local. */
+const BREAK_FOCUS_KEY = 'break_focus_session';
+
+function parseBreakLink(raw: string | undefined): { breakId: string; focusId: string } | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as { breakId?: unknown; focusId?: unknown };
+    return typeof v.breakId === 'string' && typeof v.focusId === 'string' ? { breakId: v.breakId, focusId: v.focusId } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useTimer() {
   const [, forceTick] = useState(0);
   // `active` is a snapshot from the last render — two taps landing before the
@@ -97,6 +110,11 @@ export function useTimer() {
     [scopeId],
   );
   const { data: prefsRows } = useLiveQuery(db.select().from(timerPrefs));
+  // Which focus session the running break follows, recorded when the break
+  // started (startFollowUpSession). History can't answer it reliably later:
+  // a session synced from another device may end in between.
+  const { data: breakLinkRows } = useLiveQuery(db.select().from(settingsTable).where(eq(settingsTable.key, BREAK_FOCUS_KEY)));
+  const breakLink = parseBreakLink(breakLinkRows?.[0]?.value);
   const { data: tasks } = useLiveQuery(
     db.select().from(task).where(scopeId === null ? isNull(task.deletedAt) : and(isNull(task.deletedAt), eq(task.workspaceId, scopeId))),
     [scopeId],
@@ -282,12 +300,17 @@ export function useTimer() {
   // key the extension uses. Null outside a break.
   // During the break: the focus session that ended last before it started
   // (the one pomo-done offered this break for), by end time.
+  // During the break, the link recorded when it started; for a break begun
+  // before that link existed, the last pomodoro focus session that ended
+  // before it (never manual time).
   const breakFocusSessionId: string | null = pendingBreak
     ? mostRecentUnresolved!.id
     : active && active.kind !== 'focus'
-      ? ((sessions ?? [])
-          .filter(s => s.kind === 'focus' && s.status === 'completed' && s.endedAt !== null && s.endedAt <= active.startedAt)
-          .sort((a, b) => (b.endedAt! < a.endedAt! ? -1 : b.endedAt! > a.endedAt! ? 1 : 0))[0]?.id ?? null)
+      ? breakLink?.breakId === active.id
+        ? breakLink.focusId
+        : ((sessions ?? [])
+            .filter(s => s.mode === 'pomodoro' && s.kind === 'focus' && s.status === 'completed' && s.endedAt !== null && s.endedAt <= active.startedAt)
+            .sort((a, b) => (b.endedAt! < a.endedAt! ? -1 : b.endedAt! > a.endedAt! ? 1 : 0))[0]?.id ?? null)
       : null;
   const inBreak = Boolean(pendingBreak) || Boolean(active && active.kind !== 'focus');
 
@@ -439,7 +462,8 @@ export function useTimer() {
   // (atomically guarded the same way as startSession) and, only once that
   // insert actually wins, sweep every dangling prompt — so a lost race
   // doesn't silently dismiss a banner with nothing started in its place.
-  async function startFollowUpSession(kind: SessionKind, taskId: string | null, durationSeconds: number): Promise<void> {
+  /** `afterFocusId`: for a break, the focus session it follows (recorded, see BREAK_FOCUS_KEY). */
+  async function startFollowUpSession(kind: SessionKind, taskId: string | null, durationSeconds: number, afterFocusId?: string): Promise<void> {
     if (active || isMutatingRef.current) return;
     isMutatingRef.current = true;
     try {
@@ -450,9 +474,10 @@ export function useTimer() {
       // Same two guards as startSession (see its comment): no other live
       // session, and — since notification scheduling above is async — the
       // task hasn't been deleted while this was in flight.
+      const sessionId = uid();
       const result = db.run(sql`
         INSERT INTO pomodoro_session (id, workspace_id, mode, kind, task_id, planned_duration_seconds, started_at, status, notification_id, updated_at)
-        SELECT ${uid()}, ${workspaceId}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
+        SELECT ${sessionId}, ${workspaceId}, 'pomodoro', ${kind}, ${taskId}, ${durationSeconds}, ${startedAt}, 'active', ${notificationId}, ${startedAt}
         WHERE NOT EXISTS (SELECT 1 FROM pomodoro_session WHERE status IN ('active', 'paused') AND deleted_at IS NULL)
           AND (${taskId} IS NULL
             OR EXISTS (SELECT 1 FROM task WHERE id = ${taskId} AND deleted_at IS NULL)
@@ -467,6 +492,10 @@ export function useTimer() {
         }
         return;
       }
+      if (kind !== 'focus' && afterFocusId) {
+        const value = JSON.stringify({ breakId: sessionId, focusId: afterFocusId });
+        db.insert(settingsTable).values({ key: BREAK_FOCUS_KEY, value }).onConflictDoUpdate({ target: settingsTable.key, set: { value } }).run();
+      }
       resolveAllPendingPrompts();
       void dismissDeliveredSessionAlerts(); // see startSession
       // Matches background.ts: 'break-start' when the follow-up is a break,
@@ -480,7 +509,7 @@ export function useTimer() {
 
   function startBreak(): void {
     if (!mostRecentUnresolved || !pendingBreak) return;
-    void startFollowUpSession(pendingBreak.kind, mostRecentUnresolved.taskId, pendingBreak.durationSeconds);
+    void startFollowUpSession(pendingBreak.kind, mostRecentUnresolved.taskId, pendingBreak.durationSeconds, mostRecentUnresolved.id);
   }
 
   function skipBreak(): void {

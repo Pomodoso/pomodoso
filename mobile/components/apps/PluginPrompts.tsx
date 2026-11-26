@@ -127,16 +127,22 @@ function PromptCard({ candidate, day, today, clock, close }: {
   const { plugin, hook } = candidate;
   const { evaluator } = usePluginData(plugin, clock);
   const [busy, setBusy] = useState(false);
+  // Synchronous: two presses can land before a re-render. Held until the card
+  // goes away, and released only if the write failed, so one question can't
+  // log its answer twice.
+  const lock = useRef(false);
   if (!evaluator) return null;
   const now = new Date().toISOString();
   const question = evaluator.template(hook.ask, templateFormat(plugin.manifest, now));
   const settle = (work: () => void) => {
-    if (busy) return;
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
     try {
       work();
       close();
-    } finally {
+    } catch {
+      lock.current = false;
       setBusy(false);
     }
   };
