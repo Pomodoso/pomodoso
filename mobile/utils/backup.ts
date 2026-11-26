@@ -97,51 +97,23 @@ export interface BackupEnvelope {
 // Untouched demo rows stay out too. seed_row_ids is excluded (it lists this
 // device's ids), so on another phone they would be indistinguishable from
 // user data and get pushed into the account.
-//
-// "Untouched" means unedited *and* unused: a demo row stays when anything the
-// user made points at it (a habit checked on a later day, a timer run on a
-// demo task, a task created in the demo workspace). Dropping it would strand
-// those rows without their parent.
+// "Untouched" means unedited *and* unused (see untouchedSeedIds): a demo row
+// the user has adopted travels with the rest of their data.
 export function exportBackup(): string {
   const seed = untouchedSeedIds();
-  const seedHistory = new Set(seed.habitHistory);
-
-  const sessions = db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all();
-  const projects = db.select().from(project).where(isNull(project.deletedAt)).all();
-  const meetings = db.select().from(meeting).where(isNull(meeting.deletedAt)).all();
-  const allAchievements = db.select().from(achievements).where(isNull(achievements.deletedAt)).all();
-  const allHistory = db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all();
-
-  const allHabits = db.select().from(habits).where(isNull(habits.deletedAt)).all();
-  const habitCreatedAt = new Map(allHabits.map(h => [h.id, h.createdAt]));
-  // A demo log is written with its habit's createdAt as its updatedAt
-  // (db/client.ts's initDb). Any other date means the user changed it, e.g.
-  // checked a day that already had a demo log.
-  const userLog = (h: (typeof allHistory)[number]) =>
-    !seedHistory.has(h.id) || h.updatedAt !== habitCreatedAt.get(h.habitId);
-  const usedHabits = new Set([
-    ...allHistory.filter(userLog).map(h => h.habitId),
-    ...allAchievements.map(a => a.habitId).filter((id): id is string => id !== null),
-  ]);
-  const dropHabits = new Set(seed.habits.filter(id => !usedHabits.has(id)));
-
-  const usedTasks = new Set(sessions.map(s => s.taskId).filter((id): id is string => id !== null));
-  const dropTasks = new Set(seed.task.filter(id => !usedTasks.has(id)));
-  const tasks = db.select().from(task).where(isNull(task.deletedAt)).all().filter(t => !dropTasks.has(t.id));
-
-  const usedWorkspaces = new Set([...tasks, ...projects, ...sessions, ...meetings].map(r => r.workspaceId));
-  const dropWorkspaces = new Set(seed.workspace.filter(id => !usedWorkspaces.has(id)));
-
+  const without = <T extends { id: string }>(rows: T[], ids: string[]) => {
+    const skip = new Set(ids);
+    return rows.filter(r => !skip.has(r.id));
+  };
   const data: Record<string, unknown[]> = {
-    workspace: db.select().from(workspace).where(isNull(workspace.deletedAt)).all().filter(w => !dropWorkspaces.has(w.id)),
-    habits: allHabits.filter(h => !dropHabits.has(h.id)),
-    // Demo logs go with their habit: kept when it's kept.
-    habitHistory: allHistory.filter(h => !(seedHistory.has(h.id) && dropHabits.has(h.habitId))),
-    achievements: allAchievements,
-    pomodoroSession: sessions,
-    project: projects,
-    task: tasks,
-    meeting: meetings,
+    workspace: without(db.select().from(workspace).where(isNull(workspace.deletedAt)).all(), seed.workspace),
+    habits: without(db.select().from(habits).where(isNull(habits.deletedAt)).all(), seed.habits),
+    habitHistory: without(db.select().from(habitHistory).where(isNull(habitHistory.deletedAt)).all(), seed.habitHistory),
+    achievements: db.select().from(achievements).where(isNull(achievements.deletedAt)).all(),
+    pomodoroSession: db.select().from(pomodoroSession).where(isNull(pomodoroSession.deletedAt)).all(),
+    project: db.select().from(project).where(isNull(project.deletedAt)).all(),
+    task: without(db.select().from(task).where(isNull(task.deletedAt)).all(), seed.task),
+    meeting: db.select().from(meeting).where(isNull(meeting.deletedAt)).all(),
     timerPrefs: db.select().from(timerPrefs).all(),
     settings: db.select().from(settings).all().filter(s => !isExcludedSetting(s.key)),
   };
