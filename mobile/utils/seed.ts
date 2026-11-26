@@ -246,3 +246,20 @@ export function dropSeedIfSupersededBy(pulledRows: number): boolean {
   }
   return true;
 }
+
+/**
+ * "Start empty" on the welcome screen: removes the demo tasks and habits the
+ * user hasn't touched. The workspace stays, since every screen needs one;
+ * untouched, it is never pushed anyway.
+ *
+ * Hard deletes, for the same reason as dropSeedIfSupersededBy: these rows were
+ * never pushed, so a tombstone would describe nothing on the server.
+ */
+export function dropUntouchedSeed(): void {
+  const untouched = untouchedSeedIds();
+  db.transaction(tx => {
+    if (untouched.task.length) tx.delete(task).where(inArray(task.id, untouched.task)).run();
+    if (untouched.habitHistory.length) tx.delete(habitHistory).where(inArray(habitHistory.id, untouched.habitHistory)).run();
+    if (untouched.habits.length) tx.delete(habits).where(inArray(habits.id, untouched.habits)).run();
+  });
+}

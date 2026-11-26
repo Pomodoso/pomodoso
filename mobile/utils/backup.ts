@@ -3,7 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { db } from '@/db/client';
-import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, workspace } from '@/db/schema';
+import { achievements, habitHistory, habits, meeting, pomodoroSession, project, SEED_IDS_KEY, settings, task, taskOrder, timerPrefs, WELCOME_SEEN_KEY, workspace } from '@/db/schema';
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { untouchedSeedIds } from '@/utils/seed';
@@ -25,6 +25,8 @@ const WORKSPACE_SCOPED_TABLES = new Set(['task', 'project', 'pomodoroSession', '
 //     announced to the one that made the backup.
 //   - seed_row_ids lists *this* device's demo rows; another device's list
 //     would mark nothing, or the wrong rows, as demo.
+//   - welcome_seen is this device's answer to the welcome screen; a restore
+//     must neither erase it nor answer it from another device.
 const EXCLUDED_SETTINGS = new Set([
   'device_id',
   'sync_last_pull',
@@ -32,6 +34,7 @@ const EXCLUDED_SETTINGS = new Set([
   'can_sync',
   'active_timer_remote',
   SEED_IDS_KEY,
+  WELCOME_SEEN_KEY,
 ]);
 const isExcludedSetting = (key: string) => EXCLUDED_SETTINGS.has(key) || key.endsWith('_synced_at');
 

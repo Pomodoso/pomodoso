@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 
 import { BrandSplash } from '@/components/BrandSplash';
 import { SyncChoiceModal } from '@/components/SyncChoiceModal';
+import { WelcomeModal } from '@/components/WelcomeModal';
 import { colors } from '@/constants/theme';
 import { useSyncLifecycle } from '@/hooks/useSyncLifecycle';
 import { observeSignIn, observeTransactions } from '@/utils/purchases';
@@ -80,6 +81,8 @@ export default function RootLayout() {
           the root because the cold-start sync can raise it before the user
           has navigated anywhere. */}
       <SyncChoiceModal />
+      {/* After the intro, so it doesn't cover the launch animation. */}
+      {introDone && <WelcomeModal />}
     </View>
   );
 }

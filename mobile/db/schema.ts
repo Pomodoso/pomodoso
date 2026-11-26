@@ -331,6 +331,10 @@ export const taskOrder = sqliteTable('task_order', {
  *  there would close an import cycle before `db` itself exists. */
 export const SEED_IDS_KEY = 'seed_row_ids';
 
+/** settings key set once the welcome screen has been answered on this device
+ *  (components/WelcomeModal.tsx). */
+export const WELCOME_SEEN_KEY = 'welcome_seen';
+
 export interface SeedIds {
   workspace: string[];
   habits: string[];

@@ -439,8 +439,17 @@ function initDb(): void {
   }
   const workspaceId = workspaceRow.id;
 
+  // The demo is written once per install. The registry below records that it
+  // happened, and while it exists empty tables stay empty: "Start empty" on
+  // the welcome screen, "Use my account only" with an empty account, or a
+  // restored backup without tasks all leave them that way on purpose, and
+  // re-seeding on the next launch undid it.
+  const alreadySeeded = expoDb.getFirstSync<{ value: string }>(
+    'SELECT value FROM settings WHERE key = ?', [schema.SEED_IDS_KEY],
+  ) !== null;
+
   const existing = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM habits');
-  if (existing?.count === 0) {
+  if (!alreadySeeded && existing?.count === 0) {
     const now = new Date().toISOString();
     const habitIds: Record<string, string> = {};
     for (const { key, ...def } of SEED_HABIT_DEFS) {
@@ -461,7 +470,7 @@ function initDb(): void {
   }
 
   const hasTasks = expoDb.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM task');
-  if (hasTasks?.count === 0) {
+  if (!alreadySeeded && hasTasks?.count === 0) {
     const createdAt = new Date().toISOString();
     for (const seedTask of SEED_TASKS) {
       const id = uid();

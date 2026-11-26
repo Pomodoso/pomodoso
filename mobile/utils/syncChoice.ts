@@ -3,7 +3,7 @@ import { eq, inArray, not } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { hasUserData } from '@/utils/seed';
-import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, timerPrefs, workspace } from '@/db/schema';
+import { habits, habitHistory, meeting, pomodoroSession, project, settings, task, taskOrder, timerPrefs, workspace, SEED_IDS_KEY, WELCOME_SEEN_KEY } from '@/db/schema';
 
 // What happens the first time an account signs in on a device that already
 // has data of its own.
@@ -143,8 +143,11 @@ export function discardLocalData(): void {
   // signing in, not the data being abandoned, and wiping it here would leave
   // syncNow() bailing out immediately after the user chose "use my account
   // only" — the one path where a sync absolutely has to follow.
+  // The seed registry and welcome flag survive too: they record that this
+  // install already had its demo and its welcome. Without them the next
+  // launch re-seeds the demo into whatever table the account left empty.
   db.delete(settings)
-    .where(not(inArray(settings.key, [DEVICE_ID_KEY, CAN_SYNC_KEY])))
+    .where(not(inArray(settings.key, [DEVICE_ID_KEY, CAN_SYNC_KEY, SEED_IDS_KEY, WELCOME_SEEN_KEY])))
     .run();
 }
 
