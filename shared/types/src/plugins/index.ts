@@ -14,6 +14,7 @@ export * from './manifest.ts';
 export { applyMigration, type MigrationResult } from './migrate.ts';
 export { parsePluginFile, validatePluginData, type PluginParseResult } from './parse.ts';
 export { addDays, localDayOf } from './dates.ts';
+export { EMPTY_PROMPT_STATE, breakKey, hookId, localNoon, pendingDayEnd, pickBreakPrompt, promptHooks, type PromptCandidate, type PromptHook, type PromptState } from './prompts.ts';
 export { iso, planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord, type PluginRecordRow, type PluginRow } from './rows.ts';
 export { applyRules, cascadeIds, recordTitle, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, templateFormat, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';
 export { STARTER_PROMPT, TOP_LEVEL_DOCS, llmsFullTxt, llmsTxt, remixPrompt } from './llms.ts';
