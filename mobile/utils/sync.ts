@@ -49,6 +49,8 @@ const DEVICE_ID_KEY = 'device_id';
 /** A timer running on some *other* device, as last announced. Local only —
  *  never pushed, since it describes someone else's session. */
 const REMOTE_TIMER_KEY = 'active_timer_remote';
+/** The pull scope that has had its one full pull with apps (see pull()). */
+const APPS_FULL_PULL_KEY = 'sync_apps_full_pull';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -548,7 +550,11 @@ async function push(client: TokenApiClient): Promise<void> {
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
 async function pull(client: TokenApiClient, scope: string): Promise<void> {
-  const since = readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope);
+  // One full pull the first time a build that stores apps syncs: older
+  // builds ignored plugin rows but still advanced the cursor past them, so an
+  // incremental pull would never bring back apps saved before the upgrade.
+  const appsPulled = getSetting(APPS_FULL_PULL_KEY) === scope;
+  const since = appsPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
   const response = await pullEntities(client, since);
 
   // task_order names task ids, so it has to land after the tasks it names —
@@ -568,6 +574,7 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   dropSeedIfSupersededBy(response.entities.length);
 
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
+  putSetting(APPS_FULL_PULL_KEY, scope);
   mergeDuplicatePluginInstalls();
 }
 
