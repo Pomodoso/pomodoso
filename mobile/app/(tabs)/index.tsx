@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { reorderSubset } from '@pomodoso/types';
 
+import { TodayApps } from '@/components/apps/TodayApps';
 import { BreakBanner } from '@/components/BreakBanner';
 import { AddTaskModal } from '@/components/AddTaskModal';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -340,6 +341,8 @@ export default function HomeScreen() {
             />
           </>
         )}
+
+        <TodayApps />
 
         {settings.showChallengesInToday && (
           <ChallengesSection

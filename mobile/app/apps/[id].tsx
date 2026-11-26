@@ -28,7 +28,8 @@ import {
 // and its settings with Uninstall.
 
 export default function AppScreen(): React.JSX.Element {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `view` and `record` (from a Today widget) open a view, or a record's screen.
+  const { id, view, record } = useLocalSearchParams<{ id: string; view?: string; record?: string }>();
   const plugin = usePlugin(id);
 
   if (plugin === undefined) return <SafeAreaView style={styles.safe} />;
@@ -40,7 +41,7 @@ export default function AppScreen(): React.JSX.Element {
       </SafeAreaView>
     );
   }
-  return <Loaded plugin={plugin} />;
+  return <Loaded plugin={plugin} initialView={view} initialRecord={record} />;
 }
 
 /**
@@ -69,7 +70,7 @@ function actionsFor(plugin: PluginRow, clock: PluginClock): PluginActions {
   };
 }
 
-function Loaded({ plugin }: { plugin: PluginRow }): React.JSX.Element {
+function Loaded({ plugin, initialView, initialRecord }: { plugin: PluginRow; initialView?: string | undefined; initialRecord?: string | undefined }): React.JSX.Element {
   const m = plugin.manifest;
   const { session } = useAuth();
   const readOnly = session === null;
@@ -77,8 +78,9 @@ function Loaded({ plugin }: { plugin: PluginRow }): React.JSX.Element {
   const { records, evaluator } = usePluginData(plugin, clock);
   const tasks = usePluginTasks();
   const tabs = m.views.filter(v => v.of === undefined);
-  const [viewId, setViewId] = useState(tabs[0]?.id);
-  const [opened, setOpened] = useState<{ view: string; record: string } | null>(null);
+  const startsOnRecord = Boolean(initialView && initialRecord && m.views.some(v => v.id === initialView && v.of !== undefined));
+  const [viewId, setViewId] = useState(!startsOnRecord && tabs.some(v => v.id === initialView) ? initialView : tabs[0]?.id);
+  const [opened, setOpened] = useState<{ view: string; record: string } | null>(startsOnRecord ? { view: initialView!, record: initialRecord! } : null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const actions = useMemo(() => actionsFor(plugin, clock), [plugin, clock]);
 
