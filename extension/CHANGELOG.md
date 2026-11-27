@@ -18,6 +18,7 @@
 
 ### Habits
 
+- **Habits with a clock** — Choose *Timer* as a counter's unit and the habit gets a ▶. Press it and a clock runs under the habit; when it reaches the goal you get a notification and the habit is done, but the clock keeps going and all of it counts. Stopping early keeps the time so far, and ▶ again adds more, even once the goal is done. It runs on its own, next to the pomodoro.
 - **Go again on an ended habit** — Restarting a challenge whose habit ended (or would end before the new run could finish) reopens the habit, instead of starting a run you couldn't log.
 - **Challenges count from the day they start** — Turning a challenge off clears its start date on every device, so switching it back on later starts fresh instead of counting from the old run.
 

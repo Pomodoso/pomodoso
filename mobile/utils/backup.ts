@@ -40,6 +40,8 @@ const EXCLUDED_SETTINGS = new Set([
   // device's state, and a restore replaces the rows anyway.
   'project_end_date_unrecovered',
   'habit_fields_unrecovered',
+  // A running habit clock belongs to this device (useHabitTimer).
+  'habit_timer',
   // The running break and the focus session it follows (useTimer).
   'break_focus_session',
 ]);

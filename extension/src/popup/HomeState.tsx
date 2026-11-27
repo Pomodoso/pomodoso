@@ -20,6 +20,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useLocalStorage } from './useStorage';
 import { TodaySectionHeader } from './TodaySectionHeader';
+import { HabitClockBar, HabitClockButton, HabitClockContext } from './HabitClock';
+import { useHabitTimer } from './useHabitTimer';
 import type React from 'react';
 import { marked } from 'marked';
 import { TimerRing } from '@pomodoso/ui';
@@ -681,6 +683,14 @@ export function HomeState({
     if (r.count != null) habitCounters[r.habitId] = r.count;
     if (r.done != null) habitDone[r.habitId] = r.done;
   }
+  // A running habit clock counts live: what it has run is added to today's
+  // count on screen, so the total, the done state and the progress move with
+  // it. It's written to the count when the clock stops or reaches the goal.
+  const habitTimer = useHabitTimer();
+  if (habitTimer.habitId) {
+    habitCounters[habitTimer.habitId] = (habitCounters[habitTimer.habitId] ?? 0) + habitTimer.running;
+  }
+  const habitClock = useMemo(() => ({ ...habitTimer, today }), [habitTimer, today]);
 
   // A run waiting on a missed day is locked until it's answered: logging today
   // on top of an unanswered miss would let the run keep advancing as if the
@@ -813,6 +823,7 @@ export function HomeState({
   const completedTasks = todayTasks.filter(t => t.status === 'done').length;
 
   return (
+    <HabitClockContext.Provider value={habitClock}>
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Header ── */}
@@ -2008,6 +2019,7 @@ export function HomeState({
         ))}
       </div>
     </div>
+    </HabitClockContext.Provider>
   );
 }
 
@@ -2240,6 +2252,8 @@ function TodayHabits({
               id={habit.id}
               style={{
                 display: 'flex', alignItems: paused ? 'flex-start' : 'center', gap: 10,
+                // Wraps so a running clock gets its own line under the habit.
+                flexWrap: 'wrap',
                 padding: '8px 12px',
                 borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
                 background: isDone
@@ -2311,6 +2325,7 @@ function TodayHabits({
                       onClick={() => onCounterChange(habit.id, habit.timeUnit ? (habit.unitAmount || 60) : 1)}
                       style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >+</button>
+                    <HabitClockButton habit={habit} disabled={paused} />
                   </div>
                   {!habit.timeUnit && habit.unit && habit.unitAmount && (
                     <span style={{ fontSize: 10, color: isDone ? 'var(--color-success)' : 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
@@ -2339,6 +2354,7 @@ function TodayHabits({
                   >✓</button>
                 </div>
               )}
+              <HabitClockBar habit={habit} total={count} style={{ flexBasis: '100%', marginTop: 0, marginLeft: 34 }} />
             </SortableHabitRow>
           );
         })}
@@ -5356,6 +5372,7 @@ function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, str
                   : <>{count}<span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>/{habit.goal}</span></>}
               </div>
               <button disabled={paused} onClick={() => onCounterChange(habit.timeUnit ? (habit.unitAmount || 60) : 1)} style={{ width: 26, height: 26, borderRadius: 5, border: '1px solid var(--color-border)', background: 'var(--color-bg)', ...lockedStyle(paused), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--color-text-muted)', fontWeight: 600 }}>+</button>
+              <HabitClockButton habit={habit} disabled={paused} size={26} />
             </div>
             {!habit.timeUnit && habit.unit && habit.unitAmount && (
               <span style={{ fontSize: 10, color: 'var(--color-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
@@ -5387,6 +5404,7 @@ function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, str
           ···
         </button>
       </div>
+      {!readOnly && <HabitClockBar habit={habit} total={count} style={{ gridColumn: '1 / -1', marginTop: 0 }} />}
     </div>
   );
 }
@@ -5623,8 +5641,8 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
   const [name, setName] = useState(initialHabit?.name ?? '');
   const [kind, setKind] = useState<HabitKind>(initialHabit?.kind ?? 'boolean');
   const [icon, setIcon] = useState<HabitIconKind>(initialHabit?.icon ?? 'water');
-  const [unitMode, setUnitMode] = useState<'none' | 'preset' | 'time' | 'custom'>(
-    initialHabit?.timeUnit ? 'time'
+  const [unitMode, setUnitMode] = useState<'none' | 'preset' | 'time' | 'timer' | 'custom'>(
+    initialHabit?.timeUnit ? (initialHabit.timer ? 'timer' : 'time')
       : initialHabit?.unit ? (PRESET_UNITS.includes(initialHabit.unit) ? 'preset' : 'custom')
         : 'none',
   );
@@ -5644,7 +5662,9 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
     initialHabit ? (initialHabit.days.length === 0 ? [0,1,2,3,4,5,6] : initialHabit.days) : [0,1,2,3,4,5,6]
   );
 
-  const isTime = kind === 'counter' && unitMode === 'time';
+  // Timer is a time habit with a clock (▶ under the habit), so everything
+  // that applies to time applies to it.
+  const isTime = kind === 'counter' && (unitMode === 'time' || unitMode === 'timer');
 
   // Stored shape: seven days means "every day" and is kept as an empty array.
   const daysValue = selectedDays.length === 7 ? [] : selectedDays;
@@ -5759,6 +5779,7 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
         ? { goal: (isTime ? parseHabitTime(goal) : parseInt(goal, 10)) || 1 }
         : {}),
       ...(isTime ? { timeUnit: true, unitAmount: parseHabitTime(timeStep) || 60 } : {}),
+      ...(isTime && unitMode === 'timer' ? { timer: true } : {}),
       ...(hasUnit ? { unit: effUnit } : {}),
       ...(hasUnitAmount ? { unitAmount: parsedUnitAmount } : {}),
       ...(endDate ? { endDate } : {}),
@@ -5840,11 +5861,12 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
         <div style={{ marginBottom: 12 }}>
           <FormLabel>Unit</FormLabel>
           <select
-            value={unitMode === 'preset' ? unit : unitMode === 'time' ? '__time__' : unitMode === 'custom' ? '__custom__' : ''}
+            value={unitMode === 'preset' ? unit : unitMode === 'time' ? '__time__' : unitMode === 'timer' ? '__timer__' : unitMode === 'custom' ? '__custom__' : ''}
             onChange={e => {
               const v = e.target.value;
               if (v === '') { setUnitMode('none'); setUnit(''); }
               else if (v === '__time__') setUnitMode('time');
+              else if (v === '__timer__') setUnitMode('timer');
               else if (v === '__custom__') { setUnitMode('custom'); setUnit(''); setUnitAmount(''); }
               else { setUnitMode('preset'); setUnit(v); setUnitAmount(''); }
             }}
@@ -5853,8 +5875,14 @@ function HabitForm({ initialHabit, today, onSave, onCancel }: {
             <option value="">None (just a count)</option>
             {PRESET_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
             <option value="__time__">Time (min:seg)</option>
+            <option value="__timer__">Timer: time with a clock ▶</option>
             <option value="__custom__">Custom…</option>
           </select>
+          {unitMode === 'timer' && (
+            <div style={{ fontSize: 10, color: 'var(--color-text-faint)', marginTop: 4, lineHeight: 1.5 }}>
+              ▶ starts a clock under the habit. It's done when the clock reaches the goal, keeps counting after, and stopping early keeps the time so far.
+            </div>
+          )}
           {unitMode === 'custom' && (
             <input
               value={unit}

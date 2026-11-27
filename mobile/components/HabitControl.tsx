@@ -17,12 +17,14 @@ interface HabitControlProps {
   onIncrement: (delta: number) => void;
   /** A paused challenge: shown but not tappable. */
   disabled?: boolean;
+  /** Timer habits: ▶ starts the clock, ⏸ stops it. */
+  clock?: { running: boolean; onPress: () => void } | undefined;
 }
 
 // Shared between the Habits tab and Home's Today strip — both need the exact
 // same boolean-check / counter-stepper interaction, matching how the
 // extension's Today view and Habits tab both reuse the same habit row shape.
-export function HabitControl({ kind, done, count, goal, timeUnit = false, unitAmount, onToggle, onIncrement, disabled = false }: HabitControlProps) {
+export function HabitControl({ kind, done, count, goal, timeUnit = false, unitAmount, onToggle, onIncrement, disabled = false, clock }: HabitControlProps) {
   if (kind === 'counter') {
     const step = timeUnit ? habitTimeStep(unitAmount) : 1;
     return (
@@ -36,6 +38,17 @@ export function HabitControl({ kind, done, count, goal, timeUnit = false, unitAm
         <Pressable style={styles.counterBtn} onPress={() => onIncrement(step)} hitSlop={6} disabled={disabled}>
           <Text style={styles.counterBtnText}>+</Text>
         </Pressable>
+        {clock && (
+          <Pressable
+            style={[styles.counterBtn, clock.running && styles.clockOn]}
+            onPress={clock.onPress}
+            hitSlop={6}
+            disabled={disabled}
+            accessibilityLabel={clock.running ? 'Stop the clock' : 'Start the clock'}
+          >
+            <Ionicons name={clock.running ? 'pause' : 'play'} size={13} color={clock.running ? colors.surface : colors.textSecondary} />
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -76,6 +89,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  clockOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   counterBtnText: { fontSize: 15, fontWeight: '600', color: colors.textSecondary },
   counterValue: { fontFamily: fontMono, fontWeight: '700', fontSize: 14, color: colors.text, minWidth: 34, textAlign: 'center' },
 });

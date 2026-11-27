@@ -49,6 +49,9 @@ export const habits = sqliteTable('habits', {
   // A time habit: count, goal and unitAmount are seconds, shown as m:ss.
   // Mirrors the extension's HabitRow.timeUnit.
   timeUnit: integer('time_unit', { mode: 'boolean' }).notNull().default(false),
+  // A time habit with a clock: ▶ runs a stopwatch that adds to the day's
+  // count (useHabitTimer). Mirrors the extension's HabitRow.timer.
+  timer: integer('timer', { mode: 'boolean' }).notNull().default(false),
   // YYYY-MM-DD, the last day the habit is active; after it, it's closed
   // (habitClosed in @pomodoso/types). null = no end.
   endDate: text('end_date'),

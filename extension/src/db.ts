@@ -113,6 +113,9 @@ export interface HabitRow extends SyncMeta {
   unit?: string;
   unitAmount?: number;
   timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
+  // A time habit with a clock: ▶ runs a stopwatch that adds to today's count
+  // (habitTimer.ts). Only meaningful with timeUnit.
+  timer?: boolean | undefined;
   endDate?: string | undefined; // YYYY-MM-DD — hidden from Today after this date
   // `| undefined` spelled out on all four: clearing a challenge (Keep as habit,
   // Go again) writes undefined through Dexie's UpdateSpec, which `?:` alone
