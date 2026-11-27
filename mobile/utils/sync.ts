@@ -195,6 +195,8 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   // extension reads a falsy value as off).
   writeExtra(extra, 'timeUnit', h.timeUnit ? true : null);
   writeExtra(extra, 'timer', h.timer ? true : null);
+  // Null when active, so unarchiving travels.
+  writeExtra(extra, 'archivedAt', h.archivedAt);
   writeExtra(extra, 'endDate', h.endDate);
   // Explicitly null when disabled so the clear travels — writeExtra now gives
   // every field that property, which is what this used to special-case.
@@ -916,6 +918,7 @@ function applyEntity(entity: SyncEntity): void {
         // and reads them back the same way.
         timeUnit: Boolean(hExtra.timeUnit),
         timer: Boolean(hExtra.timer),
+        archivedAt: typeof hExtra.archivedAt === 'string' && hExtra.archivedAt ? hExtra.archivedAt : null,
         endDate: typeof hExtra.endDate === 'string' && hExtra.endDate ? hExtra.endDate : null,
         challengeLengthDays,
         days: JSON.stringify(days),

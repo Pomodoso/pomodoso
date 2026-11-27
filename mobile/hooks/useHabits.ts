@@ -38,6 +38,9 @@ export interface HabitWithProgress {
   timeUnit: boolean;
   /** A time habit with a clock (useHabitTimer). */
   timer: boolean;
+  /** Put away by hand: off Today, the list and Challenges; listed under Archived. */
+  archived: boolean;
+  archivedAt: string | null;
   endDate: string | null;
   /** Past its end date: off Today and the active list, read-only. */
   closed: boolean;
@@ -219,7 +222,8 @@ export function useHabits() {
       done: isDone(h.kind, h.goal, todayRow),
       // A closed habit isn't due anywhere, so it drops off Today with no
       // separate filter to forget.
-      scheduledToday: isScheduledToday(days) && !habitClosed(h.endDate, today),
+      scheduledToday: isScheduledToday(days) && !habitClosed(h.endDate, today) && !h.archivedAt,
+      archived: Boolean(h.archivedAt),
       closed: habitClosed(h.endDate, today),
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
@@ -352,6 +356,13 @@ export function useHabits() {
       })
       .where(eq(habits.id, id))
       .run();
+    triggerSync();
+  }
+
+  /** Archive (true) or bring back (false). History is kept either way. */
+  function archiveHabit(id: string, archived: boolean): void {
+    const now = new Date().toISOString();
+    db.update(habits).set({ archivedAt: archived ? now : null, updatedAt: now }).where(eq(habits.id, id)).run();
     triggerSync();
   }
 
@@ -544,7 +555,7 @@ export function useHabits() {
   }
 
   return {
-    habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits,
+    habits: merged, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits, archiveHabit,
     keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
   };
 }

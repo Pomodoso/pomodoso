@@ -15,7 +15,7 @@ use crate::{
     habit_streak::ChallengeProgress,
     habit_streak::{
         challenge_length, challenge_progress, challenge_run, challenge_skips_left, compute_streak,
-        scheduled_days, sort_order, HabitStreak,
+        is_archived, scheduled_days, sort_order, HabitStreak,
     },
     middleware::auth::AuthUser,
     AppState,
@@ -237,6 +237,8 @@ pub async fn list_habits(
 
     let mut habits: Vec<(Option<i64>, HabitInfo)> = rows
         .into_iter()
+        // Archived habits are put away on every client (see is_archived).
+        .filter(|r| !is_archived(&r.extra))
         .map(|r| {
             let streak = compute_streak(
                 &r.kind,
