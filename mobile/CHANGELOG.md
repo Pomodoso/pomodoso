@@ -20,11 +20,18 @@
 
 ### Tasks
 
+- **Schedule a task for a day** — In a task's detail, **Scheduled**: tomorrow, next Monday or any date. It waits in the backlog with its day shown and moves into Today on that day, or the next time you open the app if you didn't that day. Scheduling a later day takes it out of Today for now.
 - **Formatted descriptions** — Bold, italic, lists and code in a task's description, with a preview.
 - **Task order under All workspaces** — Each workspace keeps the order you set, here and in the extension.
 
+### Projects
+
+- **Projects in Settings** — Settings → Projects lists your projects: edit, archive, unarchive or delete them, and create new ones (choosing the workspace under All workspaces). Archived projects are no longer offered when picking a project for a task.
+- **Archived stays archived** — Editing a project on the phone used to un-archive it everywhere. The phone now keeps a project's end date, and picks up the ones already set on your other devices.
+
 ### Habits
 
+- **Challenges count from the day they start** — A habit you turned into a challenge could count the days you did it before the challenge began (a Mon–Fri challenge started on Friday showed 3 days on Monday). Runs now start the day the challenge is turned on.
 - **Paused challenges are locked** — A challenge waiting on a missed day can't be ticked until you keep going or start over, like in the extension.
 
 ### Data

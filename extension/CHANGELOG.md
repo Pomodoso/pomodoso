@@ -2,6 +2,28 @@
 
 ## v1.4.2 (In progress)
 
+### Today
+
+- **The task for the page you're on stands out** — When the open tab is a task's ticket or one of its links, that task is highlighted on Today with "📍 On this page". If several tasks share the link, they all are.
+- **Schedule a task for a day** — In a task's detail, **Schedule for a day**: tomorrow, next Monday or any date. It waits in the backlog with a 📅 and moves into Today on that day, or the next time you open Pomodoso if you didn't that day. Scheduling a later day takes it out of Today for now.
+
+### Tasks
+
+- **Links match the right page** — A task linked to ENG-41 no longer shows up on ENG-412, a link to a whole site no longer matches every page on it, and a GitHub `#7` no longer matches PR 7 in another repository.
+
+### Projects
+
+- **Projects in Settings** — Settings → Projects lists all your projects: edit, archive, unarchive or delete them, and create new ones. An archived project used to disappear from the project picker with no way back.
+- **Clear a project's end date** — Emptying the end date when editing a project now removes it.
+
+### Habits
+
+- **Challenges count from the day they start** — Turning a challenge off clears its start date on every device, so switching it back on later starts fresh instead of counting from the old run.
+
+### Feedback
+
+- **Tell us why you left** — Removing the extension opens a short, anonymous page asking why. Nothing about your account goes with it.
+
 ### Meetings
 
 - **Calendar meetings keep their title and description from Google** — They're shown read-only in a meeting's detail, with where they come from, since every calendar refresh rewrote them and an edit there was silently lost. Notes, project, tracking and time logged are still yours to edit.
