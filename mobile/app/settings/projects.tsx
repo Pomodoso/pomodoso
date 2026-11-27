@@ -10,6 +10,7 @@ import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { colors } from '@/constants/theme';
 import type { ProjectRow } from '@/db/schema';
 import { useProjects } from '@/hooks/useProjects';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { useTodayDate } from '@/hooks/useTodayDate';
 
 // Mirrors the extension's Settings > Projects (SettingsState.tsx ProjectsPage).
@@ -21,6 +22,11 @@ import { useTodayDate } from '@/hooks/useTodayDate';
 export default function ProjectsSettingsScreen(): React.JSX.Element {
   const today = useTodayDate();
   const { projects, addProject, updateProject, removeProject } = useProjects();
+  const { workspaceId, isAll, workspaces } = useWorkspace();
+  // Under "All workspaces" the list spans several, so each row says which one
+  // it belongs to and a new project asks where to go, like the extension.
+  const spansWorkspaces = isAll && workspaces.length > 1;
+  const wsById = new Map(workspaces.map(w => [w.id, w]));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -45,8 +51,13 @@ export default function ProjectsSettingsScreen(): React.JSX.Element {
         <View style={[styles.dot, { backgroundColor: p.color }]} />
         <View style={styles.main}>
           <Text style={styles.name} numberOfLines={1}>{p.name}</Text>
-          {p.endDate && (
-            <Text style={styles.sub}>{isArchived ? `Ended ${fmtDay(p.endDate)}` : `Until ${fmtDay(p.endDate)}`}</Text>
+          {(spansWorkspaces || p.endDate) && (
+            <Text style={styles.sub}>
+              {[
+                spansWorkspaces ? wsById.get(p.workspaceId)?.name : null,
+                p.endDate ? (isArchived ? `Ended ${fmtDay(p.endDate)}` : `Until ${fmtDay(p.endDate)}`) : null,
+              ].filter(Boolean).join(' · ')}
+            </Text>
           )}
         </View>
         {confirmDeleteId === p.id ? (
@@ -97,8 +108,10 @@ export default function ProjectsSettingsScreen(): React.JSX.Element {
 
         {adding ? (
           <ProjectEditor
+            workspaces={spansWorkspaces ? workspaces : undefined}
+            defaultWorkspaceId={workspaceId}
             onSave={values => {
-              const id = addProject(values.name ?? '', values.color ?? PROJECT_PALETTE[0]);
+              const id = addProject(values.name ?? '', values.color ?? PROJECT_PALETTE[0], values.workspaceId);
               if (values.endDate) updateProject(id, { endDate: values.endDate });
               setAdding(false);
             }}
@@ -137,11 +150,15 @@ function isValidYmd(s: string): boolean {
 }
 
 /** Name, color and an optional end date, typed as YYYY-MM-DD. */
-function ProjectEditor({ initial, onSave, onCancel }: {
+function ProjectEditor({ initial, workspaces, defaultWorkspaceId, onSave, onCancel }: {
   initial?: ProjectRow;
-  onSave: (values: { name: string; color: string; endDate: string | null }) => void;
+  /** Offered when creating under "All workspaces"; omitted otherwise. */
+  workspaces?: { id: string; name: string; color: string }[] | undefined;
+  defaultWorkspaceId?: string;
+  onSave: (values: { name: string; color: string; endDate: string | null; workspaceId?: string }) => void;
   onCancel: () => void;
 }): React.JSX.Element {
+  const [wsId, setWsId] = useState(defaultWorkspaceId);
   const [name, setName] = useState(initial?.name ?? '');
   const [color, setColor] = useState<string>(initial?.color ?? PROJECT_PALETTE[0]);
   const [endDate, setEndDate] = useState(initial?.endDate ?? '');
@@ -164,6 +181,16 @@ function ProjectEditor({ initial, onSave, onCancel }: {
           <Pressable key={c} style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchSelected]} onPress={() => setColor(c)} />
         ))}
       </View>
+      {workspaces && (
+        <View style={styles.wsRow}>
+          {workspaces.map(w => (
+            <Pressable key={w.id} style={[styles.wsChip, wsId === w.id && styles.wsChipActive]} onPress={() => setWsId(w.id)}>
+              <View style={[styles.wsDot, { backgroundColor: w.color }]} />
+              <Text style={[styles.wsChipText, wsId === w.id && styles.wsChipTextActive]}>{w.name}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <Text style={styles.fieldLabel}>End date (optional): archived after this day</Text>
       <TextInput
         style={[styles.input, !dateValid && styles.inputError]}
@@ -180,7 +207,7 @@ function ProjectEditor({ initial, onSave, onCancel }: {
         <Pressable
           style={[styles.actionBtn, { flex: 1 }, !canSave && { opacity: 0.5 }]}
           disabled={!canSave}
-          onPress={() => onSave({ name: name.trim(), color, endDate: trimmedDate || null })}
+          onPress={() => onSave({ name: name.trim(), color, endDate: trimmedDate || null, ...(wsId ? { workspaceId: wsId } : {}) })}
         >
           <Text style={styles.actionBtnText}>Save</Text>
         </Pressable>
@@ -245,6 +272,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   inputError: { borderColor: colors.accent },
+  wsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  wsChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 6, paddingHorizontal: 10,
+    borderRadius: 999, borderWidth: 1, borderColor: colors.border,
+  },
+  wsChipActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  wsDot: { width: 8, height: 8, borderRadius: 4 },
+  wsChipText: { fontSize: 12.5, color: colors.textSecondary },
+  wsChipTextActive: { color: colors.accent, fontWeight: '700' },
   swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   swatch: { width: 24, height: 24, borderRadius: 12 },
   swatchSelected: { borderWidth: 2, borderColor: colors.text },
