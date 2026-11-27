@@ -284,7 +284,11 @@ function AppContent() {
           const order = await db.taskOrders.get(wsId);
           const todayIds = order?.todayIds ?? [];
           if (!todayIds.includes(task.id)) {
-            await putWsOrder(wsId, { todayIds: [...todayIds, task.id] });
+            // updatedAt stamped here, not left to the Dexie hook: the hook
+            // stands down while a pull is applying, and this can run in that
+            // window. Unstamped, a task_order later in the same pull would
+            // win LWW and drop the addition.
+            await putWsOrder(wsId, { todayIds: [...todayIds, task.id], updatedAt: now() });
           }
         });
       }
@@ -319,7 +323,10 @@ function AppContent() {
           if (!fresh?.scheduledFor) return; // handled meanwhile
           const order = await db.taskOrders.get(wsId);
           const inToday = (order?.priorityIds ?? []).includes(task.id) || (order?.todayIds ?? []).includes(task.id);
-          if (!inToday) await putWsOrder(wsId, { todayIds: [...(order?.todayIds ?? []), task.id] });
+          // Stamped explicitly for the same reason as the recurring step: a
+          // due task often arrives with a pull, and the hook that stamps order
+          // changes stands down while one is applying.
+          if (!inToday) await putWsOrder(wsId, { todayIds: [...(order?.todayIds ?? []), task.id], updatedAt: now() });
           await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
         });
       }
