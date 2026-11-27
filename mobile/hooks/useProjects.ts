@@ -37,7 +37,9 @@ export function useProjects() {
     return id;
   }
 
-  function updateProject(id: string, updates: { name?: string; color?: string }): void {
+  // endDate: null clears it (active with no end); archiving is setting it to
+  // yesterday, see projectArchiveEndDate.
+  function updateProject(id: string, updates: { name?: string; color?: string; endDate?: string | null }): void {
     db.update(project)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(project.id, id))

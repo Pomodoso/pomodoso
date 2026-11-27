@@ -51,6 +51,8 @@ const DEVICE_ID_KEY = 'device_id';
 const REMOTE_TIMER_KEY = 'active_timer_remote';
 /** The pull scope that has had its one full pull with apps (see pull()). */
 const APPS_FULL_PULL_KEY = 'sync_apps_full_pull';
+/** The pull scope that has had its one full pull for project end dates. */
+const PROJECT_END_DATE_PULL_KEY = 'sync_project_end_date_pull';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -247,7 +249,7 @@ async function push(client: TokenApiClient): Promise<void> {
         name: p.name,
         color: p.color,
         workspace_id: p.workspaceId,
-        end_date: null,
+        end_date: p.endDate,
       }),
     );
   }
@@ -554,7 +556,12 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   // builds ignored plugin rows but still advanced the cursor past them, so an
   // incremental pull would never bring back apps saved before the upgrade.
   const appsPulled = getSetting(APPS_FULL_PULL_KEY) === scope;
-  const since = appsPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
+  // And one for project end dates: mobile didn't keep them, so projects that
+  // haven't changed since would never come down again with their date. Those
+  // arrive with the same updated_at the device already has, which applyEntity
+  // normally skips, so it's told to fill the date in (backfillProjectEndDates).
+  const endDatesPulled = getSetting(PROJECT_END_DATE_PULL_KEY) === scope;
+  const since = appsPulled && endDatesPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
   const response = await pullEntities(client, since);
 
   // task_order names task ids, so it has to land after the tasks it names —
@@ -565,7 +572,7 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
     (a, b) => Number(a.table === 'task_order') - Number(b.table === 'task_order'),
   );
   for (const entity of ordered) {
-    applyEntity(entity);
+    applyEntity(entity, { backfillProjectEndDates: !endDatesPulled });
   }
 
   // A device that had nothing but demo fixtures and just received an
@@ -575,10 +582,11 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
 
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
   putSetting(APPS_FULL_PULL_KEY, scope);
+  putSetting(PROJECT_END_DATE_PULL_KEY, scope);
   mergeDuplicatePluginInstalls();
 }
 
-function applyEntity(entity: SyncEntity): void {
+function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boolean } = {}): void {
   const { table, id, data, updated_at, deleted_at } = entity;
   const syncedAt = updated_at;
 
@@ -611,7 +619,16 @@ function applyEntity(entity: SyncEntity): void {
 
     case 'project': {
       const existing = db.select().from(project).where(eq(project.id, id)).all()[0];
-      if (existing && existing.updatedAt >= updated_at) return;
+      if (existing && existing.updatedAt >= updated_at) {
+        // The same version the device already has, minus the end date it
+        // used to drop. Only on an equal timestamp: a newer local edit is
+        // the user's, and the next push settles it.
+        const endDate = data.end_date as string | null | undefined;
+        if (opts.backfillProjectEndDates && existing.updatedAt === updated_at && existing.endDate == null && endDate) {
+          db.update(project).set({ endDate }).where(eq(project.id, id)).run();
+        }
+        return;
+      }
       const workspaceId = (data.workspace_id as string | null) ?? existing?.workspaceId;
       if (!workspaceId) return; // can't satisfy the NOT NULL FK — skip rather than crash
       const row = {
@@ -619,6 +636,7 @@ function applyEntity(entity: SyncEntity): void {
         workspaceId,
         name: String(data.name ?? ''),
         color: String(data.color ?? '#6366f1'),
+        endDate: (data.end_date as string | null | undefined) ?? null,
         createdAt: existing?.createdAt ?? updated_at,
         updatedAt: updated_at,
         deletedAt: deleted_at,

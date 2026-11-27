@@ -144,9 +144,7 @@ export const pomodoroSession = sqliteTable('pomodoro_session', {
   syncedAt: text('synced_at'),
 });
 
-// Mirrors extension/src/db.ts's ProjectRow, minus endDate (extension's
-// "archived after" date — no archival UI ported yet, not needed until
-// projects list grows). workspaceId added for Fase B (was dropped entirely
+// Mirrors extension/src/db.ts's ProjectRow. workspaceId added for Fase B (was dropped entirely
 // pre-workspace-model, see #31 — mobile only ever had one implicit
 // workspace, now a real row it can point at).
 export const project = sqliteTable('project', {
@@ -154,6 +152,9 @@ export const project = sqliteTable('project', {
   workspaceId: text('workspace_id').notNull(),
   name: text('name').notNull(),
   color: text('color').notNull(),
+  // YYYY-MM-DD, the last day the project is active; after it, it's archived
+  // (projectArchived in @pomodoso/types). null = no end.
+  endDate: text('end_date'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   deletedAt: text('deleted_at'),

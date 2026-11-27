@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { projectArchived } from '@pomodoso/types';
+
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { colors } from '@/constants/theme';
 import type { ProjectRow } from '@/db/schema';
@@ -27,6 +29,10 @@ export function ProjectPicker({ visible, projects, selectedId, onSelect, onCreat
   const [name, setName] = useState('');
   const [color, setColor] = useState<string>(PROJECT_PALETTE[0]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Archived projects aren't offered, except the one the task already has,
+  // so its checkmark still shows. Same rule as the extension's picker.
+  const today = new Date().toLocaleDateString('en-CA');
+  const shown = projects.filter(p => !projectArchived(p.endDate, today) || p.id === selectedId);
 
   function reset(): void {
     setMode({ kind: 'list' });
@@ -94,7 +100,7 @@ export function ProjectPicker({ visible, projects, selectedId, onSelect, onCreat
                   {selectedId === null && <Ionicons name="checkmark" size={17} color={colors.accent} />}
                 </Pressable>
 
-                {projects.map(p => (
+                {shown.map(p => (
                   <View key={p.id} style={styles.projectRow}>
                     <Pressable style={styles.option} onPress={() => onSelect(p.id)}>
                       <View style={[styles.dot, { backgroundColor: p.color }]} />

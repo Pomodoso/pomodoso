@@ -6,7 +6,7 @@ import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEnt
 import { db, localDate, type RecurrenceRule, type TaskRow } from '../db';
 import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
-import { applyFormat, resolveTaskStatus, taskStatusOptions, type FormatKind } from '@pomodoso/types';
+import { applyFormat, projectArchived, resolveTaskStatus, taskStatusOptions, type FormatKind } from '@pomodoso/types';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { LinkedApps } from './apps/LinkedApps';
 
@@ -42,7 +42,7 @@ interface TaskDetailStateProps {
 }
 
 
-const PALETTE = [
+export const PROJECT_PALETTE = [
   '#4A6FA5', '#7B5DB4', '#2D8A7A', '#C8553D',
   '#B07A1F', '#2A7A4A', '#A0522D', '#5B7A9D',
 ];
@@ -1195,17 +1195,17 @@ function ProjectPicker({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [name, setName] = useState('');
-  const [color, setColor] = useState(PALETTE[0]!);
+  const [color, setColor] = useState(PROJECT_PALETTE[0]!);
   const [endDate, setEndDate] = useState('');
 
   const today = localDate(timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const wsProjects = projects.filter(p => !p.workspaceId || !workspaceId || p.workspaceId === workspaceId);
-  const activeProjects = wsProjects.filter(p => !p.endDate || p.endDate >= today);
+  const activeProjects = wsProjects.filter(p => !projectArchived(p.endDate, today));
   const selectedProject = value ? wsProjects.find(p => p.id === value) ?? projects.find(p => p.id === value) : null;
   const selectedIsArchived = selectedProject && !activeProjects.find(p => p.id === value);
 
   const openCreate = () => {
-    setName(''); setColor(PALETTE[0]!); setEndDate('');
+    setName(''); setColor(PROJECT_PALETTE[0]!); setEndDate('');
     setMode('create');
   };
 
@@ -1240,9 +1240,9 @@ function ProjectPicker({
       onAddProject(project);
       onChange(project.id);
     } else if (mode === 'edit' && editingId) {
-      const updates: Partial<Project> = { name: name.trim(), color };
-      if (endDate) updates.endDate = endDate;
-      onUpdateProject(editingId, updates);
+      // An emptied date clears the end date. It used to be left out of the
+      // update, so once set it could never be removed from here.
+      onUpdateProject(editingId, { name: name.trim(), color, endDate: endDate || undefined });
     }
     setMode('list');
     setOpen(false);
@@ -1265,7 +1265,7 @@ function ProjectPicker({
         style={{ ...inputBase, marginBottom: 6, fontSize: 12 }}
       />
       <div style={{ display: 'flex', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
-        {PALETTE.map(c => (
+        {PROJECT_PALETTE.map(c => (
           <button
             key={c}
             onClick={() => setColor(c)}
