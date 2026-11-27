@@ -4,6 +4,7 @@ import { openDatabaseSync } from 'expo-sqlite';
 
 import { habitLogId, uid } from '@/utils/id';
 
+import { challengeStartFromStreak, migrateChallengeColumns } from './challengeStarts';
 import * as schema from './schema';
 
 const expoDb = openDatabaseSync('pomodoso.db', { enableChangeListener: true });
@@ -128,19 +129,7 @@ function backfillChallengeStarts(database: typeof expoDb): void {
     const scheduled = (date: string): boolean =>
       days.length === 0 || days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
 
-    // Today is skipped when it isn't done yet rather than ending the walk: the
-    // day isn't over, so a user on day 20 who simply hasn't ticked today must
-    // not have their run reset to "starts today".
-    let started = dateOffset(0);
-    for (let i = 0; i < 3650; i++) {
-      const date = dateOffset(i);
-      if (!scheduled(date)) continue;
-      if (!isDone(date)) {
-        if (i === 0) continue;
-        break;
-      }
-      started = date;
-    }
+    const started = challengeStartFromStreak(dateOffset(0), scheduled, isDone);
     // syncedAt is cleared so the derived start reaches the account's other
     // devices instead of each one inventing its own.
     database.runSync(
@@ -432,29 +421,9 @@ function initDb(): void {
   // rather than from today: starting everyone over on upgrade would throw away
   // exactly the progress this change exists to protect. The walk needs history,
   // so it runs in JS below rather than in SQL.
-  //
-  // The backfill runs once, on the launch that adds the columns, and never
-  // again. It used to run on every launch, which turned it into a second way
-  // of stamping a start date: a challenge switched on just before the app was
-  // closed, or pulled from another device before useHabits stamped it, reached
-  // the next launch with no start date, and the walk dated it from the start
-  // of the habit's existing streak. Days done before the challenge existed
-  // then counted toward it. Any run without a start date after this upgrade is
-  // a new one, and useHabits starts it today.
-  let addedChallengeColumns = false;
-  for (const ddl of [
-    'ALTER TABLE habits ADD COLUMN challenge_started_at TEXT;',
-    'ALTER TABLE habits ADD COLUMN challenge_completed_at TEXT;',
-    "ALTER TABLE habits ADD COLUMN challenge_skipped_days TEXT NOT NULL DEFAULT '[]';",
-  ]) {
-    try {
-      expoDb.execSync(ddl);
-      if (ddl.includes('challenge_started_at')) addedChallengeColumns = true;
-    } catch {
-      /* column already present */
-    }
-  }
-  if (addedChallengeColumns) backfillChallengeStarts(expoDb);
+  // Backfilled once, on the launch that adds the columns: see
+  // migrateChallengeColumns for why never again.
+  migrateChallengeColumns(ddl => expoDb.execSync(ddl), () => backfillChallengeStarts(expoDb));
 
   // Seeds one real-UUID workspace on first run — not a sentinel string id
   // like extension's old 'default' (a migration scar there, not a design

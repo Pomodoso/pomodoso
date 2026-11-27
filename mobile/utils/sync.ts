@@ -1,5 +1,5 @@
 import type { SyncEntity } from '@pomodoso/api';
-import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, writePullCursor } from '@pomodoso/types';
+import { challengeStartedAtForPush, challengeStartedAtFromPull, habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, writePullCursor } from '@pomodoso/types';
 import { pullEntities, pushEntities, TokenApiClient } from '@pomodoso/api';
 import { and, asc, eq, inArray, isNull, not, or, lt, isNotNull } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
@@ -193,7 +193,7 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   // every field that property, which is what this used to special-case.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
   writeExtra(extra, 'sortOrder', h.sortOrder);
-  writeExtra(extra, 'challengeStartedAt', h.challengeStartedAt);
+  writeExtra(extra, 'challengeStartedAt', challengeStartedAtForPush(h.challengeLengthDays, h.challengeStartedAt));
   writeExtra(extra, 'challengeCompletedAt', h.challengeCompletedAt);
   writeExtra(extra, 'challengeSkippedDays', JSON.parse(h.challengeSkippedDays || '[]') as string[]);
   return extra;
@@ -860,15 +860,7 @@ function applyEntity(entity: SyncEntity): void {
         challengeLengthDays,
         days: JSON.stringify(days),
         sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),
-        // No challenge, no run. Older extension builds leave the key out when
-        // a challenge is turned off, and keeping the local value then meant a
-        // challenge switched back on later was counted from the old run's
-        // start, days before it existed.
-        challengeStartedAt: !challengeLengthDays
-          ? null
-          : 'challengeStartedAt' in hExtra
-            ? (hExtra.challengeStartedAt as string | null)
-            : (existing?.challengeStartedAt ?? null),
+        challengeStartedAt: challengeStartedAtFromPull(hExtra, challengeLengthDays, existing?.challengeStartedAt),
         challengeCompletedAt: 'challengeCompletedAt' in hExtra
           ? (hExtra.challengeCompletedAt as string | null)
           : (existing?.challengeCompletedAt ?? null),
