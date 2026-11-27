@@ -11,6 +11,7 @@ import Dashboard from './pages/dashboard/Dashboard.tsx'
 import Billing from './pages/settings/Billing.tsx'
 import Pricing from './pages/Pricing.tsx'
 import Support from './pages/Support.tsx'
+import Goodbye from './pages/Goodbye.tsx'
 import Privacy from './pages/legal/Privacy'
 import Terms from './pages/legal/Terms.tsx'
 import Refund from './pages/legal/Refund.tsx'
@@ -29,6 +30,9 @@ export const routes: RouteRecord[] = [
   // Outside Root on purpose: AuthProvider would consume the session in the
   // URL hash, which belongs to the mobile app (see AppCallback.tsx).
   { path: '/app-callback', element: <AppCallback /> },
+  // Also outside Root: the uninstall survey is anonymous, so it must not
+  // restore a saved session or identify anyone to analytics.
+  { path: '/goodbye', element: <Goodbye /> },
   {
     path: '/',
     element: <Root />,
@@ -124,6 +128,9 @@ export const createRoot = ViteReactSSG({ routes }, ({ isClient }) => {
   // The mobile auth bridge carries session tokens in its URL until it strips
   // them; nothing that records page URLs should load there.
   if (window.location.pathname === '/app-callback') return
+  // The uninstall survey promises anonymity: no analytics or error reporting
+  // there either.
+  if (window.location.pathname === '/goodbye') return
 
   // Error reporting — only active when VITE_SENTRY_DSN is set.
   if (import.meta.env.VITE_SENTRY_DSN) {
