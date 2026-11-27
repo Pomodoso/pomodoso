@@ -181,6 +181,7 @@ function taskExtra(t: typeof task.$inferSelect): Record<string, unknown> {
   writeExtra(extra, 'recurrence', t.recurrence ? (JSON.parse(t.recurrence) as unknown) : null);
   writeExtra(extra, 'completedDates', parseJsonArray(t.completedDates));
   writeExtra(extra, 'statusId', t.statusId);
+  writeExtra(extra, 'scheduledFor', t.scheduledFor);
   // No preferredMode column on mobile — deliberately not written, so the
   // extension's value survives rather than being blanked.
   return extra;
@@ -664,6 +665,7 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
       const recurrence = 'recurrence' in extra ? JSON.stringify(extra.recurrence) : (existing?.recurrence ?? null);
       const completedDates = 'completedDates' in extra ? JSON.stringify(extra.completedDates) : (existing?.completedDates ?? '[]');
       const statusId = 'statusId' in extra ? (extra.statusId as string | null) : (existing?.statusId ?? null);
+      const scheduledFor = 'scheduledFor' in extra ? (extra.scheduledFor as string | null) : (existing?.scheduledFor ?? null);
       db.insert(task)
         .values({
           id,
@@ -682,6 +684,7 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
           isToday: existing?.isToday ?? false,
           recurrence,
           completedDates,
+          scheduledFor,
           description,
           links,
           noteEntries,
@@ -706,6 +709,7 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
             projectId: (data.project_id as string | null) ?? null,
             recurrence,
             completedDates,
+            scheduledFor,
             description,
             links,
             noteEntries,

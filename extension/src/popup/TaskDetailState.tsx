@@ -6,7 +6,7 @@ import type { SelectedTask, TaskStatus, Project, TaskLink, TimeLogEntry, NoteEnt
 import { db, localDate, type RecurrenceRule, type TaskRow } from '../db';
 import { formatRecurrenceLabel } from '../recurrence';
 import type { RecurrenceFreq } from '@pomodoso/types';
-import { applyFormat, projectArchived, resolveTaskStatus, taskStatusOptions, type FormatKind } from '@pomodoso/types';
+import { applyFormat, projectArchived, resolveTaskStatus, taskScheduleLabel, taskSchedulePresets, taskStatusOptions, type FormatKind } from '@pomodoso/types';
 import { useTaskStatusConfig } from './useTaskStatusConfig';
 import { LinkedApps } from './apps/LinkedApps';
 
@@ -33,6 +33,8 @@ interface TaskDetailStateProps {
   onAddToPriorities?: () => void;
   onAddToTasks?: () => void;
   onUpdateTask?: (updates: Partial<SelectedTask>) => void;
+  /** Schedule the task for a day (YYYY-MM-DD), or clear it with null. */
+  onSchedule?: (date: string | null) => void;
   onAddProject: (project: Omit<Project, 'updatedAt'>) => void;
   onUpdateProject: (id: string, updates: Partial<Project>) => void;
   onDeleteProject: (id: string) => void;
@@ -62,7 +64,7 @@ function formatNoteDate(isoDate: string, timezone: string | undefined): string {
   return sameYear ? `${month} ${day} · ${time}` : `${month} ${day}, ${d.getFullYear()} · ${time}`;
 }
 
-export function TaskDetailState({ task, projects, workspaces, activeWsId, timezone, isInToday, isInPriorities, prioritiesFull, onBack, onDelete, onMoveToBacklog, onAddToPriorities, onAddToTasks, onUpdateTask, onAddProject, onUpdateProject, onDeleteProject, onStart, onSelectTask, onCreateFollowup }: TaskDetailStateProps) {
+export function TaskDetailState({ task, projects, workspaces, activeWsId, timezone, isInToday, isInPriorities, prioritiesFull, onBack, onDelete, onMoveToBacklog, onAddToPriorities, onAddToTasks, onUpdateTask, onSchedule, onAddProject, onUpdateProject, onDeleteProject, onStart, onSelectTask, onCreateFollowup }: TaskDetailStateProps) {
   const parentTask = useLiveQuery(
     // Annotated so both branches produce the same promise type — see the
     // matching comment in HomeState.tsx for why the bare Promise.resolve
@@ -359,6 +361,16 @@ export function TaskDetailState({ task, projects, workspaces, activeWsId, timezo
           </>
         )}
       </div>
+
+      {/* Schedule: a one-off day the task moves into Today. Recurring tasks
+          have their own days, so it's not offered there. */}
+      {onSchedule && !recurrenceRule && !showRecurrenceEditor && task.status !== 'done' && task.status !== 'cancelled' && (
+        <ScheduleField
+          value={task.scheduledFor ?? null}
+          today={today}
+          onChange={onSchedule}
+        />
+      )}
 
       {/* Recurrence */}
       <div style={{ padding: '12px 14px 0' }}>
@@ -1036,6 +1048,70 @@ function SessionLogRow({ entry }: { entry: TimeLogEntry }) {
       <span style={{ color: 'var(--color-text-muted)', fontWeight: 500, flexShrink: 0 }}>
         {fmtDuration(entry.durationSeconds)}
       </span>
+    </div>
+  );
+}
+
+function ScheduleField({ value, today, onChange }: {
+  value: string | null;
+  today: string;
+  onChange: (date: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { tomorrow, nextMonday } = taskSchedulePresets(today);
+  if (!value && !open) {
+    return (
+      <div style={{ padding: '12px 14px 0' }}>
+        <AddFieldButton label="Schedule for a day" onClick={() => setOpen(true)} />
+      </div>
+    );
+  }
+  const pick = (date: string | null) => { onChange(date); setOpen(false); };
+  const chip = (label: string, date: string) => (
+    <button
+      key={label}
+      onClick={() => pick(date)}
+      style={{
+        padding: '4px 10px', fontSize: 11, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+        border: `1px solid ${value === date ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        background: value === date ? 'var(--color-accent-soft)' : 'transparent',
+        color: value === date ? 'var(--color-accent)' : 'var(--color-text-muted)',
+        fontWeight: value === date ? 600 : 400,
+      }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div style={{ padding: '12px 14px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+        <FieldLabel style={{ marginBottom: 0, flex: 1 }}>Scheduled</FieldLabel>
+        {value
+          ? <GhostBtn onClick={() => pick(null)} danger>Remove</GhostBtn>
+          : <GhostBtn onClick={() => setOpen(false)}>Cancel</GhostBtn>}
+      </div>
+      {value && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6 }}>
+          📅 Moves into Today on <strong style={{ color: 'var(--color-text)' }}>{taskScheduleLabel(value, today)}</strong>
+          {taskScheduleLabel(value, today) !== value && (
+            <span style={{ color: 'var(--color-text-faint)' }}> · {value}</span>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+        {chip('Tomorrow', tomorrow)}
+        {nextMonday !== tomorrow && chip('Next Monday', nextMonday)}
+        <input
+          type="date"
+          min={tomorrow}
+          value={value ?? ''}
+          onChange={e => { if (e.target.value) pick(e.target.value); }}
+          style={{
+            padding: '3px 6px', fontSize: 11, fontFamily: 'inherit', color: 'var(--color-text)',
+            background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+          }}
+        />
+      </div>
     </div>
   );
 }

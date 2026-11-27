@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { TimerMode, TicketRef, TimerStartPayload, TimerAttachPayload, SoundSettings, TimerSettings } from '@pomodoso/types';
-import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder, applyStatusPlacement, statusIdForSystemChange } from '@pomodoso/types';
+import { DEFAULT_TIMER_SETTINGS, DEFAULT_SOUND_SETTINGS, applySavedOrder, applyStatusPlacement, statusIdForSystemChange, taskScheduleDue } from '@pomodoso/types';
 import { TaskStatusConfigContext, useLiveTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
 import { useAuth } from './useAuth';
 import { playSound } from '../sounds';
@@ -283,6 +283,31 @@ function AppContent() {
           await putWsOrder(wsId, { todayIds: [...todayIds, task.id] });
         }
       }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [migrated]);
+
+  // ── Move scheduled tasks into Today when their day arrives ────────────────
+  // Runs on every popup open, like the recurring step above. On or after the
+  // day (see taskScheduleDue), so a day the popup wasn't opened doesn't lose
+  // the task. The date is cleared once it's in, so taking the task back out of
+  // Today afterwards sticks.
+  useEffect(() => {
+    if (!migrated) return;
+    void (async () => {
+      const today = localDate(timezone);
+      const due = await db.tasks
+        .filter(t => !t.deletedAt && !t.recurrence && taskScheduleDue(t.scheduledFor, t.status, today))
+        .toArray();
+      if (due.length === 0) return;
+      for (const task of due) {
+        const wsId = task.workspaceId ?? 'default';
+        const order = await db.taskOrders.get(wsId);
+        const inToday = (order?.priorityIds ?? []).includes(task.id) || (order?.todayIds ?? []).includes(task.id);
+        if (!inToday) await putWsOrder(wsId, { todayIds: [...(order?.todayIds ?? []), task.id] });
+        await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
+      }
+      triggerSync();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated]);
@@ -576,6 +601,8 @@ function AppContent() {
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
+      // Brought in by hand before its day: it's here now, so the date is done.
+      else if (existing.scheduledFor) await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
       const targetWsId = orderWsFor(task, existing);
       const cur = await db.taskOrders.get(targetWsId);
       await putWsOrder(targetWsId, {
@@ -591,6 +618,8 @@ function AppContent() {
     await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
       const existing = await db.tasks.get(task.id);
       if (!existing) await db.tasks.put({ ...task, updatedAt: now() });
+      // Brought in by hand before its day: it's here now, so the date is done.
+      else if (existing.scheduledFor) await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
       const targetWsId = orderWsFor(task, existing);
       const cur = await db.taskOrders.get(targetWsId);
       await putWsOrder(targetWsId, { todayIds: [...(cur?.todayIds ?? []), task.id] });
@@ -618,6 +647,25 @@ function AppContent() {
     }
     triggerSync();
   }, [wsKey, patchWsOrder]);
+
+  // Schedule a task for a day, or clear it (null). A future day takes the task
+  // out of Today: it's planned for then, not now. Today or earlier puts it in
+  // right away, since waiting for the next popup open would only confuse.
+  const scheduleTask = useCallback(async (task: TaskRow, date: string | null) => {
+    const today = localDate(timezone);
+    if (date && date <= today) {
+      await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
+      setSelectedTask(prev => prev?.id === task.id ? { ...prev, scheduledFor: undefined } : prev);
+      if (!isInToday(task.id)) await addToTasks(task);
+      triggerSync();
+      return;
+    }
+    await db.tasks.update(task.id, { scheduledFor: date ?? undefined, updatedAt: now() });
+    setSelectedTask(prev => prev?.id === task.id ? { ...prev, scheduledFor: date ?? undefined } : prev);
+    if (date && isInToday(task.id)) await removeFromToday(task.id);
+    triggerSync();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timezone, removeFromToday, addToTasks, priorityIds, todayIds]);
 
   const reorderToday = useCallback(async (newPriorityIds: string[], newTodayIds: string[]) => {
     if (wsKey !== 'all') {
@@ -1203,6 +1251,7 @@ function AppContent() {
           onAddToPriorities={() => { void addToPriorities(selectedTask); setSelectedTask(null); }}
           onAddToTasks={() => { void addToTasks(selectedTask); setSelectedTask(null); }}
           onUpdateTask={(updates) => void updateTask(selectedTask.id, updates)}
+          onSchedule={(date) => void scheduleTask(selectedTask, date)}
           onAddProject={(p) => void addProject(p)}
           onUpdateProject={(id, updates) => void updateProject(id, updates)}
           onDeleteProject={(id) => void deleteProject(id)}

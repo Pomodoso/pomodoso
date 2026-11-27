@@ -218,6 +218,9 @@ export const task = sqliteTable('task', {
   // (useTasks.ts's completeRecurringOccurrence) records the date here and
   // resets status back to 'todo' so the next occurrence starts clean.
   completedDates: text('completed_dates').notNull().default('[]'),
+  // YYYY-MM-DD the task moves into Today; cleared when it does. Mirrors the
+  // extension's Task.scheduledFor (see taskScheduleDue in @pomodoso/types).
+  scheduledFor: text('scheduled_for'),
   description: text('description'),
   // JSON-serialized TaskLink[] — mirrors extension's Task.links.
   links: text('links').notNull().default('[]'),

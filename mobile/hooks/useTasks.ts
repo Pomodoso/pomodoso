@@ -1,5 +1,5 @@
 import type { RecurrenceRule } from '@pomodoso/types';
-import { applyStatusPlacement, statusIdForSystemChange } from '@pomodoso/types';
+import { applyStatusPlacement, statusIdForSystemChange, taskScheduleDue } from '@pomodoso/types';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect } from 'react';
@@ -63,6 +63,11 @@ function parseNoteEntries(raw: string): NoteEntry[] {
   }
 }
 
+/** Brought into Today by hand before its day: it's here now, so the date is done. */
+function clearedSchedule(t: { scheduledFor: string | null }): { scheduledFor: null; updatedAt: string } | Record<string, never> {
+  return t.scheduledFor ? { scheduledFor: null, updatedAt: new Date().toISOString() } : {};
+}
+
 export function useTasks() {
   const today = useTodayDate();
   const { settings: settingsValue } = useSettings();
@@ -122,6 +127,26 @@ export function useTasks() {
       for (const ws of touched) markTaskOrderDirty(ws);
       triggerSync();
     }
+  }, [tasks, today]);
+
+  // Scheduled tasks move into Today when their day arrives (or after, if the
+  // app wasn't opened that day), and the date is cleared, so taking the task
+  // back out of Today sticks. Mirrors the extension's effect in App.tsx.
+  useEffect(() => {
+    const touched = new Set<string>();
+    const now = new Date().toISOString();
+    for (const t of tasks ?? []) {
+      if (t.recurrence || !taskScheduleDue(t.scheduledFor, t.status, today)) continue;
+      const intoToday = !t.isToday && !t.isPriority;
+      db.update(task)
+        .set({ scheduledFor: null, updatedAt: now, ...(intoToday ? { isToday: true } : {}) })
+        .where(eq(task.id, t.id))
+        .run();
+      if (intoToday) touched.add(t.workspaceId);
+    }
+    for (const ws of touched) markTaskOrderDirty(ws);
+    // Clearing the date is a task change of its own, so sync either way.
+    if ((tasks ?? []).some(t => !t.recurrence && taskScheduleDue(t.scheduledFor, t.status, today))) triggerSync();
   }, [tasks, today]);
 
   // Real time-per-task, computed from completed sessions — falls back to the
@@ -433,7 +458,10 @@ export function useTasks() {
       t => t.isPriority && (!isResolvedStatus(t.status) || isUpdatedToday(t.updatedAt, today)),
     ).length;
     if (priorityCount >= maxPriorities) return false;
-    db.update(task).set({ isPriority: true, isToday: false }).where(eq(task.id, id)).run();
+    db.update(task)
+      .set({ isPriority: true, isToday: false, ...clearedSchedule(current) })
+      .where(eq(task.id, id))
+      .run();
     markTaskOrderDirty(current.workspaceId);
     triggerSync();
     return true;
@@ -450,10 +478,38 @@ export function useTasks() {
       return true;
     }
     if (isResolvedStatus(current.status)) return false;
-    db.update(task).set({ isToday: true, isPriority: false }).where(eq(task.id, id)).run();
+    db.update(task)
+      .set({ isToday: true, isPriority: false, ...clearedSchedule(current) })
+      .where(eq(task.id, id))
+      .run();
     markTaskOrderDirty(current.workspaceId);
     triggerSync();
     return true;
+  }
+
+  // Schedule a task for a day, or clear it (null). A future day takes it out
+  // of Today: it's planned for then, not now. Today or earlier puts it in now.
+  function scheduleTask(id: string, date: string | null): void {
+    const current = (tasks ?? []).find(t => t.id === id);
+    if (!current) return;
+    const now = new Date().toISOString();
+    if (date && date <= today) {
+      const intoToday = !current.isToday && !current.isPriority && !isResolvedStatus(current.status);
+      db.update(task)
+        .set({ scheduledFor: null, updatedAt: now, ...(intoToday ? { isToday: true } : {}) })
+        .where(eq(task.id, id))
+        .run();
+      if (intoToday) markTaskOrderDirty(current.workspaceId);
+      triggerSync();
+      return;
+    }
+    const leaveToday = date !== null && (current.isToday || current.isPriority);
+    db.update(task)
+      .set({ scheduledFor: date, updatedAt: now, ...(leaveToday ? { isToday: false, isPriority: false } : {}) })
+      .where(eq(task.id, id))
+      .run();
+    if (leaveToday) markTaskOrderDirty(current.workspaceId);
+    triggerSync();
   }
 
   async function cancelLiveSessionNotifications(id: string): Promise<void> {
@@ -536,6 +592,7 @@ export function useTasks() {
     updateTask,
     togglePriority,
     toggleToday,
+    scheduleTask,
     setRecurrence,
     setLinks,
     setNoteEntries,

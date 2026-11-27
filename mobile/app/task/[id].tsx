@@ -9,6 +9,7 @@ import { LinksEditor } from '@/components/LinksEditor';
 import { NotesEditor } from '@/components/NotesEditor';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { RecurrenceFormModal } from '@/components/RecurrenceFormModal';
+import { ScheduleEditor } from '@/components/ScheduleEditor';
 import { StatusPicker } from '@/components/StatusPicker';
 import { isResolvedStatus, isUpdatedToday, STATUS_DOT_COLOR } from '@/constants/taskStatus';
 import { DescriptionEditor } from '@/components/DescriptionEditor';
@@ -29,7 +30,7 @@ import { formatMinutes, secondsBetween } from '@/utils/time';
 // both: reassigning a project after creation, and toggling priority.
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, sessions, setTaskStatus, updateTask, togglePriority, toggleToday, setRecurrence, setLinks, setNoteEntries, addManualTime, removeTask } =
+  const { tasks, sessions, setTaskStatus, updateTask, togglePriority, toggleToday, scheduleTask, setRecurrence, setLinks, setNoteEntries, addManualTime, removeTask } =
     useTasks();
   const [recurrenceModalVisible, setRecurrenceModalVisible] = useState(false);
   const { projects, addProject, updateProject, removeProject } = useProjects();
@@ -308,6 +309,15 @@ export default function TaskDetailScreen() {
             {task.isToday ? "In today's tasks" : todayRowDisabled ? 'Completed tasks can’t be added' : 'Not scheduled for today'}
           </Text>
         </Pressable>
+
+        {/* A one-off day the task moves into Today. Recurring tasks have
+            their own days, and a finished task has nowhere to go. */}
+        {!task.recurrenceRule && !taskResolved && (
+          <>
+            <Text style={styles.sectionLabel}>Scheduled</Text>
+            <ScheduleEditor value={task.scheduledFor} today={today} onChange={date => scheduleTask(task.id, date)} />
+          </>
+        )}
 
         <Text style={styles.sectionLabel}>Recurrence</Text>
         <Pressable style={styles.row} onPress={() => setRecurrenceModalVisible(true)}>

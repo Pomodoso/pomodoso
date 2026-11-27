@@ -30,7 +30,7 @@ import {
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
   challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
-  habitStreakLabel, reorderSubset, resolveTaskStatus, taskStatusOptions,
+  habitStreakLabel, reorderSubset, resolveTaskStatus, taskScheduleLabel, taskStatusOptions,
 } from '@pomodoso/types';
 import type { AchievementTier, ChallengeProgress, ChallengeState } from '@pomodoso/types';
 import type { SelectedTask, TodayTask, TaskStatus, Project, TimerSettings, TimeLogEntry, Workspace } from './App';
@@ -2947,6 +2947,14 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
           )}
           {task.title || <span style={{ color: 'var(--color-text-faint)', fontStyle: 'italic' }}>(untitled)</span>}
         </span>
+        {task.scheduledFor && (
+          <span
+            title={`Moves into Today on ${task.scheduledFor}`}
+            style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-info)', whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            📅 {taskScheduleLabel(task.scheduledFor, localDate(Intl.DateTimeFormat().resolvedOptions().timeZone))}
+          </span>
+        )}
         {project && (
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: project.color, flexShrink: 0 }} title={project.name} />
         )}
