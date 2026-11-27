@@ -303,6 +303,7 @@ function initDb(): void {
       is_today INTEGER NOT NULL DEFAULT 0,
       recurrence TEXT,
       completed_dates TEXT NOT NULL DEFAULT '[]',
+      scheduled_for TEXT,
       description TEXT,
       links TEXT NOT NULL DEFAULT '[]',
       note_entries TEXT NOT NULL DEFAULT '[]',
@@ -420,6 +421,13 @@ function initDb(): void {
   // date comes back with the next pull of each project.
   try {
     expoDb.execSync('ALTER TABLE project ADD COLUMN end_date TEXT;');
+  } catch {
+    /* column already present */
+  }
+
+  // The day a task moves into Today. Null for every existing task.
+  try {
+    expoDb.execSync('ALTER TABLE task ADD COLUMN scheduled_for TEXT;');
   } catch {
     /* column already present */
   }

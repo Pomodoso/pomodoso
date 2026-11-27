@@ -64,6 +64,9 @@ export interface TaskRow extends SyncMeta {
   // A user-defined status shown in place of `status`, which it maps to (see
   // @pomodoso/types task-status.ts). null/absent = the default label.
   statusId?: string | null;
+  // YYYY-MM-DD the task moves into Today; cleared when it does (see
+  // taskScheduleDue in @pomodoso/types). `| undefined` so an update can clear it.
+  scheduledFor?: string | undefined;
 }
 
 export interface TaskOrderRow {

@@ -463,6 +463,8 @@ function taskExtra(t: TaskRow): Record<string, unknown> {
   writeExtra(extra, 'recurrence', t.recurrence);
   writeExtra(extra, 'completedDates', t.completedDates);
   writeExtra(extra, 'statusId', t.statusId);
+  // Null when unset so a cleared date (it arrived, or was removed) travels.
+  writeExtra(extra, 'scheduledFor', t.scheduledFor ?? null);
   return extra;
 }
 
@@ -602,6 +604,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
       const recurrence = readExtra(extra, 'recurrence', existing?.recurrence);
       const completedDates = readExtra(extra, 'completedDates', existing?.completedDates);
       const statusId = readExtra(extra, 'statusId', existing?.statusId);
+      const scheduledFor = readExtra<string | null | undefined>(extra, 'scheduledFor', existing?.scheduledFor);
       const row: TaskRow = {
         ...(existing ?? {}),
         id,
@@ -619,6 +622,9 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(recurrence !== undefined ? { recurrence } : {}),
         ...(completedDates !== undefined ? { completedDates } : {}),
         ...(statusId !== undefined ? { statusId } : {}),
+        // Explicitly undefined when cleared: the row spreads `existing`, which
+        // would otherwise keep a date the sender removed.
+        scheduledFor: scheduledFor ?? undefined,
         updatedAt: updated_at, syncedAt,
         ...(deleted_at ? { deletedAt: deleted_at } : {}),
       };

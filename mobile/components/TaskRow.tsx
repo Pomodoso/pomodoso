@@ -11,12 +11,14 @@ interface TaskRowProps {
   meta: string;
   status: TaskStatus;
   projectColor?: string | null;
+  /** "Mon", "Tomorrow"…: the day a scheduled task moves into Today. */
+  scheduledLabel?: string | undefined;
   onPress?: () => void;
   onPlayPress?: () => void;
   onStatusPress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, status, projectColor, onPress, onPlayPress, onStatusPress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, status, projectColor, scheduledLabel, onPress, onPlayPress, onStatusPress }: TaskRowProps) {
   const resolved = isResolvedStatus(status);
   const dotColor = STATUS_DOT_COLOR[status];
 
@@ -44,6 +46,12 @@ export function TaskRow({ title, ticket, meta, status, projectColor, onPress, on
           {ticket && (
             <View style={styles.ticketPill}>
               <Text style={styles.ticketPillText}>{ticket}</Text>
+            </View>
+          )}
+          {scheduledLabel && (
+            <View style={styles.schedulePill}>
+              <Ionicons name="calendar-outline" size={11} color={colors.info} />
+              <Text style={styles.schedulePillText}>{scheduledLabel}</Text>
             </View>
           )}
           <Text style={styles.meta}>{meta}</Text>
@@ -88,6 +96,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   ticketPillText: { fontFamily: fontMono, fontSize: 10.5, fontWeight: '700', color: colors.info },
+  schedulePill: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  schedulePillText: { fontSize: 11, fontWeight: '700', color: colors.info },
   meta: { fontSize: 12, color: colors.textTertiary },
   playBtn: {
     width: 30,

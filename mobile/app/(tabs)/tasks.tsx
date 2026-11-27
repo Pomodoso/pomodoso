@@ -1,3 +1,4 @@
+import { taskScheduleLabel } from '@pomodoso/types';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -185,6 +186,7 @@ export default function TasksScreen() {
                     meta={t.meta ?? ''}
                     status={t.status}
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
+                    scheduledLabel={t.scheduledFor ? taskScheduleLabel(t.scheduledFor, today) : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
                     onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                     onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
