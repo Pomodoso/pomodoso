@@ -22,6 +22,7 @@ import { db } from '@/db/client';
 import { achievements, habitHistory, habits } from '@/db/schema';
 import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
 import { habitLogId, uid } from '@/utils/id';
+import { HABIT_FIELDS_UNRECOVERED, markFieldsChosen } from '@/utils/recovery';
 import { triggerSync } from '@/utils/sync';
 import { useTodayDate } from './useTodayDate';
 
@@ -306,6 +307,13 @@ export function useHabits() {
 
   function updateHabit(id: string, input: HabitInput): void {
     const previous = (habitRows ?? []).find(r => r.id === id);
+    // The form starts from what the device holds, which for a habit still
+    // waiting on recovery is the migration's default. Only a change to the
+    // time unit or end date is a choice; a save that leaves them as they were
+    // keeps the habit waiting for its real values (utils/recovery.ts).
+    if (previous && (previous.timeUnit !== input.timeUnit || (previous.endDate ?? null) !== input.endDate)) {
+      markFieldsChosen(HABIT_FIELDS_UNRECOVERED, id);
+    }
     const nextDays = input.days.length === 7 ? [] : input.days;
     // The run survives an edit only while the challenge it belongs to is
     // untouched — same length, same schedule, still on. This is a partial
@@ -429,7 +437,10 @@ export function useHabits() {
     // be hidden from Today and read-only.
     const scheduled = (date: string) =>
       habit.days.length === 0 || habit.days.includes(toMondayFirstDow(new Date(date + 'T12:00:00')));
-    writeChallenge(id, next, { endDate: challengeRestartEndDate(habit.endDate, next.startedAt, next.lengthDays, scheduled) });
+    const endDate = challengeRestartEndDate(habit.endDate, next.startedAt, next.lengthDays, scheduled);
+    // Reopening the habit is a choice about its end date (utils/recovery.ts).
+    if (endDate !== (habit.endDate ?? null)) markFieldsChosen(HABIT_FIELDS_UNRECOVERED, id);
+    writeChallenge(id, next, { endDate });
   }
 
   /** Drops the challenge framing; the habit carries on with its ordinary streak. */

@@ -36,8 +36,10 @@ const EXCLUDED_SETTINGS = new Set([
   SEED_IDS_KEY,
   WELCOME_SEEN_KEY,
   'sync_apps_full_pull',
-  'sync_project_end_date_pull',
-  'sync_habit_fields_pull',
+  // Which rows still hold migration defaults (utils/recovery.ts): this
+  // device's state, and a restore replaces the rows anyway.
+  'project_end_date_unrecovered',
+  'habit_fields_unrecovered',
   // The running break and the focus session it follows (useTimer).
   'break_focus_session',
 ]);

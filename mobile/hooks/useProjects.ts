@@ -5,6 +5,7 @@ import { db } from '@/db/client';
 import { project } from '@/db/schema';
 import { PROJECT_PALETTE } from '@/constants/projectPalette';
 import { uid } from '@/utils/id';
+import { markFieldsChosen, PROJECT_END_DATE_UNRECOVERED } from '@/utils/recovery';
 import { triggerSync } from '@/utils/sync';
 
 import { useWorkspace } from './useWorkspace';
@@ -40,6 +41,13 @@ export function useProjects() {
   // endDate: null clears it (active with no end); archiving is setting it to
   // yesterday, see projectArchiveEndDate.
   function updateProject(id: string, updates: { name?: string; color?: string; endDate?: string | null }): void {
+    // Only a change to the end date is a choice: a rename, or a save that
+    // leaves the date as it was, keeps the project waiting for its real date
+    // (utils/recovery.ts).
+    const current = (projects ?? []).find(p => p.id === id);
+    if (updates.endDate !== undefined && updates.endDate !== (current?.endDate ?? null)) {
+      markFieldsChosen(PROJECT_END_DATE_UNRECOVERED, id);
+    }
     db.update(project)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(project.id, id))
