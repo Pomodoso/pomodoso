@@ -37,6 +37,7 @@ const EXCLUDED_SETTINGS = new Set([
   WELCOME_SEEN_KEY,
   'sync_apps_full_pull',
   'sync_project_end_date_pull',
+  'sync_habit_fields_pull',
   // The running break and the focus session it follows (useTimer).
   'break_focus_session',
 ]);

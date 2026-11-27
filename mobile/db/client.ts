@@ -234,6 +234,8 @@ function initDb(): void {
       goal INTEGER,
       unit TEXT,
       unit_amount INTEGER,
+      time_unit INTEGER NOT NULL DEFAULT 0,
+      end_date TEXT,
       days TEXT NOT NULL DEFAULT '[]',
       challenge_length_days INTEGER,
       challenge_started_at TEXT,
@@ -423,6 +425,21 @@ function initDb(): void {
     expoDb.execSync('ALTER TABLE project ADD COLUMN end_date TEXT;');
   } catch {
     /* column already present */
+  }
+
+  // Time habits and habit end dates, which the extension had and mobile
+  // didn't: a time habit read as a bare count of seconds here, and an ended
+  // habit kept showing on Today. Their real values come back with the next
+  // pull of each habit (see HABIT_FIELDS_PULL_KEY in utils/sync.ts).
+  for (const ddl of [
+    'ALTER TABLE habits ADD COLUMN time_unit INTEGER NOT NULL DEFAULT 0;',
+    'ALTER TABLE habits ADD COLUMN end_date TEXT;',
+  ]) {
+    try {
+      expoDb.execSync(ddl);
+    } catch {
+      /* column already present */
+    }
   }
 
   // The day a task moves into Today. Null for every existing task.

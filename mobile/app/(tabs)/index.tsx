@@ -330,7 +330,7 @@ export default function HomeScreen() {
                   <View style={styles.habitNameBlock}>
                     <Text style={styles.habitName}>{habit.name}</Text>
                     {habit.paused && <Text style={styles.habitPaused}>⚠ Challenge paused</Text>}
-                    {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
+                    {habit.kind === 'counter' && !habit.timeUnit && habit.unit && habit.unitAmount && (
                       <Text style={styles.habitSubtext}>
                         {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
                         {habit.unit}
@@ -342,6 +342,8 @@ export default function HomeScreen() {
                     done={habit.done}
                     count={habit.count}
                     goal={habit.goal}
+                    timeUnit={habit.timeUnit}
+                    unitAmount={habit.unitAmount}
                     onToggle={() => toggleHabit(habit.id)}
                     onIncrement={delta => incrementHabit(habit.id, delta)}
                     disabled={habit.paused}

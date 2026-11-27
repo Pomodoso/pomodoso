@@ -46,6 +46,12 @@ export const habits = sqliteTable('habits', {
   goal: integer('goal'), // counter only — target step count for the day
   unit: text('unit'), // counter only — e.g. 'ml'
   unitAmount: integer('unit_amount'), // counter only — amount per step, e.g. 250
+  // A time habit: count, goal and unitAmount are seconds, shown as m:ss.
+  // Mirrors the extension's HabitRow.timeUnit.
+  timeUnit: integer('time_unit', { mode: 'boolean' }).notNull().default(false),
+  // YYYY-MM-DD, the last day the habit is active; after it, it's closed
+  // (habitClosed in @pomodoso/types). null = no end.
+  endDate: text('end_date'),
   // JSON-stringified number[], matching extension/src/db.ts's HabitRow.days
   // exactly: 0=Mon..6=Sun, [] means "every day" (canonical form for daily —
   // the extension's own form always saves length-7 selections as []).

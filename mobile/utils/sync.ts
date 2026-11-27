@@ -53,6 +53,8 @@ const REMOTE_TIMER_KEY = 'active_timer_remote';
 const APPS_FULL_PULL_KEY = 'sync_apps_full_pull';
 /** The pull scope that has had its one full pull for project end dates. */
 const PROJECT_END_DATE_PULL_KEY = 'sync_project_end_date_pull';
+/** The pull scope that has had its one full pull for habit time and end date. */
+const HABIT_FIELDS_PULL_KEY = 'sync_habit_fields_pull';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -192,6 +194,10 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   writeExtra(extra, 'createdAt', h.createdAt);
   writeExtra(extra, 'unit', h.unit);
   writeExtra(extra, 'unitAmount', h.unitAmount);
+  // As the extension sends them: present when on or set, null when not (the
+  // extension reads a falsy value as off).
+  writeExtra(extra, 'timeUnit', h.timeUnit ? true : null);
+  writeExtra(extra, 'endDate', h.endDate);
   // Explicitly null when disabled so the clear travels — writeExtra now gives
   // every field that property, which is what this used to special-case.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
@@ -562,7 +568,11 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   // arrive with the same updated_at the device already has, which applyEntity
   // normally skips, so it's told to fill the date in (backfillProjectEndDates).
   const endDatesPulled = getSetting(PROJECT_END_DATE_PULL_KEY) === scope;
-  const since = appsPulled && endDatesPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
+  // Same for habits' timeUnit and endDate, which mobile didn't keep either.
+  const habitFieldsPulled = getSetting(HABIT_FIELDS_PULL_KEY) === scope;
+  const since = appsPulled && endDatesPulled && habitFieldsPulled
+    ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope)
+    : undefined;
   const response = await pullEntities(client, since);
 
   // task_order names task ids, so it has to land after the tasks it names —
@@ -573,7 +583,7 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
     (a, b) => Number(a.table === 'task_order') - Number(b.table === 'task_order'),
   );
   for (const entity of ordered) {
-    applyEntity(entity, { backfillProjectEndDates: !endDatesPulled });
+    applyEntity(entity, { backfillProjectEndDates: !endDatesPulled, backfillHabitFields: !habitFieldsPulled });
   }
 
   // A device that had nothing but demo fixtures and just received an
@@ -584,10 +594,14 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
   putSetting(APPS_FULL_PULL_KEY, scope);
   putSetting(PROJECT_END_DATE_PULL_KEY, scope);
+  putSetting(HABIT_FIELDS_PULL_KEY, scope);
   mergeDuplicatePluginInstalls();
 }
 
-function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boolean } = {}): void {
+function applyEntity(
+  entity: SyncEntity,
+  opts: { backfillProjectEndDates?: boolean; backfillHabitFields?: boolean } = {},
+): void {
   const { table, id, data, updated_at, deleted_at } = entity;
   const syncedAt = updated_at;
 
@@ -865,7 +879,22 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
 
     case 'habit': {
       const existing = db.select().from(habits).where(eq(habits.id, id)).all()[0];
-      if (existing && existing.updatedAt >= updated_at) return;
+      if (existing && existing.updatedAt >= updated_at) {
+        // The same version the device already has, minus the two fields it
+        // used to drop. Only on an equal timestamp: a newer local edit is the
+        // user's, and the next push settles it.
+        const x = (data.extra ?? {}) as Record<string, unknown>;
+        if (opts.backfillHabitFields && existing.updatedAt === updated_at && (x.timeUnit || x.endDate)) {
+          db.update(habits)
+            .set({
+              timeUnit: Boolean(x.timeUnit),
+              endDate: typeof x.endDate === 'string' && x.endDate ? x.endDate : null,
+            })
+            .where(eq(habits.id, id))
+            .run();
+        }
+        return;
+      }
       const days = habitDaysFromServer(String(data.frequency ?? 'daily'), data.frequency_days as string | null | undefined);
       const hExtra = (data.extra ?? {}) as Record<string, unknown>;
       const challengeLengthDays = 'challengeLengthDays' in hExtra
@@ -879,6 +908,10 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
         goal: data.target_count != null ? (data.target_count as number) : null,
         unit: 'unit' in hExtra ? (hExtra.unit as string | null) : (existing?.unit ?? null),
         unitAmount: 'unitAmount' in hExtra ? (hExtra.unitAmount as number | null) : (existing?.unitAmount ?? null),
+        // Absent means off: the extension leaves both out when they're unset,
+        // and reads them back the same way.
+        timeUnit: Boolean(hExtra.timeUnit),
+        endDate: typeof hExtra.endDate === 'string' && hExtra.endDate ? hExtra.endDate : null,
         challengeLengthDays,
         days: JSON.stringify(days),
         sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),

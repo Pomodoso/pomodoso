@@ -10,6 +10,7 @@ import {
   challengeRecordCompletion,
   challengeStartOver,
   sameSchedule,
+  habitClosed,
   habitStreakLabel,
 } from '@pomodoso/types';
 import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
@@ -31,6 +32,11 @@ export interface HabitWithProgress {
   goal: number | null;
   unit: string | null;
   unitAmount: number | null;
+  /** Count, goal and unitAmount are seconds. */
+  timeUnit: boolean;
+  endDate: string | null;
+  /** Past its end date: off Today and the active list, read-only. */
+  closed: boolean;
   days: number[];
   challengeLengthDays: number | null;
   sortOrder: number;
@@ -168,6 +174,8 @@ export interface HabitInput {
   goal: number | null;
   unit: string | null;
   unitAmount: number | null;
+  timeUnit: boolean;
+  endDate: string | null;
   days: number[];
   challengeLengthDays: number | null;
 }
@@ -204,7 +212,10 @@ export function useHabits() {
       days,
       count: todayRow?.count ?? 0,
       done: isDone(h.kind, h.goal, todayRow),
-      scheduledToday: isScheduledToday(days),
+      // A closed habit isn't due anywhere, so it drops off Today with no
+      // separate filter to forget.
+      scheduledToday: isScheduledToday(days) && !habitClosed(h.endDate, today),
+      closed: habitClosed(h.endDate, today),
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
       challenge,
@@ -280,6 +291,8 @@ export function useHabits() {
         goal: input.goal,
         unit: input.unit,
         unitAmount: input.unitAmount,
+        timeUnit: input.timeUnit,
+        endDate: input.endDate,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
         challengeLengthDays: input.challengeLengthDays,
         sortOrder: maxSortOrder + 1,
@@ -310,6 +323,8 @@ export function useHabits() {
         goal: input.goal,
         unit: input.unit,
         unitAmount: input.unitAmount,
+        timeUnit: input.timeUnit,
+        endDate: input.endDate,
         days: JSON.stringify(nextDays),
         challengeLengthDays: input.challengeLengthDays,
         ...(keepsSameRun ? {} : {
