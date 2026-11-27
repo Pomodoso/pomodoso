@@ -22,6 +22,9 @@ import {
 } from '@pomodoso/types';
 import { updateTaskStatusConfig, useTaskStatusConfig } from './useTaskStatusConfig';
 import { WEB_URL } from '../webUrl';
+import { localDate, type ProjectRow } from '../db';
+import { projectArchived, projectArchiveEndDate } from '@pomodoso/types';
+import { PROJECT_PALETTE } from './TaskDetailState';
 
 
 const PRESET_CATALOG = [
@@ -35,7 +38,7 @@ const PRESET_CATALOG = [
   { id: 'arxiv',   name: 'arXiv',  icon: '∂', urlPattern: 'arxiv\\.org\\/abs\\/',                             description: 'Papers on arxiv.org' },
 ];
 
-type SettingsPage = 'main' | 'task-detection' | 'task-statuses' | 'timer-defaults' | 'workspaces' | 'sounds' | 'general' | 'calendar' | 'data' | 'account';
+type SettingsPage = 'main' | 'task-detection' | 'task-statuses' | 'timer-defaults' | 'workspaces' | 'projects' | 'sounds' | 'general' | 'calendar' | 'data' | 'account';
 
 interface Workspace {
   id: string;
@@ -65,6 +68,10 @@ interface SettingsStateProps {
   onAddWorkspace: (name: string, color: string) => void;
   onUpdateWorkspace: (id: string, name: string, color: string) => void;
   onDeleteWorkspace: (id: string) => void;
+  projects: ProjectRow[];
+  onAddProject: (project: Omit<ProjectRow, 'updatedAt'>) => void;
+  onUpdateProject: (id: string, updates: Partial<ProjectRow>) => void;
+  onDeleteProject: (id: string) => void;
   onUpdateSoundSettings: (updates: Partial<SoundSettings>) => void;
   onUpdateTimezone: (tz: string) => void;
   onUpdateMaxPriorities: (n: number) => void;
@@ -75,7 +82,7 @@ interface SettingsStateProps {
   onUpdateWorkDays: (days: number[]) => void;
 }
 
-export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, autoSortByStatus, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateAutoSortByStatus, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
+export function SettingsState({ rules, timerSettings, workspaces, soundSettings, timezone, maxPriorities, autoSortByStatus, weekStart, workDays, activeWsId, initialPage, entitlements, auth, onSyncNow, onBack, onAddRule, onToggleRule, onDeleteRule, onUpdateRule, onUpdateTimerSettings, onAddWorkspace, onUpdateWorkspace, onDeleteWorkspace, projects, onAddProject, onUpdateProject, onDeleteProject, onUpdateSoundSettings, onUpdateTimezone, onUpdateMaxPriorities, onUpdateAutoSortByStatus, onUpdateWeekStart, onUpdateWorkDays }: SettingsStateProps) {
   const [page, setPage] = useState<SettingsPage>(initialPage ?? 'main');
 
   if (page === 'account') {
@@ -115,6 +122,21 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
         onAdd={onAddWorkspace}
         onUpdate={onUpdateWorkspace}
         onDelete={onDeleteWorkspace}
+        onBack={() => setPage('main')}
+      />
+    );
+  }
+
+  if (page === 'projects') {
+    return (
+      <ProjectsPage
+        projects={projects}
+        workspaces={workspaces}
+        activeWsId={activeWsId}
+        timezone={timezone}
+        onAdd={onAddProject}
+        onUpdate={onUpdateProject}
+        onDelete={onDeleteProject}
         onBack={() => setPage('main')}
       />
     );
@@ -178,6 +200,18 @@ export function SettingsState({ rules, timerSettings, workspaces, soundSettings,
               title="Workspaces"
               description={`${workspaces.length} workspace${workspaces.length !== 1 ? 's' : ''}`}
               onClick={() => setPage('workspaces')}
+            />
+            <NavRow
+              icon="◆"
+              title="Projects"
+              description={(() => {
+                const today = localDate(timezone);
+                const live = projects.filter(p => !p.deletedAt);
+                const archived = live.filter(p => projectArchived(p.endDate, today)).length;
+                const active = live.length - archived;
+                return `${active} active${archived > 0 ? ` · ${archived} archived` : ''}`;
+              })()}
+              onClick={() => setPage('projects')}
             />
             <NavRow
               icon="♪"
@@ -682,6 +716,235 @@ function WorkspacesPage({ workspaces, canAddWorkspace, onAdd, onUpdate, onDelete
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Projects sub-page ─────────────────────────────────────────────────────────
+//
+// Projects could only be edited from the project picker inside a task, and an
+// archived one disappeared from that picker, so it couldn't be brought back
+// unless a task still pointed at it. This lists every project, active and
+// archived, with the same edit form plus archive, unarchive and delete.
+
+function ProjectsPage({ projects, workspaces, activeWsId, timezone, onAdd, onUpdate, onDelete, onBack }: {
+  projects: ProjectRow[];
+  workspaces: Workspace[];
+  activeWsId: string;
+  timezone: string;
+  onAdd: (project: Omit<ProjectRow, 'updatedAt'>) => void;
+  onUpdate: (id: string, updates: Partial<ProjectRow>) => void;
+  onDelete: (id: string) => void;
+  onBack: () => void;
+}) {
+  const today = localDate(timezone);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const live = projects
+    .filter(p => !p.deletedAt)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const active = live.filter(p => !projectArchived(p.endDate, today));
+  const archived = live.filter(p => projectArchived(p.endDate, today));
+  const wsById = new Map(workspaces.map(w => [w.id, w]));
+  // The workspace badge only says something when there's more than one.
+  const showWs = workspaces.length > 1;
+  const defaultWsId = activeWsId !== 'all' && wsById.has(activeWsId) ? activeWsId : (workspaces[0]?.id ?? null);
+
+  const row = (p: ProjectRow, isArchived: boolean) => {
+    const ws = p.workspaceId ? wsById.get(p.workspaceId) : undefined;
+    if (editingId === p.id) {
+      return (
+        <ProjectEditor
+          key={p.id}
+          initial={p}
+          workspaces={workspaces}
+          onSave={(updates) => { onUpdate(p.id, updates); setEditingId(null); }}
+          onCancel={() => setEditingId(null)}
+        />
+      );
+    }
+    return (
+      <div key={p.id} style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', marginBottom: 6,
+        background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)', opacity: isArchived ? 0.75 : 1,
+      }}>
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+          {((showWs && ws) || p.endDate) && (
+            <div style={{ fontSize: 10.5, color: 'var(--color-text-faint)', marginTop: 1 }}>
+              {showWs && ws ? ws.name : ''}
+              {showWs && ws && p.endDate ? ' · ' : ''}
+              {p.endDate ? (isArchived ? `Ended ${fmtDay(p.endDate)}` : `Until ${fmtDay(p.endDate)}`) : ''}
+            </div>
+          )}
+        </div>
+        {confirmDeleteId === p.id ? (
+          <>
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Delete?</span>
+            <button onClick={() => { onDelete(p.id); setConfirmDeleteId(null); }} style={smallBtn('danger')}>Yes</button>
+            <button onClick={() => setConfirmDeleteId(null)} style={smallBtn('quiet')}>No</button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => { setEditingId(p.id); setConfirmDeleteId(null); }} title="Edit" style={iconBtn}>✎</button>
+            {isArchived ? (
+              <button onClick={() => onUpdate(p.id, { endDate: undefined })} title="Make it active again" style={smallBtn('quiet')}>Unarchive</button>
+            ) : (
+              <button onClick={() => onUpdate(p.id, { endDate: projectArchiveEndDate(today) })} title="Hide it from the project pickers" style={smallBtn('quiet')}>Archive</button>
+            )}
+            <button onClick={() => setConfirmDeleteId(p.id)} title="Delete project" style={{ ...iconBtn, fontSize: 16 }}>×</button>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <SubPageHeader title="Projects" onBack={onBack} />
+      <div className="scroll-area">
+        <div style={{ padding: '10px 14px 14px' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-muted)', lineHeight: 1.55 }}>
+            Archived projects are hidden when picking a project for a task. Tasks already in them keep it.
+          </p>
+          {active.length === 0 && !adding && (
+            <div style={{ fontSize: 12, color: 'var(--color-text-faint)', padding: '4px 2px 10px' }}>No active projects.</div>
+          )}
+          {active.map(p => row(p, false))}
+
+          {adding ? (
+            <ProjectEditor
+              workspaces={workspaces}
+              defaultWorkspaceId={defaultWsId}
+              onSave={(values) => {
+                onAdd({
+                  id: crypto.randomUUID(),
+                  name: values.name ?? '',
+                  color: values.color ?? PROJECT_PALETTE[0]!,
+                  workspaceId: values.workspaceId ?? defaultWsId,
+                  ...(values.endDate ? { endDate: values.endDate } : {}),
+                });
+                setAdding(false);
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          ) : (
+            <button onClick={() => { setAdding(true); setEditingId(null); }} style={{
+              width: '100%', padding: '8px 12px', marginTop: 2,
+              background: 'none', border: '1px dashed var(--color-border-strong)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+              fontSize: 12, fontWeight: 500, color: 'var(--color-accent)',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ fontSize: 14 }}>+</span> New project
+            </button>
+          )}
+
+          {archived.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <button onClick={() => setShowArchived(v => !v)} style={{
+                background: 'none', border: 'none', padding: '0 2px', marginBottom: 8, cursor: 'pointer',
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                color: 'var(--color-text-muted)',
+              }}>
+                {showArchived ? '▾' : '▸'} Archived ({archived.length})
+              </button>
+              {showArchived && archived.map(p => row(p, true))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function fmtDay(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const iconBtn: React.CSSProperties = {
+  width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--color-text-faint)', borderRadius: 4,
+};
+
+function smallBtn(tone: 'danger' | 'quiet'): React.CSSProperties {
+  return {
+    padding: '3px 8px', fontSize: 11, fontWeight: tone === 'danger' ? 600 : 500, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+    background: tone === 'danger' ? 'var(--color-accent)' : 'none',
+    color: tone === 'danger' ? '#fff' : 'var(--color-text-muted)',
+    border: tone === 'danger' ? 'none' : '1px solid var(--color-border)',
+  };
+}
+
+/** Name, color, workspace (new projects only, when there's a choice) and end date. */
+function ProjectEditor({ initial, workspaces, defaultWorkspaceId, onSave, onCancel }: {
+  initial?: ProjectRow;
+  workspaces: Workspace[];
+  defaultWorkspaceId?: string | null;
+  onSave: (values: Partial<ProjectRow>) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [color, setColor] = useState(initial?.color ?? PROJECT_PALETTE[0]!);
+  const [endDate, setEndDate] = useState(initial?.endDate ?? '');
+  const [workspaceId, setWorkspaceId] = useState(defaultWorkspaceId ?? workspaces[0]?.id ?? null);
+  const canSave = name.trim().length > 0;
+  const save = () => {
+    if (!canSave) return;
+    onSave({
+      name: name.trim(),
+      color,
+      // Empty clears it: the project is active with no end.
+      endDate: endDate || undefined,
+      ...(initial ? {} : { workspaceId }),
+    });
+  };
+  const input: React.CSSProperties = {
+    width: '100%', boxSizing: 'border-box', padding: '5px 8px', background: 'var(--color-bg)',
+    border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 13,
+    color: 'var(--color-text)', fontFamily: 'inherit', outline: 'none',
+  };
+  return (
+    <div style={{
+      padding: '10px 12px', marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 8,
+      background: 'var(--color-surface)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-md)',
+    }}>
+      <input
+        autoFocus
+        value={name}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onCancel(); }}
+        placeholder="Project name"
+        style={input}
+      />
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        {PROJECT_PALETTE.map(c => (
+          <button key={c} onClick={() => setColor(c)} style={{ width: 20, height: 20, borderRadius: '50%', background: c, border: color === c ? '2px solid var(--color-text)' : '2px solid transparent', cursor: 'pointer', padding: 0 }} />
+        ))}
+      </div>
+      {!initial && workspaces.length > 1 && (
+        <select value={workspaceId ?? ''} onChange={e => setWorkspaceId(e.target.value)} style={input}>
+          {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+      )}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginBottom: 3 }}>End date (optional): archived after this day</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...input, flex: 1 }} />
+          {endDate && (
+            <button onClick={() => setEndDate('')} style={smallBtn('quiet')}>Clear</button>
+          )}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={save} disabled={!canSave} style={{ flex: 1, padding: '5px 0', background: canSave ? 'var(--color-accent)' : 'var(--color-border)', color: canSave ? '#fff' : 'var(--color-text-faint)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: canSave ? 'pointer' : 'default' }}>Save</button>
+        <button onClick={onCancel} style={{ padding: '5px 12px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer' }}>Cancel</button>
       </div>
     </div>
   );

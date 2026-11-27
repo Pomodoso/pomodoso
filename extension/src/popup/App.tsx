@@ -1149,6 +1149,10 @@ function AppContent() {
           onAddWorkspace={(name, color) => { void addWorkspace(name, color); }}
           onUpdateWorkspace={(id, name, color) => void updateWorkspace(id, name, color)}
           onDeleteWorkspace={(id) => void deleteWorkspace(id)}
+          projects={projects}
+          onAddProject={(p) => void addProject(p)}
+          onUpdateProject={(id, updates) => void updateProject(id, updates)}
+          onDeleteProject={(id) => void deleteProject(id)}
           onUpdateSoundSettings={(updates) => void updateSoundSettings(updates)}
           onUpdateTimezone={(tz) => void updateTimezone(tz)}
           onUpdateMaxPriorities={(n) => void updateMaxPriorities(n)}

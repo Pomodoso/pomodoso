@@ -317,6 +317,7 @@ function initDb(): void {
       workspace_id TEXT NOT NULL,
       name TEXT NOT NULL,
       color TEXT NOT NULL,
+      end_date TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
@@ -409,6 +410,16 @@ function initDb(): void {
   // default label for its status.
   try {
     expoDb.execSync('ALTER TABLE task ADD COLUMN status_id TEXT;');
+  } catch {
+    /* column already present */
+  }
+
+  // A project's end date, which is how it's archived. Mobile didn't keep it,
+  // and pushed end_date: null on every project edit, which un-archived a
+  // project archived on the extension. Null for existing rows: their real
+  // date comes back with the next pull of each project.
+  try {
+    expoDb.execSync('ALTER TABLE project ADD COLUMN end_date TEXT;');
   } catch {
     /* column already present */
   }

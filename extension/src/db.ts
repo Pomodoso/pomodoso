@@ -84,7 +84,9 @@ export interface ProjectRow extends SyncMeta {
   name: string;
   color: string;
   workspaceId?: string | null;
-  endDate?: string;
+  // Last day the project is active; after it, it's archived (see
+  // projectArchived in @pomodoso/types). `| undefined` so an update can clear it.
+  endDate?: string | undefined;
 }
 
 // ─── Workspace types ───────────────────────────────────────────────────────────

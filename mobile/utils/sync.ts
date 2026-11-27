@@ -247,7 +247,7 @@ async function push(client: TokenApiClient): Promise<void> {
         name: p.name,
         color: p.color,
         workspace_id: p.workspaceId,
-        end_date: null,
+        end_date: p.endDate,
       }),
     );
   }
@@ -619,6 +619,7 @@ function applyEntity(entity: SyncEntity): void {
         workspaceId,
         name: String(data.name ?? ''),
         color: String(data.color ?? '#6366f1'),
+        endDate: (data.end_date as string | null | undefined) ?? null,
         createdAt: existing?.createdAt ?? updated_at,
         updatedAt: updated_at,
         deletedAt: deleted_at,

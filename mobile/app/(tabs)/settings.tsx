@@ -103,6 +103,7 @@ export default function SettingsScreen(): React.JSX.Element {
           <NavRow icon="timer-outline" title="Timer defaults" description="Pomodoro duration and modes" onPress={() => router.push('/settings/timer-defaults')} />
           <NavRow icon="calendar-outline" title="Calendar" description="Google Calendar connection" onPress={() => router.push('/calendar')} />
           <NavRow icon="grid-outline" title="Workspace" description={isAll ? "All workspaces" : workspace.name} onPress={() => router.push('/workspaces')} />
+          <NavRow icon="folder-outline" title="Projects" description="Edit, archive or delete" onPress={() => router.push('/settings/projects')} />
           <NavRow
             icon="musical-notes-outline"
             title="Sounds"
