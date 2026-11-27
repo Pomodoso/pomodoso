@@ -406,8 +406,10 @@ function Card({ manifest, label, onOpen, children, wide = false, container }: To
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // A sortable list's keys (Space to pick the card up) come first.
+        container?.props?.onKeyDown?.(e);
         // Only the card itself: Enter on its + or a chip does that control's action.
-        if (e.target === e.currentTarget && e.key === 'Enter') onOpen();
+        if (!e.defaultPrevented && e.target === e.currentTarget && e.key === 'Enter') onOpen();
       }}
       style={{ ...cardStyle, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, ...(wide ? { gridColumn: '1 / -1' } : {}), ...container?.style }}
     >

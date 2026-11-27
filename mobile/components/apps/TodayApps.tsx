@@ -1,4 +1,4 @@
-import { showsOnToday, sortTodayApps, todayOrderChanges, TODAY_ORDER_KEY } from '@pomodoso/types/plugins';
+import { showsOnToday, sortTodayApps, todayOrderChanges } from '@pomodoso/types/plugins';
 import { Ionicons } from '@expo/vector-icons';
 import type { PluginRow } from '@pomodoso/types/plugins/rows';
 import { router } from 'expo-router';
@@ -8,7 +8,7 @@ import { Alert, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'r
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
 import { isSupported, usePluginClock, usePluginData, usePlugins } from '@/hooks/usePlugins';
-import { addRecord, deleteRecord, localToday, setDaily, updatePluginSetting, updateRecord, type PluginClock } from '@/utils/plugins';
+import { addRecord, deleteRecord, localToday, setDaily, setTodayOrder, updateRecord, type PluginClock } from '@/utils/plugins';
 
 import { TodayWidget, widgetIsWide } from './TodayWidget';
 
@@ -43,9 +43,7 @@ export function TodayApps(): React.JSX.Element | null {
     if (from < 0 || to < 0 || to >= ids.length) return;
     ids.splice(to, 0, ...ids.splice(from, 1));
     try {
-      for (const { id: changed, order } of todayOrderChanges(ids, pinned)) {
-        updatePluginSetting(changed, TODAY_ORDER_KEY, order);
-      }
+      setTodayOrder(todayOrderChanges(ids, pinned));
     } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : 'Unknown error');
     }

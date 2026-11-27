@@ -1,14 +1,14 @@
-import { useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-import { showsOnToday, sortTodayApps, todayOrderChanges, TODAY_ORDER_KEY } from '@pomodoso/types/plugins';
+import { showsOnToday, sortTodayApps, todayOrderChanges } from '@pomodoso/types/plugins';
 import { TodayWidget } from '@pomodoso/ui/plugins';
 
 import { db, localDate, type PluginRow } from '../../db';
-import { addRecord, deleteRecord, setDaily, updatePluginSetting, updateRecord } from '../../plugins';
+import { addRecord, deleteRecord, setDaily, setTodayOrder, updateRecord } from '../../plugins';
 import { triggerSync } from '../../syncEngine';
 import { useLocalStorage } from '../useStorage';
 import { TodaySectionHeader } from '../TodaySectionHeader';
@@ -45,7 +45,16 @@ export function TodayApps({ timezone, weekStart, onOpenApp }: { timezone: string
     [],
   );
   const [open, setOpen] = useLocalStorage<boolean>('pom_today_apps_open', true);
-  const sensors = useSensors(useSensor(CardPointerSensor, { activationConstraint: { distance: 6 } }));
+  // The keyboard picks a card up with Space (Enter still opens it), moves it
+  // with the arrow keys, and drops it with Space again; Escape cancels.
+  const sensors = useSensors(
+    useSensor(CardPointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: { start: ['Space'], cancel: ['Escape'], end: ['Space'] },
+    }),
+  );
+  const [moveError, setMoveError] = useState<string | null>(null);
   const dragGuard = useDragResizeGuard();
   // A drop ends with a click on the card under the pointer, which would open
   // the app. Swallowed for that one click.
@@ -58,12 +67,10 @@ export function TodayApps({ timezone, weekStart, onOpenApp }: { timezone: string
     if (!pinned || !over || active.id === over.id) return;
     const ids = pinned.map((p) => p.id);
     const next = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
-    void (async () => {
-      for (const { id, order } of todayOrderChanges(next, pinned)) {
-        await updatePluginSetting(id, TODAY_ORDER_KEY, order);
-      }
-      triggerSync();
-    })();
+    setMoveError(null);
+    setTodayOrder(todayOrderChanges(next, pinned))
+      .then(() => triggerSync())
+      .catch((e: unknown) => setMoveError(e instanceof Error ? e.message : "Couldn't save the new order"));
   };
 
   if (!pinned || pinned.length === 0) return null;
@@ -89,6 +96,9 @@ export function TodayApps({ timezone, weekStart, onOpenApp }: { timezone: string
               ))}
             </div>
           </SortableContext>
+          {moveError ? (
+            <div role="alert" style={{ fontSize: 11, color: 'var(--color-accent)', marginTop: 6 }}>{moveError}</div>
+          ) : null}
         </DndContext>
       ) : null}
     </div>
@@ -98,7 +108,7 @@ export function TodayApps({ timezone, weekStart, onOpenApp }: { timezone: string
 function PinnedApp({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow; timezone: string; weekStart: number; onOpen: () => void }) {
   const { evaluator } = usePluginData(plugin, timezone, weekStart);
   const env = useMemo(() => ({ timezone, weekStart }), [timezone, weekStart]);
-  const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({ id: plugin.id });
+  const { setNodeRef, transform, transition, isDragging, listeners, attributes } = useSortable({ id: plugin.id });
   if (!evaluator) return null;
   return (
     <TodayWidget
@@ -120,7 +130,9 @@ function PinnedApp({ plugin, timezone, weekStart, onOpen }: { plugin: PluginRow;
       container={{
         ref: setNodeRef,
         style: { ...dragStyle(CSS.Translate.toString(transform), transition, isDragging), position: 'relative', zIndex: isDragging ? 2 : undefined, cursor: isDragging ? 'grabbing' : 'pointer' },
-        props: listeners,
+        // The card is already a focusable button; only the description
+        // that tells screen readers how to move it is taken from dnd-kit.
+        props: { ...listeners, 'aria-describedby': attributes['aria-describedby'] },
       }}
     />
   );

@@ -6,6 +6,7 @@ import {
   normalizeOption,
   PLUGIN_VALUES_MAX_BYTES,
   SHOW_ON_TODAY_KEY,
+  TODAY_ORDER_KEY,
   type PluginEvaluator,
   type PluginManifest,
   type PluginIssue,
@@ -125,6 +126,26 @@ export function updatePluginSetting(pluginId: string, key: string, value: unknow
   if (!plugin) return;
   const settings = withinLimit({ ...plugin.settings, [key]: value }, 'These settings');
   db.update(pluginTable).set({ settings, updatedAt: nowIso(), syncedAt: null }).where(eq(pluginTable.id, pluginId)).run();
+  triggerSync();
+}
+
+/**
+ * Stores Today positions for several apps at once: all of them or none. Each
+ * app's settings are checked against the size limit before anything is
+ * written, so a move can't stop halfway and leave an order nobody chose.
+ */
+export function setTodayOrder(changes: readonly { id: string; order: number }[]): void {
+  if (changes.length === 0) return;
+  const writes = changes.flatMap(({ id, order }) => {
+    const plugin = livePlugin(id);
+    return plugin ? [{ id, settings: withinLimit({ ...plugin.settings, [TODAY_ORDER_KEY]: order }, `${plugin.manifest.name}'s settings`) }] : [];
+  });
+  const ts = nowIso();
+  db.transaction(tx => {
+    for (const w of writes) {
+      tx.update(pluginTable).set({ settings: w.settings, updatedAt: ts, syncedAt: null }).where(eq(pluginTable.id, w.id)).run();
+    }
+  });
   triggerSync();
 }
 
