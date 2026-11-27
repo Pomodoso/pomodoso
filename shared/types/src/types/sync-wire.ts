@@ -251,3 +251,42 @@ export const SYNCED_SETTING_KEYS = [
 ] as const;
 
 export type SyncedSettingKey = (typeof SYNCED_SETTING_KEYS)[number];
+
+// ─── Challenge start date ─────────────────────────────────────────────────────
+//
+// A challenge's start date decides which days count toward it, so a stale one
+// counts days from before the challenge existed. Two rules keep it from going
+// stale across devices, and both clients have to apply the same ones.
+
+/**
+ * The `challengeStartedAt` to send for a habit.
+ *
+ * Null once the challenge is off, so the clear travels: left out, a client
+ * that keeps absent keys held on to the old run's start, and a challenge
+ * switched back on later was counted from it. While a challenge is on but not
+ * stamped yet it stays undefined (omitted), so it can't wipe a start date
+ * another device already set.
+ */
+export function challengeStartedAtForPush(
+  lengthDays: number | null | undefined,
+  startedAt: string | null | undefined,
+): string | null | undefined {
+  if (!lengthDays) return null;
+  return startedAt ?? undefined;
+}
+
+/**
+ * The `challengeStartedAt` to keep from an incoming habit.
+ *
+ * No challenge, no run: older builds leave the key out when a challenge is
+ * turned off, and keeping the local value then revived the old start date
+ * the next time the challenge was switched on.
+ */
+export function challengeStartedAtFromPull(
+  extra: ExtraBag,
+  lengthDays: number | null | undefined,
+  existing: string | null | undefined,
+): string | null {
+  if (!lengthDays) return null;
+  return readExtra<string | null | undefined>(extra, 'challengeStartedAt', existing) ?? null;
+}

@@ -11,7 +11,7 @@ import type {
   TaskRow, ProjectRow, WorkspaceRow,
   HabitRow, HabitHistoryRow, TaskOrderRow, TimeLogEntry, DetectionRuleRow, MeetingRow,
 } from './db';
-import { habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, readExtra, writePullCursor, SYNCED_SETTING_KEYS } from '@pomodoso/types';
+import { challengeStartedAtForPush, habitDaysFromServer, habitFrequency, pullScope, readPullCursor, settingId, writeExtra, readExtra, writePullCursor, SYNCED_SETTING_KEYS } from '@pomodoso/types';
 import type { TimerMode } from '@pomodoso/types';
 
 // ─── Settings keys synced to server ───────────────────────────────────────────
@@ -494,7 +494,7 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   // "the user cleared this", which would wipe a real order held by another
   // device. A habit with no local order simply omits the field.
   writeExtra(extra, 'sortOrder', h.sortOrder);
-  writeExtra(extra, 'challengeStartedAt', h.challengeStartedAt);
+  writeExtra(extra, 'challengeStartedAt', challengeStartedAtForPush(h.challengeLengthDays, h.challengeStartedAt));
   // Explicitly null when absent, so clearing it (Go again, Start over) travels
   // rather than leaving another device showing a run as finished.
   writeExtra(extra, 'challengeCompletedAt', h.challengeCompletedAt ?? null);

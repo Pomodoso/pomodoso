@@ -11,6 +11,8 @@ import {
   settingId,
   SYNCED_SETTING_KEYS,
   writeExtra,
+  challengeStartedAtForPush,
+  challengeStartedAtFromPull,
   writePullCursor,
   writeSyncChoice,
   type ExtraBag,
@@ -247,4 +249,31 @@ test('every synced setting key is a usable settings id', () => {
 test('settingId is distinct for every synced setting', () => {
   const ids = SYNCED_SETTING_KEYS.map(settingId);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+// ─── challenge start date ─────────────────────────────────────────────────────
+
+test('a challenge turned off sends an explicit null start', () => {
+  assert.equal(challengeStartedAtForPush(null, '2026-11-01'), null);
+  assert.equal(challengeStartedAtForPush(undefined, undefined), null);
+});
+
+test('a running challenge sends its start, and omits one it has not stamped', () => {
+  assert.equal(challengeStartedAtForPush(21, '2026-11-20'), '2026-11-20');
+  // Omitted, not null: it must not wipe a start another device already set.
+  assert.equal(challengeStartedAtForPush(21, undefined), undefined);
+  assert.equal(challengeStartedAtForPush(21, null), undefined);
+});
+
+test('a pulled habit without a challenge drops the local start', () => {
+  // An older build turned the challenge off and left the key out. Keeping the
+  // local start would count the next run from the old one's first day.
+  assert.equal(challengeStartedAtFromPull({ challengeLengthDays: null }, null, '2026-10-01'), null);
+});
+
+test('a pulled challenge takes the sent start, or keeps the local one when none is sent', () => {
+  assert.equal(challengeStartedAtFromPull({ challengeStartedAt: '2026-11-20' }, 21, '2026-10-01'), '2026-11-20');
+  assert.equal(challengeStartedAtFromPull({ challengeStartedAt: null }, 21, '2026-10-01'), null);
+  assert.equal(challengeStartedAtFromPull({}, 21, '2026-11-20'), '2026-11-20');
+  assert.equal(challengeStartedAtFromPull({}, 21, undefined), null);
 });
