@@ -19,7 +19,7 @@ import {
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
 import { detectTicketFromRules } from '../ticketRules';
-import { urlsMatch } from '../urlMatch';
+import { taskMatchesTicket, urlsMatch } from '../urlMatch';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { clearPendingSyncChoice } from '../syncChoice';
 import { importDb } from '../backup';
@@ -526,9 +526,7 @@ function AppContent() {
   const detectedExistingTasks = activeTicket
     ? Object.values(allTasks).filter(t => {
         if (t.deletedAt) return false;
-        if (activeTicket.external_id && t.ticketId === activeTicket.external_id) return true;
-        const url = activeTicket.external_url;
-        return Boolean(url) && (t.links?.some(l => urlsMatch(l.url, url)) ?? false);
+        return taskMatchesTicket(t, activeTicket);
       })
     : [];
 
@@ -551,10 +549,7 @@ function AppContent() {
     for (const id of [...priorityIds, ...todayIds]) {
       const t = allTasks[id];
       if (!t || t.deletedAt) continue;
-      const ticketMatch = activeTicket && (
-        (activeTicket.external_id && t.ticketId === activeTicket.external_id)
-        || (activeTicket.external_url && t.links?.some(l => urlsMatch(l.url, activeTicket.external_url)))
-      );
+      const ticketMatch = activeTicket && taskMatchesTicket(t, activeTicket);
       const linkMatch = tabUrl && t.links?.some(l => urlsMatch(l.url, tabUrl));
       if (ticketMatch || linkMatch) ids.add(id);
     }

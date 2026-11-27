@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { urlsMatch } from './urlMatch.ts';
+import { taskMatchesTicket, urlsMatch } from './urlMatch.ts';
 
 test('the same page matches, ignoring a trailing slash and an empty hash', () => {
   assert.ok(urlsMatch('https://linear.app/acme/issue/ENG-412', 'https://linear.app/acme/issue/ENG-412/'));
@@ -38,4 +38,22 @@ test('the hash tells Gmail threads apart', () => {
 test('non-web and unparseable URLs never match', () => {
   assert.equal(urlsMatch('chrome://extensions', 'chrome://extensions'), false);
   assert.equal(urlsMatch('not a url', 'https://example.com/a'), false);
+});
+
+test('a ticket matches a task by its saved link', () => {
+  const ticket = { external_id: '#7', external_url: 'https://github.com/acme/api/pull/7' };
+  assert.ok(taskMatchesTicket({ ticketId: '#7', links: [{ url: 'https://github.com/acme/api/pull/7' }] }, ticket));
+});
+
+test('the same GitHub number in another repo is not the same ticket', () => {
+  const ticket = { external_id: '#7', external_url: 'https://github.com/acme/api/pull/7' };
+  assert.equal(taskMatchesTicket({ ticketId: '#7', links: [{ url: 'https://github.com/acme/web/pull/7' }] }, ticket), false);
+  // Without a link to check, a bare number still isn't enough.
+  assert.equal(taskMatchesTicket({ ticketId: '#7', links: [] }, ticket), false);
+});
+
+test('a team-scoped id matches a task with no links', () => {
+  const ticket = { external_id: 'ENG-412', external_url: 'https://linear.app/acme/issue/ENG-412' };
+  assert.ok(taskMatchesTicket({ ticketId: 'ENG-412' }, ticket));
+  assert.equal(taskMatchesTicket({ ticketId: 'ENG-41' }, ticket), false);
 });

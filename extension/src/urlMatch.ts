@@ -41,3 +41,24 @@ export function urlsMatch(link: string, page: string): boolean {
   if (a.bare || b.bare) return false;
   return extends_(b.key, a.key) || extends_(a.key, b.key);
 }
+
+/**
+ * Whether a task is the detected ticket.
+ *
+ * The URL decides whenever there is one to compare: a task added from a
+ * detection always saves the ticket's link. A bare id is only trusted for a
+ * task with no links, and only when it can't belong to another project:
+ * GitHub's `#7` is PR 7 in every repository, so matching on it would mark a
+ * task from one repo as being on another repo's page. `ENG-412` names its
+ * team, so it can stand on its own.
+ */
+export function taskMatchesTicket(
+  task: { ticketId: string | null; links?: { url: string }[] | undefined },
+  ticket: { external_id?: string | null | undefined; external_url?: string | null | undefined },
+): boolean {
+  const links = task.links ?? [];
+  if (ticket.external_url && links.some(l => urlsMatch(l.url, ticket.external_url!))) return true;
+  if (links.length > 0) return false;
+  const id = ticket.external_id;
+  return Boolean(id) && task.ticketId === id && !/^#?\d+$/.test(id!);
+}
