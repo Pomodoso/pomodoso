@@ -66,6 +66,8 @@ interface HomeStateProps {
   timerSettings: TimerSettings;
   detectedTicket: TicketRef | null;
   detectedExistingTasks: SelectedTask[];
+  /** Today's tasks that belong to the open tab (ticket or link), highlighted. */
+  onPageTaskIds: Set<string>;
   todayPriorities: TodayTask[];
   todayTasks: TodayTask[];
   backlog: SelectedTask[];
@@ -255,7 +257,7 @@ function detectionPatternsForUrl(rawUrl: string | undefined): { host: string; do
 }
 
 export function HomeState({
-  timerState, timerSettings, detectedTicket, detectedExistingTasks, todayPriorities, todayTasks, backlog, recurringTemplates, projects, prioritiesFull,
+  timerState, timerSettings, detectedTicket, detectedExistingTasks, onPageTaskIds, todayPriorities, todayTasks, backlog, recurringTemplates, projects, prioritiesFull,
   workspaces, activeWsId, onSetActiveWs, timezone, maxPriorities,
   onAddToPriorities, onAddToTasks, onRemoveFromToday, onSelectTask, onStartTimer, onAttachTask, onDoneTask, onDetachTask, onFinishStopwatch, onPausePomo, onResumePomo, onCompletePomo, onStartBreak, onSnooze, onExtendBreak, onStartNextPomo, onCancelTimer,
   linkedTasks, onSelectLinkedTask,
@@ -1478,6 +1480,7 @@ export function HomeState({
                           {...(proj ? { project: proj } : {})}
                           {...(ws ? { workspaceBadge: ws } : {})}
                           isActiveTask={isActive && timerState.taskId === task.id}
+                          onThisPage={onPageTaskIds.has(task.id)}
                           timerRunning={isActive}
                           timerHasTask={hasTask}
                           focusSeconds={timerSettings.focusSeconds}
@@ -1509,6 +1512,7 @@ export function HomeState({
                           {...(proj ? { project: proj } : {})}
                           {...(ws ? { workspaceBadge: ws } : {})}
                           isActiveTask={isActive && timerState.taskId === task.id}
+                          onThisPage={onPageTaskIds.has(task.id)}
                           timerRunning={isActive}
                           timerHasTask={hasTask}
                           focusSeconds={timerSettings.focusSeconds}
@@ -2691,6 +2695,8 @@ interface TaskRowProps {
   project?: Project | undefined;
   workspaceBadge?: Workspace | undefined;
   isActiveTask: boolean;
+  /** The task belongs to the page in the open tab. */
+  onThisPage?: boolean;
   timerRunning: boolean;
   timerHasTask: boolean;
   focusSeconds: number;
@@ -2701,7 +2707,7 @@ interface TaskRowProps {
   onStatusChange: (status: TaskStatus, statusId: string | null) => void;
 }
 
-function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunning, timerHasTask, focusSeconds, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
+function TaskRow({ index, task, project, workspaceBadge, isActiveTask, onThisPage = false, timerRunning, timerHasTask, focusSeconds, onSelect, onPlay, onDone, onDetach, onStatusChange }: TaskRowProps) {
   const isDone = task.status === 'done';
   const statusConfig = useTaskStatusConfig();
   const current = resolveTaskStatus(task.status, task.statusId, statusConfig);
@@ -2712,6 +2718,7 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
   // Fully interactive when no task is attached to the running timer
   const canPlay = !timerRunning || !timerHasTask || isActiveTask;
   const isSelectable = !timerRunning || !timerHasTask || isActiveTask;
+  const accented = isActiveTask || onThisPage;
   return (
     <div
       ref={cardRef}
@@ -2724,13 +2731,18 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '6px 8px 6px 9px',
         minHeight: 40,
-        background: isActiveTask
-          ? 'rgba(200, 85, 61, 0.04)'
-          : task.status === 'done' ? 'var(--color-success-bg)' : 'var(--color-surface)',
-        borderTop: `1px solid ${isActiveTask ? 'var(--color-accent)' : 'var(--color-border)'}`,
-        borderRight: `1px solid ${isActiveTask ? 'var(--color-accent)' : 'var(--color-border)'}`,
-        borderBottom: `1px solid ${isActiveTask ? 'var(--color-accent)' : 'var(--color-border)'}`,
-        borderLeft: project ? `3px solid ${project.color}` : `1px solid ${isActiveTask ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        background: onThisPage
+          ? 'var(--color-accent-soft)'
+          : isActiveTask
+            ? 'rgba(200, 85, 61, 0.04)'
+            : task.status === 'done' ? 'var(--color-success-bg)' : 'var(--color-surface)',
+        borderTop: `1px solid ${accented ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        borderRight: `1px solid ${accented ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        borderBottom: `1px solid ${accented ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        borderLeft: project ? `3px solid ${project.color}` : `1px solid ${accented ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        // A ring on top of the border, so the row stands out without its
+        // size or the list's layout changing.
+        boxShadow: onThisPage ? '0 0 0 2px rgba(200, 85, 61, 0.15)' : undefined,
         borderRadius: 'var(--radius-md)', marginBottom: 4,
         opacity: !isDone && timerRunning && timerHasTask && !isActiveTask ? 0.45 : 1,
         cursor: isSelectable ? 'pointer' : 'default',
@@ -2813,6 +2825,17 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, timerRunn
         </span>
         {workspaceBadge && (
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: workspaceBadge.color, flexShrink: 0 }} title={workspaceBadge.name} />
+        )}
+        {onThisPage && (
+          <span
+            title="This task is linked to the page you're on"
+            style={{
+              fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+              background: 'var(--color-accent)', color: '#fff', whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            📍 On this page
+          </span>
         )}
       </div>
       {isDone ? (

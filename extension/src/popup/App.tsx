@@ -19,6 +19,7 @@ import {
 } from '../db';
 import { syncAllConnectedWorkspaces } from '../calendarSync';
 import { detectTicketFromRules } from '../ticketRules';
+import { taskMatchesTicket, urlsMatch } from '../urlMatch';
 import { syncAll, initSync, clearSync, triggerSync, syncNow, pushActiveTimer, clearActiveTimer } from '../syncEngine';
 import { clearPendingSyncChoice } from '../syncChoice';
 import { importDb } from '../backup';
@@ -525,9 +526,7 @@ function AppContent() {
   const detectedExistingTasks = activeTicket
     ? Object.values(allTasks).filter(t => {
         if (t.deletedAt) return false;
-        if (activeTicket.external_id && t.ticketId === activeTicket.external_id) return true;
-        const url = activeTicket.external_url;
-        return t.links?.some(l => l.url === url || l.url.startsWith(url) || url.startsWith(l.url));
+        return taskMatchesTicket(t, activeTicket);
       })
     : [];
 
@@ -537,9 +536,25 @@ function AppContent() {
         if (t.deletedAt) return false;
         if (detectedIds.has(t.id)) return false;
         if (priorityIds.includes(t.id) || todayIds.includes(t.id)) return false;
-        return t.links?.some(l => l.url === tabUrl || l.url.startsWith(tabUrl) || tabUrl.startsWith(l.url));
+        return t.links?.some(l => urlsMatch(l.url, tabUrl)) ?? false;
       })
     : [];
+
+  // Today's tasks that belong to the tab the user is on: the detected ticket,
+  // or a task whose links point at this page. Every match is highlighted;
+  // several tasks can share a link.
+  const onPageTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!tabUrl && !activeTicket) return ids;
+    for (const id of [...priorityIds, ...todayIds]) {
+      const t = allTasks[id];
+      if (!t || t.deletedAt) continue;
+      const ticketMatch = activeTicket && taskMatchesTicket(t, activeTicket);
+      const linkMatch = tabUrl && t.links?.some(l => urlsMatch(l.url, tabUrl));
+      if (ticketMatch || linkMatch) ids.add(id);
+    }
+    return ids;
+  }, [tabUrl, activeTicket, priorityIds, todayIds, allTasks]);
 
   const isInToday = (id: string) => priorityIds.includes(id) || todayIds.includes(id);
 
@@ -1206,6 +1221,7 @@ function AppContent() {
         timerSettings={timerSettings}
         detectedTicket={activeTicket}
         detectedExistingTasks={detectedExistingTasks}
+        onPageTaskIds={onPageTaskIds}
         linkedTasks={linkedTasks}
         onSelectLinkedTask={setSelectedTask}
         todayPriorities={todayPriorities}
