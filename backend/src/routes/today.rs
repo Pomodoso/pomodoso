@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    habit_streak::{challenge_progress, challenge_run, challenge_skips_left, scheduled_days},
+    habit_streak::{
+        challenge_progress, challenge_run, challenge_skips_left, is_archived, scheduled_days,
+    },
     middleware::auth::AuthUser,
     routes::habits::habit_logs_by_habit,
     AppState,
@@ -574,6 +576,11 @@ pub async fn get_today(
     )
     .fetch_all(&state.pool)
     .await?;
+    // Archived habits leave Today, challenges included (see is_archived).
+    let habit_rows: Vec<_> = habit_rows
+        .into_iter()
+        .filter(|r| !is_archived(&r.extra))
+        .collect();
 
     let date_str = q.date.to_string();
 

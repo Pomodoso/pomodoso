@@ -243,6 +243,7 @@ function initDb(): void {
       unit_amount INTEGER,
       time_unit INTEGER NOT NULL DEFAULT 0,
       timer INTEGER NOT NULL DEFAULT 0,
+      archived_at TEXT,
       end_date TEXT,
       days TEXT NOT NULL DEFAULT '[]',
       challenge_length_days INTEGER,
@@ -448,6 +449,8 @@ function initDb(): void {
     'ALTER TABLE habits ADD COLUMN end_date TEXT;',
     // The habit clock: new on both clients at once, so nothing to recover.
     'ALTER TABLE habits ADD COLUMN timer INTEGER NOT NULL DEFAULT 0;',
+    // Archiving: new on both clients at once, so nothing to recover.
+    'ALTER TABLE habits ADD COLUMN archived_at TEXT;',
   ]) {
     try {
       expoDb.execSync(ddl);

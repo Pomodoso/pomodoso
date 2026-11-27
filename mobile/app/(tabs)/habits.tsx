@@ -22,7 +22,7 @@ import { useSettings } from '@/hooks/useSettings';
 
 export default function HabitsScreen() {
   const {
-    habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits,
+    habits, toggleHabit, incrementHabit, addHabit, updateHabit, removeHabit, reorderHabits, archiveHabit,
     keepChallengeGoing, startChallengeOver, keepChallengeAsHabit,
   } = useHabits();
   const { counts: achievementCounts } = useAchievements();
@@ -31,10 +31,15 @@ export default function HabitsScreen() {
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
   // Challenges include closed habits: a finished run is a result worth
   // keeping on screen. The habit list doesn't (same split as the extension).
-  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
-  const activeHabits = habits.filter(h => !h.closed);
-  const closedHabits = habits.filter(h => h.closed);
+  // Archived habits leave the list and Challenges; they're listed under
+  // Archived at the bottom, and Ended (past their end date) the same way.
+  const liveHabits = habits.filter(h => !h.archived);
+  const challengeHabits = liveHabits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  const activeHabits = liveHabits.filter(h => !h.closed);
+  const closedHabits = liveHabits.filter(h => h.closed);
+  const archivedHabits = habits.filter(h => h.archived);
   const [showClosed, setShowClosed] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const habitTimer = useHabitTimer();
   const today = useTodayDate();
 
@@ -117,11 +122,7 @@ export default function HabitsScreen() {
         />
 
         {closedHabits.length > 0 && (
-          <Pressable style={styles.closedToggle} onPress={() => setShowClosed(v => !v)}>
-            <Text style={styles.closedToggleText}>
-              {showClosed ? 'Hide closed' : `Show closed (${closedHabits.length})`}
-            </Text>
-          </Pressable>
+          <GroupToggle label="Ended" count={closedHabits.length} open={showClosed} onToggle={() => setShowClosed(v => !v)} />
         )}
         {showClosed && closedHabits.map(habit => (
           <HabitRow
@@ -129,7 +130,31 @@ export default function HabitsScreen() {
             icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
             name={habit.name}
             streakLabel={habit.streakLabel}
-            note={habit.endDate ? `Ended ${fmtEnded(habit.endDate)}` : undefined}
+            note={habit.endDate ? `Ended ${fmtDay(habit.endDate)}` : undefined}
+            days={habit.days}
+            kind={habit.kind}
+            done={habit.done}
+            count={habit.count}
+            goal={habit.goal}
+            weekFilled={habit.weekFilled}
+            todayIndex={toMondayFirstDow(new Date())}
+            onPress={() => openEdit(habit)}
+            onToggle={() => {}}
+            onIncrement={() => {}}
+            readOnly
+          />
+        ))}
+
+        {archivedHabits.length > 0 && (
+          <GroupToggle label="Archived" count={archivedHabits.length} open={showArchived} onToggle={() => setShowArchived(v => !v)} />
+        )}
+        {showArchived && archivedHabits.map(habit => (
+          <HabitRow
+            key={habit.id}
+            icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
+            name={habit.name}
+            streakLabel={habit.streakLabel}
+            note={habit.archivedAt ? `Archived ${fmtDay(habit.archivedAt.slice(0, 10))}` : undefined}
             days={habit.days}
             kind={habit.kind}
             done={habit.done}
@@ -157,13 +182,30 @@ export default function HabitsScreen() {
           if (editingHabit) removeHabit(editingHabit.id);
           setFormVisible(false);
         }}
+        onArchive={archived => {
+          if (!editingHabit) return;
+          // A running clock on it stops (and keeps its time) first.
+          if (archived && habitTimer.habitId === editingHabit.id) habitTimer.stop();
+          archiveHabit(editingHabit.id, archived);
+          setFormVisible(false);
+        }}
         onCancel={() => setFormVisible(false)}
       />
     </SafeAreaView>
   );
 }
 
-function fmtEnded(date: string): string {
+/** "▸ Ended (2)": folds a group of habits that left the list. */
+function GroupToggle({ label, count, open, onToggle }: { label: string; count: number; open: boolean; onToggle: () => void }): React.JSX.Element {
+  return (
+    <Pressable style={styles.groupToggle} onPress={onToggle} hitSlop={6}>
+      <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={12} color={colors.textTertiary} />
+      <Text style={styles.groupToggleText}>{label} ({count})</Text>
+    </Pressable>
+  );
+}
+
+function fmtDay(date: string): string {
   return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
@@ -191,6 +233,6 @@ const styles = StyleSheet.create({
   pinButtonActive: { borderColor: colors.accent },
   pinButtonText: { fontSize: 10, fontWeight: '400', color: colors.textTertiary },
   pinButtonTextActive: { fontWeight: '600', color: colors.accent },
-  closedToggle: { alignSelf: 'center', paddingVertical: 10, marginBottom: 6 },
-  closedToggleText: { fontSize: 12.5, fontWeight: '600', color: colors.textTertiary },
+  groupToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, marginTop: 6 },
+  groupToggleText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase', color: colors.textTertiary },
 });

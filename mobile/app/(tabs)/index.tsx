@@ -368,7 +368,7 @@ export default function HomeScreen() {
 
         {settings.showChallengesInToday && (
           <ChallengesSection
-            habits={habits.filter(h => (h.challengeLengthDays ?? 0) > 0)}
+            habits={habits.filter(h => (h.challengeLengthDays ?? 0) > 0 && !h.archived)}
             actions={{
               onKeepGoing: keepChallengeGoing,
               onStartOver: startChallengeOver,

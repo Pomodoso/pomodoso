@@ -22,6 +22,8 @@ interface HabitFormModalProps {
   initialHabit: HabitWithProgress | null; // null = create mode
   onSave: (input: HabitInput) => void;
   onDelete: () => void;
+  /** Archive (true) or bring back (false); offered when editing. */
+  onArchive?: (archived: boolean) => void;
   onCancel: () => void;
 }
 
@@ -37,7 +39,7 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 // kind, days-of-week toggle row defaulting to every day, no separate
 // "weekdays" preset — just per-day toggles, same as the extension actually
 // has (no dedicated weekdays button there either).
-export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCancel }: HabitFormModalProps) {
+export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onArchive, onCancel }: HabitFormModalProps) {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(HABIT_ICON_OPTIONS[0]);
   const [kind, setKind] = useState<'boolean' | 'counter'>('boolean');
@@ -367,6 +369,12 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
               <Text style={styles.saveBtnText}>Save</Text>
             </Pressable>
 
+            {initialHabit && onArchive && (
+              <Pressable style={styles.archiveBtn} onPress={() => onArchive(!initialHabit.archived)}>
+                <Text style={styles.archiveBtnText}>{initialHabit.archived ? 'Unarchive habit' : 'Archive habit'}</Text>
+              </Pressable>
+            )}
+
             {initialHabit && (
               <Pressable style={styles.deleteBtn} onPress={handleDelete}>
                 <Text style={styles.deleteBtnText}>{confirmingDelete ? 'Tap again to delete' : 'Delete habit'}</Text>
@@ -469,7 +477,9 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 18 },
   saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: colors.surface },
-  deleteBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
+  archiveBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
+  archiveBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.textSecondary },
+  deleteBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 0 },
   deleteBtnText: { fontSize: 13.5, fontWeight: '600', color: colors.accent },
   cancel: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
   cancelText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },

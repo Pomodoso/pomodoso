@@ -393,7 +393,9 @@ export function HomeState({
 
   // Workspace-filtered habits and meetings (meetings: only today's occurrences)
   // Habits are user-global — shown in every workspace (and the All view).
-  const visibleHabits = habits;
+  // Archived habits leave Today, the habit list and Challenges; the Habits tab
+  // lists them under Archived, and History keeps their days.
+  const visibleHabits = habits.filter(h => !h.archivedAt);
 
   // Each streak walks back day by day until it hits a miss, so this is cheap for
   // a short streak and not for a long one — and it runs per habit. Memoized for
@@ -406,7 +408,7 @@ export function HomeState({
   );
   // Challenges run to a fixed length, so a habit past its end date still has a
   // result worth showing; only the schedule-based Today list hides those.
-  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  const challengeHabits = visibleHabits.filter(h => (h.challengeLengthDays ?? 0) > 0);
 
   // A challenge is no longer a view of the live streak — it is a run with a
   // start date, forgiven days and a recorded finish. challengeStateOf reads
@@ -1707,7 +1709,7 @@ export function HomeState({
               </div>
               {habitsSubTab === 'today' ? (
                 <HabitsContent
-                  habits={visibleHabits}
+                  habits={habits}
                   habitCounters={habitCounters}
                   habitDone={habitDone}
                   showInToday={showHabitsInToday}
@@ -1719,6 +1721,12 @@ export function HomeState({
                   onAddHabit={() => setIsAddingHabit(true)}
                   onEditHabit={setEditingHabit}
                   onDeleteHabit={(id) => { void db.habits.update(id, { deletedAt: now(), updatedAt: now() }); triggerSync(); }}
+                  onArchiveHabit={(id, archived) => {
+                    // A running clock on it stops (and keeps its time) first.
+                    if (archived && habitTimer.habitId === id) habitTimer.stop();
+                    void db.habits.update(id, { archivedAt: archived ? now() : undefined, updatedAt: now() });
+                    triggerSync();
+                  }}
                   onReorder={(ids) => void reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
                   streaks={habitStreaks}
                   challengeViews={challengeViews}
@@ -1728,7 +1736,7 @@ export function HomeState({
                   onToggleShowChallengesInToday={() => setShowChallengesInToday(v => !v)}
                 />
               ) : (
-                <HabitHistoryView habits={visibleHabits} timezone={timezone} weekStart={weekStart} />
+                <HabitHistoryView habits={habits} timezone={timezone} weekStart={weekStart} />
               )}
             </>
           )
@@ -5083,6 +5091,8 @@ interface HabitsContentProps {
   onAddHabit: () => void;
   onEditHabit: (habit: HabitDef) => void;
   onDeleteHabit: (id: string) => void;
+  /** Archive (true) or bring back (false). */
+  onArchiveHabit: (id: string, archived: boolean) => void;
   onReorder: (orderedIds: string[]) => void;
   showChallengesInToday: boolean;
   onToggleShowChallengesInToday: () => void;
@@ -5093,7 +5103,7 @@ interface HabitsContentProps {
   streaks: Map<string, { pastStreak: number; doneToday: boolean; daysDone: number }>;
 }
 
-function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks, challengeViews, challengeActions, achievements }: HabitsContentProps) {
+function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStart, timezone, onCounterChange, onToggle, onToggleShowInToday, onAddHabit, onEditHabit, onDeleteHabit, onArchiveHabit, onReorder, showChallengesInToday, onToggleShowChallengesInToday, streaks, challengeViews, challengeActions, achievements }: HabitsContentProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const dragGuard = useDragResizeGuard();
   const today = new Date();
@@ -5103,16 +5113,19 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
   // Habits past their end date are "closed": hidden from the list (and progress)
   // by default, revealed behind a "Show closed" link. Same filter the Today tab uses.
   const todayStr = localDate(timezone);
-  const activeHabits = habits.filter(h => !h.endDate || todayStr <= h.endDate);
-  const closedHabits = habits.filter(h => h.endDate && todayStr > h.endDate);
+  const archivedHabits = habits.filter(h => h.archivedAt);
+  const liveHabits = habits.filter(h => !h.archivedAt);
+  const activeHabits = liveHabits.filter(h => !h.endDate || todayStr <= h.endDate);
+  const closedHabits = liveHabits.filter(h => h.endDate && todayStr > h.endDate);
   const [showClosed, setShowClosed] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Streaks arrive from HomeState, which needs them for Today's challenge cards
   // too — this used to run its own full-history query.
   const streaksById = streaks;
   // Unlike the habit list, challenges include closed ones: a finished 21-day run
   // is a result, and hiding it the day after it ends is what you least want.
-  const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  const challengeHabits = liveHabits.filter(h => (h.challengeLengthDays ?? 0) > 0);
 
   const doneCount = activeHabits.filter(h =>
     h.kind === 'boolean' ? (habitDone[h.id] ?? false) : (habitCounters[h.id] ?? 0) >= (h.goal ?? 1)
@@ -5210,6 +5223,7 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
                       onToggle={() => onToggle(habit.id)}
                       onEdit={() => onEditHabit(habit)}
                       onDelete={() => onDeleteHabit(habit.id)}
+                      onArchive={() => onArchiveHabit(habit.id, true)}
                     />
                   </SortableHabitCard>
                 );
@@ -5218,18 +5232,11 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
           </SortableContext>
         </DndContext>
 
+        {/* Habits that left the list: Ended (past their end date) and
+            Archived (put away by hand). Each folds, closed by default. */}
         {closedHabits.length > 0 && (
-          <button
-            onClick={() => setShowClosed(v => !v)}
-            style={{
-              width: '100%', marginTop: -2, padding: '6px 0', background: 'none', border: 'none',
-              cursor: 'pointer', fontSize: 11, color: 'var(--color-text-faint)', textAlign: 'center',
-            }}
-          >
-            {showClosed ? 'Hide closed' : `Show closed (${closedHabits.length})`}
-          </button>
+          <HabitGroupToggle label="Ended" count={closedHabits.length} open={showClosed} onToggle={() => setShowClosed(v => !v)} />
         )}
-
         {showClosed && closedHabits.map(habit => (
           <HabitRow
             key={habit.id}
@@ -5243,6 +5250,28 @@ function HabitsContent({ habits, habitCounters, habitDone, showInToday, weekStar
             onToggle={() => {}}
             onEdit={() => onEditHabit(habit)}
             onDelete={() => onDeleteHabit(habit.id)}
+            onArchive={() => onArchiveHabit(habit.id, true)}
+          />
+        ))}
+
+        {archivedHabits.length > 0 && (
+          <HabitGroupToggle label="Archived" count={archivedHabits.length} open={showArchived} onToggle={() => setShowArchived(v => !v)} />
+        )}
+        {showArchived && archivedHabits.map(habit => (
+          <HabitRow
+            key={habit.id}
+            habit={habit}
+            count={0}
+            checked={false}
+            isDone={false}
+            readOnly
+            archived
+            streakLabel={habitStreakLabel(streaksById.get(habit.id)?.pastStreak ?? 0)}
+            onCounterChange={() => {}}
+            onToggle={() => {}}
+            onEdit={() => onEditHabit(habit)}
+            onDelete={() => onDeleteHabit(habit.id)}
+            onArchive={() => onArchiveHabit(habit.id, false)}
           />
         ))}
       </div>
@@ -5268,7 +5297,23 @@ function SortableHabitCard({ id, children }: { id: string; children: React.React
   );
 }
 
-function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, streakLabel, onCounterChange, onToggle, onEdit, onDelete }: {
+/** "▸ Ended (2)": folds a group of habits that left the list. */
+function HabitGroupToggle({ label, count, open, onToggle }: { label: string; count: number; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6, width: '100%', marginTop: 4, padding: '6px 2px',
+        background: 'none', border: 'none', cursor: 'pointer',
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-muted)',
+      }}
+    >
+      {open ? '▾' : '▸'} {label} ({count})
+    </button>
+  );
+}
+
+function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, archived = false, streakLabel, onCounterChange, onToggle, onEdit, onDelete, onArchive }: {
   habit: HabitDef;
   /** A challenge run waiting on a missed day: flagged, and the tick is locked
    *  until the Challenges card above is answered. */
@@ -5277,11 +5322,15 @@ function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, str
   checked: boolean;
   isDone: boolean;
   readOnly?: boolean;
+  /** Listed under Archived: the menu offers Unarchive. */
+  archived?: boolean;
   streakLabel: string;
   onCounterChange: (delta: number) => void;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** Archive, or (when `archived`) bring back. */
+  onArchive: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -5322,6 +5371,12 @@ function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, str
                 ✏ Edit
               </button>
               <button
+                onClick={() => { setShowMenu(false); onArchive(); }}
+                style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--color-text)', borderTop: '1px solid var(--color-border)' }}
+              >
+                {archived ? '↩ Unarchive' : '🗄 Archive'}
+              </button>
+              <button
                 onClick={() => setConfirmDelete(true)}
                 style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--color-accent)', borderTop: '1px solid var(--color-border)' }}
               >
@@ -5349,9 +5404,14 @@ function HabitRow({ habit, paused = false, count, checked, isDone, readOnly, str
               · {habit.days.map(d => ['M','T','W','T','F','S','S'][d]).join(' ')}
             </span>
           )}
-          {readOnly && habit.endDate && (
+          {readOnly && !archived && habit.endDate && (
             <span style={{ marginLeft: 6, color: 'var(--color-text-faint)' }}>
-              · Closed {habit.endDate.slice(8, 10)}/{habit.endDate.slice(5, 7)}
+              · Ended {habit.endDate.slice(8, 10)}/{habit.endDate.slice(5, 7)}
+            </span>
+          )}
+          {archived && habit.archivedAt && (
+            <span style={{ marginLeft: 6, color: 'var(--color-text-faint)' }}>
+              · Archived {habit.archivedAt.slice(8, 10)}/{habit.archivedAt.slice(5, 7)}
             </span>
           )}
         </div>

@@ -104,6 +104,16 @@ pub fn sort_order(extra: &serde_json::Value) -> Option<i64> {
     extra.get("sortOrder").and_then(|v| v.as_i64())
 }
 
+/// Whether the habit was archived by hand (`extra.archivedAt`, set by the
+/// clients). Archived habits are kept, with their history, but leave Today,
+/// the habit list and challenges, as they do in the extension and mobile.
+pub fn is_archived(extra: &serde_json::Value) -> bool {
+    extra
+        .get("archivedAt")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+}
+
 /// Challenge length in days, from the habit's `extra` bag. `None` means the
 /// habit is not running as a challenge.
 pub fn challenge_length(extra: &serde_json::Value) -> Option<i32> {
@@ -329,6 +339,16 @@ mod tests {
             Vec::<i64>::new()
         );
         assert_eq!(scheduled_days("custom", None), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn archived_reads_a_non_empty_timestamp() {
+        assert!(is_archived(
+            &serde_json::json!({ "archivedAt": "2026-11-27T10:00:00.000Z" })
+        ));
+        assert!(!is_archived(&serde_json::json!({ "archivedAt": null })));
+        assert!(!is_archived(&serde_json::json!({ "archivedAt": "" })));
+        assert!(!is_archived(&serde_json::json!({})));
     }
 
     #[test]
