@@ -277,40 +277,56 @@ function AppContent() {
         if (!occ) continue;
         if ((task.completedDates ?? []).includes(occ)) continue;
         const wsId = task.workspaceId ?? 'default';
-        const order = await db.taskOrders.get(wsId);
-        const todayIds = order?.todayIds ?? [];
-        if (!todayIds.includes(task.id)) {
-          await putWsOrder(wsId, { todayIds: [...todayIds, task.id] });
-        }
+        // Read and write in one transaction: the scheduled-task step below
+        // also appends to todayIds, and two unsynchronised read-then-writes
+        // would drop one of the additions.
+        await db.transaction('rw', [db.taskOrders], async () => {
+          const order = await db.taskOrders.get(wsId);
+          const todayIds = order?.todayIds ?? [];
+          if (!todayIds.includes(task.id)) {
+            await putWsOrder(wsId, { todayIds: [...todayIds, task.id] });
+          }
+        });
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [migrated]);
 
   // ── Move scheduled tasks into Today when their day arrives ────────────────
-  // Runs on every popup open, like the recurring step above. On or after the
-  // day (see taskScheduleDue), so a day the popup wasn't opened doesn't lose
-  // the task. The date is cleared once it's in, so taking the task back out of
-  // Today afterwards sticks.
+  // On or after the day (see taskScheduleDue), so a day the popup wasn't
+  // opened doesn't lose the task. The date is cleared once it's in, so taking
+  // the task back out of Today afterwards sticks.
+  //
+  // Keyed on whether any task is due rather than only on popup open: a task
+  // scheduled on another device can arrive with the initial sync, after the
+  // open has passed.
+  const hasDueScheduled = (allTasksArr ?? []).some(t =>
+    !t.recurrence && taskScheduleDue(t.scheduledFor, t.status, localDate(timezone)));
   useEffect(() => {
-    if (!migrated) return;
+    if (!migrated || !hasDueScheduled) return;
     void (async () => {
       const today = localDate(timezone);
       const due = await db.tasks
         .filter(t => !t.deletedAt && !t.recurrence && taskScheduleDue(t.scheduledFor, t.status, today))
         .toArray();
-      if (due.length === 0) return;
       for (const task of due) {
         const wsId = task.workspaceId ?? 'default';
-        const order = await db.taskOrders.get(wsId);
-        const inToday = (order?.priorityIds ?? []).includes(task.id) || (order?.todayIds ?? []).includes(task.id);
-        if (!inToday) await putWsOrder(wsId, { todayIds: [...(order?.todayIds ?? []), task.id] });
-        await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
+        // One transaction per task: the order append and clearing the date
+        // land together or not at all, and it serialises with the recurring
+        // step above, which appends to the same todayIds.
+        await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
+          const fresh = await db.tasks.get(task.id);
+          if (!fresh?.scheduledFor) return; // handled meanwhile
+          const order = await db.taskOrders.get(wsId);
+          const inToday = (order?.priorityIds ?? []).includes(task.id) || (order?.todayIds ?? []).includes(task.id);
+          if (!inToday) await putWsOrder(wsId, { todayIds: [...(order?.todayIds ?? []), task.id] });
+          await db.tasks.update(task.id, { scheduledFor: undefined, updatedAt: now() });
+        });
       }
-      triggerSync();
+      if (due.length > 0) triggerSync();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [migrated]);
+  }, [migrated, hasDueScheduled]);
 
   // ── Transient UI state ─────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('today');

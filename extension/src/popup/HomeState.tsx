@@ -1807,6 +1807,7 @@ export function HomeState({
                                 <SortableBacklogRow
                                   key={task.id}
                                   task={task}
+                                  today={today}
                                   {...(proj ? { project: proj } : {})}
                                   isInPriorities={priorityIds.has(task.id)}
                                   isInTasks={taskIds.has(task.id)}
@@ -2871,6 +2872,8 @@ function TaskRow({ index, task, project, workspaceBadge, isActiveTask, onThisPag
 
 interface BacklogRowProps {
   task: SelectedTask;
+  /** YYYY-MM-DD in the configured timezone, for the schedule badge. */
+  today: string;
   project?: Project | undefined;
   isInPriorities: boolean;
   isInTasks: boolean;
@@ -2895,7 +2898,7 @@ function SortableBacklogRow(props: BacklogRowProps) {
   );
 }
 
-function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: BacklogRowProps) {
+function BacklogRow({ task, today, project, isInPriorities, isInTasks, prioritiesFull, onAddToPriorities, onAddToTasks, onRemove, onSelect }: BacklogRowProps) {
   const statusConfig = useTaskStatusConfig();
   const isAdded = isInPriorities || isInTasks;
   const [tooltipAnchor, setTooltipAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -2952,7 +2955,7 @@ function BacklogRow({ task, project, isInPriorities, isInTasks, prioritiesFull, 
             title={`Moves into Today on ${task.scheduledFor}`}
             style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-info)', whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            📅 {taskScheduleLabel(task.scheduledFor, localDate(Intl.DateTimeFormat().resolvedOptions().timeZone))}
+            📅 {taskScheduleLabel(task.scheduledFor, today)}
           </span>
         )}
         {project && (
@@ -4400,6 +4403,7 @@ function TaskHistoryView({ activeWsId, projects, timezone, weekStart, workDays, 
                   <BacklogRow
                     key={task.id}
                     task={task}
+                    today={todayStr}
                     {...(projectById(task.projectId) ? { project: projectById(task.projectId)! } : {})}
                     isInPriorities={false}
                     isInTasks={false}

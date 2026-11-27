@@ -133,10 +133,13 @@ export function useTasks() {
   // app wasn't opened that day), and the date is cleared, so taking the task
   // back out of Today sticks. Mirrors the extension's effect in App.tsx.
   useEffect(() => {
+    // parseRecurrence, not the raw column: a pulled task with no rule can
+    // carry the string 'null', which is truthy and would hold it back forever.
+    const due = (tasks ?? []).filter(t => !parseRecurrence(t.recurrence) && taskScheduleDue(t.scheduledFor, t.status, today));
+    if (due.length === 0) return;
     const touched = new Set<string>();
     const now = new Date().toISOString();
-    for (const t of tasks ?? []) {
-      if (t.recurrence || !taskScheduleDue(t.scheduledFor, t.status, today)) continue;
+    for (const t of due) {
       const intoToday = !t.isToday && !t.isPriority;
       db.update(task)
         .set({ scheduledFor: null, updatedAt: now, ...(intoToday ? { isToday: true } : {}) })
@@ -146,7 +149,7 @@ export function useTasks() {
     }
     for (const ws of touched) markTaskOrderDirty(ws);
     // Clearing the date is a task change of its own, so sync either way.
-    if ((tasks ?? []).some(t => !t.recurrence && taskScheduleDue(t.scheduledFor, t.status, today))) triggerSync();
+    triggerSync();
   }, [tasks, today]);
 
   // Real time-per-task, computed from completed sessions — falls back to the
