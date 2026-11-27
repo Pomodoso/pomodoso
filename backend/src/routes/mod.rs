@@ -1,5 +1,6 @@
 pub mod account;
 pub mod billing;
+pub mod feedback;
 pub mod habits;
 pub mod health;
 pub mod history;

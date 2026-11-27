@@ -11,6 +11,7 @@ import Dashboard from './pages/dashboard/Dashboard.tsx'
 import Billing from './pages/settings/Billing.tsx'
 import Pricing from './pages/Pricing.tsx'
 import Support from './pages/Support.tsx'
+import Goodbye from './pages/Goodbye.tsx'
 import Privacy from './pages/legal/Privacy'
 import Terms from './pages/legal/Terms.tsx'
 import Refund from './pages/legal/Refund.tsx'
@@ -42,6 +43,7 @@ export const routes: RouteRecord[] = [
       { path: 'gdpr', element: <Gdpr /> },
       { path: 'pricing', element: <Pricing /> },
       { path: 'support', element: <Support /> },
+      { path: 'goodbye', element: <Goodbye /> },
       // The public app directory. The app page and the build guide bring the
       // plugin validator and components (zod, yaml), so they load on their own;
       // so do the docs, which render every block live.

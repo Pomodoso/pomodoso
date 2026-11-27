@@ -14,9 +14,42 @@ import { performBackgroundSync } from './syncEngine';
 import { providerRuleAllows } from './ticketRules';
 import { googleSignInFlow } from './authFlow';
 import { INSTALL_REQUEST_KEY, WEB_ORIGINS, isPluginSlug, type InstallRequest } from './installRequest';
+import { WEB_URL } from './webUrl';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
+
+// ─── Uninstall survey ─────────────────────────────────────────────────────────
+// Chrome opens this page right after the extension is removed (nothing of the
+// extension runs by then): the web's short, anonymous "why did you remove
+// it?". Only the version and the install day go along, nothing that
+// identifies the user. The day rather than a count of days, so the page works
+// out how long it was installed whenever the removal happens.
+
+const INSTALLED_AT_KEY = 'installed_at';
+
+async function setUninstallSurvey(): Promise<void> {
+  try {
+    const stored = await chrome.storage.local.get(INSTALLED_AT_KEY);
+    const installedAt = stored[INSTALLED_AT_KEY] as string | undefined;
+    const query = new URLSearchParams({ v: chrome.runtime.getManifest().version });
+    // Unknown for installs from before this was recorded.
+    if (installedAt) query.set('i', installedAt);
+    await chrome.runtime.setUninstallURL(`${WEB_URL}/goodbye?${query}`);
+  } catch { /* best effort */ }
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  void (async () => {
+    if (reason === 'install') {
+      await chrome.storage.local.set({ [INSTALLED_AT_KEY]: new Date().toISOString().slice(0, 10) });
+    }
+    await setUninstallSurvey();
+  })();
+});
+// The URL Chrome holds doesn't survive every browser restart reliably, and the
+// version in it changes on update; setting it again on startup keeps it right.
+chrome.runtime.onStartup.addListener(() => { void setUninstallSurvey(); });
 
 // ─── From the web app ─────────────────────────────────────────────────────────
 // Relayed by content-scripts/web-bridge.ts, which only runs on Pomodoso's site;

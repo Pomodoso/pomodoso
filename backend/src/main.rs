@@ -105,6 +105,8 @@ async fn main() -> anyhow::Result<()> {
             "/plugins/directory/{slug}/installs",
             post(routes::plugin_directory::record_install),
         )
+        // The anonymous form Chrome opens after the extension is removed.
+        .route("/feedback/uninstall", post(routes::feedback::uninstall))
         .route("/webhooks/stripe", post(routes::billing::stripe_webhook))
         // App Store Server Notifications. No auth layer and none needed: the
         // body is a JWS signed by Apple, and the signature is the credential.
