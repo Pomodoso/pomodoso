@@ -4,6 +4,7 @@
 // Metro looked for a literal .js file and the bundle failed. Every package
 // here resolves with "moduleResolution": "bundler", which handles this.
 export * from './types/challenge';
+export * from './types/habit-time';
 export * from './types/index';
 export * from './types/ordering';
 export * from './types/project';

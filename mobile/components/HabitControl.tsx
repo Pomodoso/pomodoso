@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { fmtHabitTime, habitTimeStep } from '@pomodoso/types';
+
 import { colors, fontMono } from '@/constants/theme';
 
 interface HabitControlProps {
@@ -8,6 +10,9 @@ interface HabitControlProps {
   done: boolean;
   count: number;
   goal: number | null;
+  /** A time habit: count and goal are seconds, and a step is unitAmount. */
+  timeUnit?: boolean;
+  unitAmount?: number | null;
   onToggle: () => void;
   onIncrement: (delta: number) => void;
   /** A paused challenge: shown but not tappable. */
@@ -17,17 +22,18 @@ interface HabitControlProps {
 // Shared between the Habits tab and Home's Today strip — both need the exact
 // same boolean-check / counter-stepper interaction, matching how the
 // extension's Today view and Habits tab both reuse the same habit row shape.
-export function HabitControl({ kind, done, count, goal, onToggle, onIncrement, disabled = false }: HabitControlProps) {
+export function HabitControl({ kind, done, count, goal, timeUnit = false, unitAmount, onToggle, onIncrement, disabled = false }: HabitControlProps) {
   if (kind === 'counter') {
+    const step = timeUnit ? habitTimeStep(unitAmount) : 1;
     return (
       <View style={[styles.counter, disabled && styles.disabled]}>
-        <Pressable style={styles.counterBtn} onPress={() => onIncrement(-1)} hitSlop={6} disabled={disabled}>
+        <Pressable style={styles.counterBtn} onPress={() => onIncrement(-step)} hitSlop={6} disabled={disabled}>
           <Text style={styles.counterBtnText}>−</Text>
         </Pressable>
         <Text style={styles.counterValue}>
-          {count}/{goal}
+          {timeUnit ? `${fmtHabitTime(count)}/${fmtHabitTime(goal ?? 0)}` : `${count}/${goal}`}
         </Text>
-        <Pressable style={styles.counterBtn} onPress={() => onIncrement(1)} hitSlop={6} disabled={disabled}>
+        <Pressable style={styles.counterBtn} onPress={() => onIncrement(step)} hitSlop={6} disabled={disabled}>
           <Text style={styles.counterBtnText}>+</Text>
         </Pressable>
       </View>

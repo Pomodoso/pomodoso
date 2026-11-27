@@ -9,6 +9,8 @@ import { ChallengesSection } from '@/components/ChallengesSection';
 import { HabitFormModal } from '@/components/HabitFormModal';
 import { ReorderableSection } from '@/components/ReorderableSection';
 import { HabitRow } from '@/components/HabitRow';
+import { reorderSubset } from '@pomodoso/types';
+
 import { toMondayFirstDow } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
@@ -25,7 +27,12 @@ export default function HabitsScreen() {
   const { settings, update } = useSettings();
   const [formVisible, setFormVisible] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitWithProgress | null>(null);
+  // Challenges include closed habits: a finished run is a result worth
+  // keeping on screen. The habit list doesn't (same split as the extension).
   const challengeHabits = habits.filter(h => (h.challengeLengthDays ?? 0) > 0);
+  const activeHabits = habits.filter(h => !h.closed);
+  const closedHabits = habits.filter(h => h.closed);
+  const [showClosed, setShowClosed] = useState(false);
 
   function openCreate(): void {
     setEditingHabit(null);
@@ -62,11 +69,11 @@ export default function HabitsScreen() {
 
         <ReorderableSection
           title="Today"
-          items={habits}
+          items={activeHabits}
           keyOf={h => h.id}
-          // The full list is on screen here, so unlike the Today tab no
-          // re-slotting is needed — this IS the habit order.
-          onReorder={reorderHabits}
+          // Closed habits are off this list, so the drop is re-slotted into
+          // the full order before it's saved, or they'd fall out of it.
+          onReorder={ids => reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
           headerRight={
             <Pressable
               style={[styles.pinButton, settings.showHabitsInToday && styles.pinButtonActive]}
@@ -89,6 +96,8 @@ export default function HabitsScreen() {
               done={habit.done}
               count={habit.count}
               goal={habit.goal}
+              timeUnit={habit.timeUnit}
+              unitAmount={habit.unitAmount}
               weekFilled={habit.weekFilled}
               todayIndex={toMondayFirstDow(new Date())}
               onPress={() => openEdit(habit)}
@@ -99,6 +108,34 @@ export default function HabitsScreen() {
             />
           )}
         />
+
+        {closedHabits.length > 0 && (
+          <Pressable style={styles.closedToggle} onPress={() => setShowClosed(v => !v)}>
+            <Text style={styles.closedToggleText}>
+              {showClosed ? 'Hide closed' : `Show closed (${closedHabits.length})`}
+            </Text>
+          </Pressable>
+        )}
+        {showClosed && closedHabits.map(habit => (
+          <HabitRow
+            key={habit.id}
+            icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
+            name={habit.name}
+            streakLabel={habit.streakLabel}
+            note={habit.endDate ? `Ended ${fmtEnded(habit.endDate)}` : undefined}
+            days={habit.days}
+            kind={habit.kind}
+            done={habit.done}
+            count={habit.count}
+            goal={habit.goal}
+            weekFilled={habit.weekFilled}
+            todayIndex={toMondayFirstDow(new Date())}
+            onPress={() => openEdit(habit)}
+            onToggle={() => {}}
+            onIncrement={() => {}}
+            readOnly
+          />
+        ))}
       </ScrollView>
 
       <HabitFormModal
@@ -117,6 +154,10 @@ export default function HabitsScreen() {
       />
     </SafeAreaView>
   );
+}
+
+function fmtEnded(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 const styles = StyleSheet.create({
@@ -143,4 +184,6 @@ const styles = StyleSheet.create({
   pinButtonActive: { borderColor: colors.accent },
   pinButtonText: { fontSize: 10, fontWeight: '400', color: colors.textTertiary },
   pinButtonTextActive: { fontWeight: '600', color: colors.accent },
+  closedToggle: { alignSelf: 'center', paddingVertical: 10, marginBottom: 6 },
+  closedToggleText: { fontSize: 12.5, fontWeight: '600', color: colors.textTertiary },
 });

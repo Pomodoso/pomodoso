@@ -139,6 +139,13 @@ function backfillChallengeStarts(database: typeof expoDb): void {
   }
 }
 
+/** Records which rows hold a new column's default rather than a real value. */
+function rememberUnrecovered(key: string, idsQuery: string): void {
+  const ids = expoDb.getAllSync<{ id: string }>(idsQuery).map(r => r.id);
+  if (ids.length === 0) return;
+  expoDb.runSync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(ids)]);
+}
+
 function initDb(): void {
   // This is a throwaway spike DB (see schema.ts) — no migration story yet, so
   // if an earlier version of the schema is on disk (missing `kind`), just
@@ -234,6 +241,8 @@ function initDb(): void {
       goal INTEGER,
       unit TEXT,
       unit_amount INTEGER,
+      time_unit INTEGER NOT NULL DEFAULT 0,
+      end_date TEXT,
       days TEXT NOT NULL DEFAULT '[]',
       challenge_length_days INTEGER,
       challenge_started_at TEXT,
@@ -421,9 +430,30 @@ function initDb(): void {
   // date comes back with the next pull of each project.
   try {
     expoDb.execSync('ALTER TABLE project ADD COLUMN end_date TEXT;');
+    // Every project that exists now holds the default, not its real end date:
+    // listed so sync recovers it (utils/recovery.ts).
+    rememberUnrecovered('project_end_date_unrecovered', 'SELECT id FROM project');
   } catch {
     /* column already present */
   }
+
+  // Time habits and habit end dates, which the extension had and mobile
+  // didn't: a time habit read as a bare count of seconds here, and an ended
+  // habit kept showing on Today. Existing habits are listed so sync recovers
+  // their real values (utils/recovery.ts).
+  let addedHabitFields = false;
+  for (const ddl of [
+    'ALTER TABLE habits ADD COLUMN time_unit INTEGER NOT NULL DEFAULT 0;',
+    'ALTER TABLE habits ADD COLUMN end_date TEXT;',
+  ]) {
+    try {
+      expoDb.execSync(ddl);
+      if (ddl.includes('time_unit')) addedHabitFields = true;
+    } catch {
+      /* column already present */
+    }
+  }
+  if (addedHabitFields) rememberUnrecovered('habit_fields_unrecovered', 'SELECT id FROM habits');
 
   // The day a task moves into Today. Null for every existing task.
   try {

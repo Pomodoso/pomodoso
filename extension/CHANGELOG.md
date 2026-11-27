@@ -19,6 +19,7 @@
 
 ### Habits
 
+- **Go again on an ended habit** — Restarting a challenge whose habit ended (or would end before the new run could finish) reopens the habit, instead of starting a run you couldn't log.
 - **Challenges count from the day they start** — Turning a challenge off clears its start date on every device, so switching it back on later starts fresh instead of counting from the old run.
 
 ### Feedback

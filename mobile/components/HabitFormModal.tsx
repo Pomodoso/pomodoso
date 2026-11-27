@@ -3,7 +3,14 @@ import type { ComponentProps } from 'react';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import { MAX_CHALLENGE_LENGTH_DAYS } from '@pomodoso/types';
+import {
+  challengeProjectedEnd,
+  fmtHabitTime,
+  isValidYmd,
+  MAX_CHALLENGE_LENGTH_DAYS,
+  parseHabitTime,
+  sameSchedule,
+} from '@pomodoso/types';
 
 import { DAY_LABELS } from '@/constants/habitDays';
 import { HABIT_ICON_OPTIONS } from '@/constants/habitIcons';
@@ -37,6 +44,10 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   const [goal, setGoal] = useState('');
   const [unit, setUnit] = useState('');
   const [unitAmount, setUnitAmount] = useState('');
+  const [timeUnit, setTimeUnit] = useState(false);
+  const [timeGoal, setTimeGoal] = useState('15:00');
+  const [timeStep, setTimeStep] = useState('1:00');
+  const [endDate, setEndDate] = useState('');
   const [days, setDays] = useState<number[]>(ALL_DAYS);
   const [isChallenge, setIsChallenge] = useState(false);
   const [challengeLengthDays, setChallengeLengthDays] = useState('21');
@@ -51,6 +62,10 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setGoal(initialHabit.goal?.toString() ?? '');
       setUnit(initialHabit.unit ?? '');
       setUnitAmount(initialHabit.unitAmount?.toString() ?? '');
+      setTimeUnit(initialHabit.timeUnit);
+      setTimeGoal(initialHabit.timeUnit ? fmtHabitTime(initialHabit.goal ?? 0) : '15:00');
+      setTimeStep(initialHabit.timeUnit ? fmtHabitTime(initialHabit.unitAmount || 60) : '1:00');
+      setEndDate(initialHabit.endDate ?? '');
       setDays(initialHabit.days.length === 0 ? ALL_DAYS : initialHabit.days);
       setIsChallenge((initialHabit.challengeLengthDays ?? 0) > 0);
       setChallengeLengthDays((initialHabit.challengeLengthDays ?? 21).toString());
@@ -61,6 +76,10 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setGoal('');
       setUnit('');
       setUnitAmount('');
+      setTimeUnit(false);
+      setTimeGoal('15:00');
+      setTimeStep('1:00');
+      setEndDate('');
       setDays(ALL_DAYS);
       setIsChallenge(false);
       setChallengeLengthDays('21');
@@ -80,16 +99,43 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
     });
   }
 
-  const parsedGoal = parseInt(goal, 10);
+  const isTime = kind === 'counter' && timeUnit;
+  const parsedGoal = isTime ? parseHabitTime(timeGoal) : parseInt(goal, 10);
   const goalValid = kind === 'boolean' || (!isNaN(parsedGoal) && parsedGoal > 0);
+  const trimmedEnd = endDate.trim();
+  const endDateValid = trimmedEnd === '' || isValidYmd(trimmedEnd);
 
   const parsedChallengeLength = parseInt(challengeLengthDays, 10);
   const challengeLengthValid =
     !isChallenge || (!isNaN(parsedChallengeLength) && parsedChallengeLength > 0 && parsedChallengeLength <= MAX_CHALLENGE_LENGTH_DAYS);
 
+  // The end date closes the habit, so one before the run can finish makes the
+  // challenge unwinnable. Same check as the extension's form: projected from
+  // the run this edit keeps, or from today for a new or restarted one.
+  const today = new Date().toLocaleDateString('en-CA');
+  const keepsRun = Boolean(
+    initialHabit?.challenge
+    && initialHabit.challengeLengthDays === parsedChallengeLength
+    && sameSchedule(initialHabit.days, days.length === 7 ? [] : days),
+  );
+  const runStart = keepsRun ? initialHabit!.challenge!.state.startedAt : today;
+  const scheduledOn = (date: string): boolean =>
+    days.length === 7 || days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+  const projectedEnd = isChallenge && challengeLengthValid
+    ? challengeProjectedEnd(runStart, parsedChallengeLength, scheduledOn, keepsRun ? initialHabit!.challenge!.state.skippedDays.length : 0)
+    : null;
+  const endDateCutsChallenge = Boolean(projectedEnd && endDateValid && trimmedEnd && trimmedEnd < projectedEnd);
+  // No projection means the run can't be shown to fit inside the lookahead
+  // (a long challenge on a sparse schedule), so no end date can be checked
+  // against it. Refused, as the extension's form does, rather than letting a
+  // missing estimate switch the check off.
+  const projectionUnavailable = isChallenge && challengeLengthValid && projectedEnd === null;
+  const canSave = Boolean(name.trim()) && goalValid && challengeLengthValid && endDateValid
+    && !endDateCutsChallenge && !projectionUnavailable;
+
   function handleSave(): void {
     const trimmed = name.trim();
-    if (!trimmed || !goalValid || !challengeLengthValid) return;
+    if (!trimmed || !canSave) return;
     const parsedUnitAmount = parseInt(unitAmount, 10);
     onSave({
       name: trimmed,
@@ -100,8 +146,12 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       // count via its `?? 0` fallback, marking the habit complete before
       // any progress is logged.
       goal: kind === 'counter' ? parsedGoal : null,
-      unit: kind === 'counter' && unit.trim() ? unit.trim() : null,
-      unitAmount: kind === 'counter' && !isNaN(parsedUnitAmount) ? parsedUnitAmount : null,
+      unit: kind === 'counter' && !isTime && unit.trim() ? unit.trim() : null,
+      unitAmount: isTime
+        ? (parseHabitTime(timeStep) || 60)
+        : kind === 'counter' && !isNaN(parsedUnitAmount) ? parsedUnitAmount : null,
+      timeUnit: isTime,
+      endDate: trimmedEnd || null,
       days,
       challengeLengthDays: isChallenge ? parsedChallengeLength : null,
     });
@@ -155,6 +205,44 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
             </View>
 
             {kind === 'counter' && (
+              <View style={styles.kindRow}>
+                <Pressable style={[styles.kindBtn, !timeUnit && styles.kindBtnActive]} onPress={() => setTimeUnit(false)}>
+                  <Text style={[styles.kindBtnText, !timeUnit && styles.kindBtnTextActive]}>Number</Text>
+                </Pressable>
+                <Pressable style={[styles.kindBtn, timeUnit && styles.kindBtnActive]} onPress={() => setTimeUnit(true)}>
+                  <Text style={[styles.kindBtnText, timeUnit && styles.kindBtnTextActive]}>Time</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {isTime && (
+              <View style={styles.counterRow}>
+                <View style={styles.counterInput}>
+                  <Text style={styles.fieldHint}>Daily goal (mm:ss)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="15:00"
+                    placeholderTextColor={colors.textTertiary}
+                    value={timeGoal}
+                    onChangeText={setTimeGoal}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+                <View style={styles.counterInput}>
+                  <Text style={styles.fieldHint}>+/− step (mm:ss)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="1:00"
+                    placeholderTextColor={colors.textTertiary}
+                    value={timeStep}
+                    onChangeText={setTimeStep}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+              </View>
+            )}
+
+            {kind === 'counter' && !isTime && (
               <View style={styles.counterRow}>
                 <TextInput
                   style={[styles.input, styles.counterInput]}
@@ -202,6 +290,32 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
             </View>
             {days.length === 7 && <Text style={styles.everyDayHint}>Every day. Tap a day to customize.</Text>}
 
+            <View style={styles.daysHeader}>
+              <Text style={[styles.label, { marginTop: 18 }]}>End date (optional)</Text>
+              <Pressable onPress={() => setEndDate(trimmedEnd ? '' : today)}>
+                <Text style={[styles.resetText, { marginTop: 18 }]}>{trimmedEnd ? 'Clear' : 'End today'}</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={[styles.input, !endDateValid && styles.inputError]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textTertiary}
+              value={endDate}
+              onChangeText={setEndDate}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+            />
+            {trimmedEnd !== '' && endDateValid && !endDateCutsChallenge && (
+              <Text style={[styles.everyDayHint, { marginTop: -8 }]}>Stops appearing in Today after this date. History is kept.</Text>
+            )}
+            {endDateCutsChallenge && (
+              <Text style={[styles.everyDayHint, styles.challengeLengthError, { marginTop: -8 }]}>
+                The challenge needs until {projectedEnd}. Move the end date or shorten the challenge.
+              </Text>
+            )}
+
             <View style={styles.challengeHeader}>
               <Text style={styles.label}>21-day challenge</Text>
               <Switch value={isChallenge} onValueChange={setIsChallenge} trackColor={{ true: colors.accent }} />
@@ -220,7 +334,12 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
                 <Text style={styles.everyDayHint}>
                   Shows a progress card counting today&apos;s active streak toward the goal. Missing a scheduled day resets it.
                 </Text>
-                {!challengeLengthValid && (
+                {projectionUnavailable && (
+              <Text style={[styles.everyDayHint, styles.challengeLengthError]}>
+                This challenge can&apos;t finish within ten years on this schedule. Shorten it or add days.
+              </Text>
+            )}
+            {!challengeLengthValid && (
                   <Text style={[styles.everyDayHint, styles.challengeLengthError]}>
                     Enter a number from 1 to {MAX_CHALLENGE_LENGTH_DAYS}.
                   </Text>
@@ -229,9 +348,9 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
             )}
 
             <Pressable
-              style={[styles.saveBtn, (!name.trim() || !goalValid || !challengeLengthValid) && styles.saveBtnDisabled]}
+              style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
               onPress={handleSave}
-              disabled={!name.trim() || !goalValid || !challengeLengthValid}
+              disabled={!canSave}
             >
               <Text style={styles.saveBtnText}>Save</Text>
             </Pressable>
@@ -315,6 +434,8 @@ const styles = StyleSheet.create({
   kindBtnTextActive: { color: colors.accent },
   counterRow: { flexDirection: 'row', gap: 8 },
   counterInput: { flex: 1 },
+  fieldHint: { fontSize: 11, color: colors.textTertiary, marginBottom: 4 },
+  inputError: { borderColor: colors.accent },
   daysHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   resetText: { fontSize: 11, color: colors.textTertiary },
   daysRow: { flexDirection: 'row', gap: 4 },

@@ -449,3 +449,23 @@ export const BADGE_KINDS: ReadonlyMap<string, BadgeKindMeta> = new Map([
 export function badgeKind(kind: string): BadgeKindMeta {
   return BADGE_KINDS.get(kind) ?? { noun: kind, describe: count => `${count} earned` };
 }
+
+/**
+ * The habit's end date after its challenge restarts ("Go again", "Start
+ * over").
+ *
+ * An end date the new run can't reach is dropped: kept, it would close the
+ * habit mid-run (or keep an already-closed habit closed), so the run could
+ * never be logged or finished. The user can set a new one afterwards. A date
+ * the run fits inside is kept.
+ */
+export function challengeRestartEndDate(
+  endDate: string | null | undefined,
+  startedAt: string,
+  lengthDays: number,
+  isScheduled: (date: string) => boolean,
+): string | null {
+  if (!endDate) return null;
+  const finish = challengeProjectedEnd(startedAt, lengthDays, isScheduled);
+  return finish !== null && endDate >= finish ? endDate : null;
+}

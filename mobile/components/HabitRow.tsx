@@ -16,6 +16,12 @@ interface HabitRowProps {
   done: boolean;
   count: number;
   goal: number | null;
+  timeUnit?: boolean;
+  unitAmount?: number | null;
+  /** Ended habits: shown with their history, nothing to tick. */
+  readOnly?: boolean;
+  /** Shown under the name instead of the streak, e.g. "Ended Nov 3". */
+  note?: string | undefined;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
   onPress?: () => void;
@@ -36,6 +42,10 @@ export function HabitRow({
   done,
   count,
   goal,
+  timeUnit = false,
+  unitAmount,
+  readOnly = false,
+  note,
   weekFilled,
   todayIndex,
   onPress,
@@ -47,7 +57,7 @@ export function HabitRow({
   const schedule = daysSummary(days);
 
   return (
-    <View style={[styles.card, paused && styles.cardPaused]}>
+    <View style={[styles.card, paused && styles.cardPaused, readOnly && styles.cardReadOnly]}>
       <View style={styles.top}>
         <View style={[styles.icon, !done && styles.iconPending]}>
           <Ionicons name={icon} size={19} color={done ? colors.success : colors.textTertiary} />
@@ -58,12 +68,24 @@ export function HabitRow({
             <Text style={styles.paused}>⚠ Challenge paused</Text>
           ) : (
             <Text style={styles.streak}>
-              {streakLabel}
+              {note ?? streakLabel}
               {schedule ? ` · ${schedule}` : ''}
             </Text>
           )}
         </Pressable>
-        <HabitControl kind={kind} done={done} count={count} goal={goal} onToggle={onToggle} onIncrement={onIncrement} disabled={paused} />
+        {!readOnly && (
+          <HabitControl
+            kind={kind}
+            done={done}
+            count={count}
+            goal={goal}
+            timeUnit={timeUnit}
+            unitAmount={unitAmount}
+            onToggle={onToggle}
+            onIncrement={onIncrement}
+            disabled={paused}
+          />
+        )}
       </View>
       <View style={styles.week}>
         {weekFilled.map((filled, i) => (
@@ -83,6 +105,7 @@ export function HabitRow({
 
 const styles = StyleSheet.create({
   cardPaused: { backgroundColor: colors.warningSoft },
+  cardReadOnly: { opacity: 0.7 },
   paused: { fontSize: 12.5, fontWeight: '600', color: colors.warning, marginTop: 2 },
   card: {
     backgroundColor: colors.surface,

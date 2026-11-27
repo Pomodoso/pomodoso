@@ -7,6 +7,7 @@ import { achievements, habitHistory, habits, meeting, plugin, pluginRecord, pomo
 import { cancelScheduledNotification } from '@/notifications';
 import { uid } from '@/utils/id';
 import { untouchedSeedIds } from '@/utils/seed';
+import { HABIT_FIELDS_UNRECOVERED, PROJECT_END_DATE_UNRECOVERED } from '@/utils/recovery';
 import { markTaskOrderDirty } from '@/utils/sync';
 
 // Tables whose rows carry a workspaceId FK — need special handling on
@@ -36,7 +37,10 @@ const EXCLUDED_SETTINGS = new Set([
   SEED_IDS_KEY,
   WELCOME_SEEN_KEY,
   'sync_apps_full_pull',
-  'sync_project_end_date_pull',
+  // Which rows still hold migration defaults (utils/recovery.ts): this
+  // device's state, and a restore replaces the rows anyway.
+  'project_end_date_unrecovered',
+  'habit_fields_unrecovered',
   // The running break and the focus session it follows (useTimer).
   'break_focus_session',
 ]);
@@ -283,6 +287,14 @@ export async function importBackup(json: string): Promise<void> {
       }
 
       tx.delete(table).run();
+      // The rows the recovery lists describe are being replaced: what the
+      // backup holds is the user's data, not a migration default, so nothing
+      // in this table is waiting on the server any more (utils/recovery.ts).
+      if (name === 'habits') {
+        tx.delete(settings).where(eq(settings.key, HABIT_FIELDS_UNRECOVERED)).run();
+      } else if (name === 'project') {
+        tx.delete(settings).where(eq(settings.key, PROJECT_END_DATE_UNRECOVERED)).run();
+      }
       if (rows.length > 0) {
         // A row keeps its own workspaceId only if it's genuinely live (see
         // liveWorkspaceIds above); otherwise it's remapped to the resolved

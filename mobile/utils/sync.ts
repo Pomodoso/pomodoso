@@ -25,6 +25,7 @@ import {
   type SyncChoice,
 } from '@/utils/syncChoice';
 import { creditedStart } from '@/utils/time';
+import { clearUnrecovered, HABIT_FIELDS_UNRECOVERED, PROJECT_END_DATE_UNRECOVERED, unrecoveredIds } from '@/utils/recovery';
 
 // Ports extension's syncEngine.ts (push/pull/LWW) for the tables mobile
 // actually has.
@@ -51,8 +52,6 @@ const DEVICE_ID_KEY = 'device_id';
 const REMOTE_TIMER_KEY = 'active_timer_remote';
 /** The pull scope that has had its one full pull with apps (see pull()). */
 const APPS_FULL_PULL_KEY = 'sync_apps_full_pull';
-/** The pull scope that has had its one full pull for project end dates. */
-const PROJECT_END_DATE_PULL_KEY = 'sync_project_end_date_pull';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -192,6 +191,10 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   writeExtra(extra, 'createdAt', h.createdAt);
   writeExtra(extra, 'unit', h.unit);
   writeExtra(extra, 'unitAmount', h.unitAmount);
+  // As the extension sends them: present when on or set, null when not (the
+  // extension reads a falsy value as off).
+  writeExtra(extra, 'timeUnit', h.timeUnit ? true : null);
+  writeExtra(extra, 'endDate', h.endDate);
   // Explicitly null when disabled so the clear travels — writeExtra now gives
   // every field that property, which is what this used to special-case.
   writeExtra(extra, 'challengeLengthDays', h.challengeLengthDays);
@@ -239,11 +242,15 @@ async function push(client: TokenApiClient): Promise<void> {
     entities.push(toEntity('workspace', w.id, w.updatedAt, w.deletedAt, { name: w.name, color: w.color }));
   }
 
+  // Rows still waiting on recoverDroppedFields stay back: pushed now, their
+  // migration defaults would overwrite the real values on the server.
+  const projectsWaiting = unrecoveredIds(PROJECT_END_DATE_UNRECOVERED);
   const projects = db
     .select()
     .from(project)
     .where(or(isNull(project.syncedAt), lt(project.syncedAt, project.updatedAt)))
-    .all();
+    .all()
+    .filter(p => !projectsWaiting.has(p.id));
   for (const p of projects) {
     entities.push(
       toEntity('project', p.id, p.updatedAt, p.deletedAt, {
@@ -334,11 +341,13 @@ async function push(client: TokenApiClient): Promise<void> {
   }
 
   // User-global (not workspace-scoped, CLAUDE.md rule 6).
+  const habitsWaiting = unrecoveredIds(HABIT_FIELDS_UNRECOVERED);
   const habitRows = db
     .select()
     .from(habits)
     .where(and(or(isNull(habits.syncedAt), lt(habits.syncedAt, habits.updatedAt)), notSeeded(habits.id, seedIds.habits)))
-    .all();
+    .all()
+    .filter(h => !habitsWaiting.has(h.id));
   for (const h of habitRows) {
     entities.push(
       toEntity('habit', h.id, h.updatedAt, h.deletedAt, {
@@ -550,6 +559,44 @@ async function push(client: TokenApiClient): Promise<void> {
   }
 }
 
+// ─── Recovery ─────────────────────────────────────────────────────────────────
+
+/**
+ * Fills in the fields older builds dropped, on the rows that still hold the
+ * migration's defaults (see utils/recovery.ts), from the server's copy. Only
+ * those fields and only those rows: nothing else is applied, and rows the
+ * user has edited here since are no longer on the list. Runs before a push;
+ * until it has succeeded, push() holds those rows back.
+ */
+async function recoverDroppedFields(client: TokenApiClient): Promise<void> {
+  const projectIds = unrecoveredIds(PROJECT_END_DATE_UNRECOVERED);
+  const habitIds = unrecoveredIds(HABIT_FIELDS_UNRECOVERED);
+  if (projectIds.size === 0 && habitIds.size === 0) return;
+  const response = await pullEntities(client, undefined);
+  for (const e of response.entities) {
+    if (e.table === 'project' && projectIds.has(e.id)) {
+      const endDate = e.data.end_date;
+      db.update(project)
+        .set({ endDate: typeof endDate === 'string' && endDate ? endDate : null })
+        .where(eq(project.id, e.id))
+        .run();
+    } else if (e.table === 'habit' && habitIds.has(e.id)) {
+      const x = (e.data.extra ?? {}) as Record<string, unknown>;
+      db.update(habits)
+        .set({
+          timeUnit: Boolean(x.timeUnit),
+          endDate: typeof x.endDate === 'string' && x.endDate ? x.endDate : null,
+        })
+        .where(eq(habits.id, e.id))
+        .run();
+    }
+  }
+  // Rows the server doesn't have (created offline, never pushed) have nothing
+  // to recover: their defaults are all there is.
+  clearUnrecovered(PROJECT_END_DATE_UNRECOVERED);
+  clearUnrecovered(HABIT_FIELDS_UNRECOVERED);
+}
+
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
 async function pull(client: TokenApiClient, scope: string): Promise<void> {
@@ -557,12 +604,7 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
   // builds ignored plugin rows but still advanced the cursor past them, so an
   // incremental pull would never bring back apps saved before the upgrade.
   const appsPulled = getSetting(APPS_FULL_PULL_KEY) === scope;
-  // And one for project end dates: mobile didn't keep them, so projects that
-  // haven't changed since would never come down again with their date. Those
-  // arrive with the same updated_at the device already has, which applyEntity
-  // normally skips, so it's told to fill the date in (backfillProjectEndDates).
-  const endDatesPulled = getSetting(PROJECT_END_DATE_PULL_KEY) === scope;
-  const since = appsPulled && endDatesPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
+  const since = appsPulled ? readPullCursor(getSetting(SYNC_LAST_PULL_KEY), scope) : undefined;
   const response = await pullEntities(client, since);
 
   // task_order names task ids, so it has to land after the tasks it names —
@@ -573,7 +615,7 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
     (a, b) => Number(a.table === 'task_order') - Number(b.table === 'task_order'),
   );
   for (const entity of ordered) {
-    applyEntity(entity, { backfillProjectEndDates: !endDatesPulled });
+    applyEntity(entity);
   }
 
   // A device that had nothing but demo fixtures and just received an
@@ -583,11 +625,10 @@ async function pull(client: TokenApiClient, scope: string): Promise<void> {
 
   putSetting(SYNC_LAST_PULL_KEY, writePullCursor(scope, response.server_time));
   putSetting(APPS_FULL_PULL_KEY, scope);
-  putSetting(PROJECT_END_DATE_PULL_KEY, scope);
   mergeDuplicatePluginInstalls();
 }
 
-function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boolean } = {}): void {
+function applyEntity(entity: SyncEntity): void {
   const { table, id, data, updated_at, deleted_at } = entity;
   const syncedAt = updated_at;
 
@@ -620,16 +661,7 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
 
     case 'project': {
       const existing = db.select().from(project).where(eq(project.id, id)).all()[0];
-      if (existing && existing.updatedAt >= updated_at) {
-        // The same version the device already has, minus the end date it
-        // used to drop. Only on an equal timestamp: a newer local edit is
-        // the user's, and the next push settles it.
-        const endDate = data.end_date as string | null | undefined;
-        if (opts.backfillProjectEndDates && existing.updatedAt === updated_at && existing.endDate == null && endDate) {
-          db.update(project).set({ endDate }).where(eq(project.id, id)).run();
-        }
-        return;
-      }
+      if (existing && existing.updatedAt >= updated_at) return;
       const workspaceId = (data.workspace_id as string | null) ?? existing?.workspaceId;
       if (!workspaceId) return; // can't satisfy the NOT NULL FK — skip rather than crash
       const row = {
@@ -879,6 +911,10 @@ function applyEntity(entity: SyncEntity, opts: { backfillProjectEndDates?: boole
         goal: data.target_count != null ? (data.target_count as number) : null,
         unit: 'unit' in hExtra ? (hExtra.unit as string | null) : (existing?.unit ?? null),
         unitAmount: 'unitAmount' in hExtra ? (hExtra.unitAmount as number | null) : (existing?.unitAmount ?? null),
+        // Absent means off: the extension leaves both out when they're unset,
+        // and reads them back the same way.
+        timeUnit: Boolean(hExtra.timeUnit),
+        endDate: typeof hExtra.endDate === 'string' && hExtra.endDate ? hExtra.endDate : null,
         challengeLengthDays,
         days: JSON.stringify(days),
         sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),
@@ -1094,6 +1130,9 @@ export async function syncNow(): Promise<void> {
     return;
   }
 
+  // Before anything is pushed: rows still holding migration defaults for the
+  // fields older builds dropped get their real values (utils/recovery.ts).
+  await recoverDroppedFields(client);
   await push(client);
   await pull(client, scope);
   // Same-named workspaces from other installs/devices converge into one

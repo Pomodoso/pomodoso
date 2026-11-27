@@ -25,6 +25,7 @@ import {
   challengeStartOver,
   habitStreakLabel,
   nextAchievementTier,
+  challengeRestartEndDate,
 } from './challenge.ts';
 import type { AchievementKind, ChallengeDay, ChallengeState } from './challenge.ts';
 
@@ -419,4 +420,15 @@ test('a kind named after an inherited object property still falls back', () => {
     assert.equal(typeof meta.describe, 'function', `describe for ${hostile}`);
     assert.equal(meta.describe(2), '2 earned');
   }
+});
+
+test('a restart drops an end date the new run cannot reach', () => {
+  const everyDay = () => true;
+  // Closed already: ended before the restart.
+  assert.equal(challengeRestartEndDate('2026-11-20', '2026-11-27', 21, everyDay), null);
+  // Open, but too soon for 21 days.
+  assert.equal(challengeRestartEndDate('2026-12-01', '2026-11-27', 21, everyDay), null);
+  // Room for the run: kept.
+  assert.equal(challengeRestartEndDate('2026-12-31', '2026-11-27', 21, everyDay), '2026-12-31');
+  assert.equal(challengeRestartEndDate(null, '2026-11-27', 21, everyDay), null);
 });

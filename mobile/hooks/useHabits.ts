@@ -8,8 +8,10 @@ import {
   challengeNeedsDecision,
   challengeProgress,
   challengeRecordCompletion,
+  challengeRestartEndDate,
   challengeStartOver,
   sameSchedule,
+  habitClosed,
   habitStreakLabel,
 } from '@pomodoso/types';
 import type { ChallengeProgress, ChallengeState } from '@pomodoso/types';
@@ -20,6 +22,7 @@ import { db } from '@/db/client';
 import { achievements, habitHistory, habits } from '@/db/schema';
 import { isScheduledToday, parseDays, toMondayFirstDow } from '@/constants/habitDays';
 import { habitLogId, uid } from '@/utils/id';
+import { HABIT_FIELDS_UNRECOVERED, markFieldsChosen } from '@/utils/recovery';
 import { triggerSync } from '@/utils/sync';
 import { useTodayDate } from './useTodayDate';
 
@@ -31,6 +34,11 @@ export interface HabitWithProgress {
   goal: number | null;
   unit: string | null;
   unitAmount: number | null;
+  /** Count, goal and unitAmount are seconds. */
+  timeUnit: boolean;
+  endDate: string | null;
+  /** Past its end date: off Today and the active list, read-only. */
+  closed: boolean;
   days: number[];
   challengeLengthDays: number | null;
   sortOrder: number;
@@ -168,6 +176,8 @@ export interface HabitInput {
   goal: number | null;
   unit: string | null;
   unitAmount: number | null;
+  timeUnit: boolean;
+  endDate: string | null;
   days: number[];
   challengeLengthDays: number | null;
 }
@@ -204,7 +214,10 @@ export function useHabits() {
       days,
       count: todayRow?.count ?? 0,
       done: isDone(h.kind, h.goal, todayRow),
-      scheduledToday: isScheduledToday(days),
+      // A closed habit isn't due anywhere, so it drops off Today with no
+      // separate filter to forget.
+      scheduledToday: isScheduledToday(days) && !habitClosed(h.endDate, today),
+      closed: habitClosed(h.endDate, today),
       streakLabel: habitStreakLabel(pastStreak),
       daysDone,
       challenge,
@@ -280,6 +293,8 @@ export function useHabits() {
         goal: input.goal,
         unit: input.unit,
         unitAmount: input.unitAmount,
+        timeUnit: input.timeUnit,
+        endDate: input.endDate,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
         challengeLengthDays: input.challengeLengthDays,
         sortOrder: maxSortOrder + 1,
@@ -292,6 +307,13 @@ export function useHabits() {
 
   function updateHabit(id: string, input: HabitInput): void {
     const previous = (habitRows ?? []).find(r => r.id === id);
+    // The form starts from what the device holds, which for a habit still
+    // waiting on recovery is the migration's default. Only a change to the
+    // time unit or end date is a choice; a save that leaves them as they were
+    // keeps the habit waiting for its real values (utils/recovery.ts).
+    if (previous && (previous.timeUnit !== input.timeUnit || (previous.endDate ?? null) !== input.endDate)) {
+      markFieldsChosen(HABIT_FIELDS_UNRECOVERED, id);
+    }
     const nextDays = input.days.length === 7 ? [] : input.days;
     // The run survives an edit only while the challenge it belongs to is
     // untouched — same length, same schedule, still on. This is a partial
@@ -310,6 +332,8 @@ export function useHabits() {
         goal: input.goal,
         unit: input.unit,
         unitAmount: input.unitAmount,
+        timeUnit: input.timeUnit,
+        endDate: input.endDate,
         days: JSON.stringify(nextDays),
         challengeLengthDays: input.challengeLengthDays,
         ...(keepsSameRun ? {} : {
@@ -381,12 +405,13 @@ export function useHabits() {
   }, [habitRows, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Challenge actions ──────────────────────────────────────────────────────
-  function writeChallenge(id: string, next: ChallengeState): void {
+  function writeChallenge(id: string, next: ChallengeState, extra: { endDate?: string | null } = {}): void {
     db.update(habits)
       .set({
         challengeStartedAt: next.startedAt,
         challengeCompletedAt: next.completedAt,
         challengeSkippedDays: JSON.stringify(next.skippedDays),
+        ...extra,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(habits.id, id))
@@ -406,7 +431,16 @@ export function useHabits() {
     // The date is read now rather than taken from the render that drew the
     // button: a confirmation can sit open across midnight, and a replacement
     // run that starts yesterday has a missed day before you could have done it.
-    writeChallenge(id, challengeStartOver(habit.challenge.state, todayStr()));
+    const next = challengeStartOver(habit.challenge.state, todayStr());
+    // A restart on a habit whose end date comes before the new run could
+    // finish (or has already passed) reopens it; otherwise the new run would
+    // be hidden from Today and read-only.
+    const scheduled = (date: string) =>
+      habit.days.length === 0 || habit.days.includes(toMondayFirstDow(new Date(date + 'T12:00:00')));
+    const endDate = challengeRestartEndDate(habit.endDate, next.startedAt, next.lengthDays, scheduled);
+    // Reopening the habit is a choice about its end date (utils/recovery.ts).
+    if (endDate !== (habit.endDate ?? null)) markFieldsChosen(HABIT_FIELDS_UNRECOVERED, id);
+    writeChallenge(id, next, { endDate });
   }
 
   /** Drops the challenge framing; the habit carries on with its ordinary streak. */
