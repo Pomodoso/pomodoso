@@ -29,7 +29,7 @@ import {
   nextAchievementTier, sameSchedule,
   challengeCanKeepGoing, challengeDaysOf, challengeDaysShown, challengeEarnsBadge,
   challengeKeepGoing, challengeNeedsDecision, challengeProgress, challengeProgressLabel,
-  challengeRecordCompletion, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
+  challengeRecordCompletion, challengeRestartEndDate, challengeSkipsLeft, challengeStartOver, challengeStreakLabel,
   fmtHabitTime, habitStreakLabel, parseHabitTime, reorderSubset, resolveTaskStatus, taskScheduleLabel, taskStatusOptions,
 } from '@pomodoso/types';
 import type { AchievementTier, ChallengeProgress, ChallengeState } from '@pomodoso/types';
@@ -435,12 +435,13 @@ export function HomeState({
     return views;
   }, [challengeHabits, challengeStateOf, habitHistoryByHabit, today]);
   // ── Challenge actions ──────────────────────────────────────────────────────
-  const writeChallenge = useCallback(async (id: string, next: ChallengeState) => {
+  const writeChallenge = useCallback(async (id: string, next: ChallengeState, extra: { endDate?: string | undefined } = {}) => {
     await db.habits.update(id, {
       challengeStartedAt: next.startedAt,
       challengeSkippedDays: next.skippedDays,
       // Dexie's update merges, so an explicit undefined is what clears the field.
       challengeCompletedAt: next.completedAt ?? undefined,
+      ...extra,
       updatedAt: now(),
     });
     triggerSync();
@@ -455,8 +456,17 @@ export function HomeState({
   const handleChallengeStartOver = useCallback((id: string) => {
     const view = challengeViews.get(id);
     if (!view) return;
-    void writeChallenge(id, challengeStartOver(view.state, today));
-  }, [challengeViews, writeChallenge, today]);
+    const next = challengeStartOver(view.state, today);
+    // A restart on a habit whose end date comes before the new run could
+    // finish (or has already passed) reopens it; otherwise the new run would
+    // be hidden from Today and read-only.
+    const habit = habits.find(h => h.id === id);
+    const scheduled = (date: string) =>
+      !habit || habit.days.length === 0 || habit.days.includes((new Date(date + 'T12:00:00').getDay() + 6) % 7);
+    void writeChallenge(id, next, {
+      endDate: challengeRestartEndDate(habit?.endDate, next.startedAt, next.lengthDays, scheduled) ?? undefined,
+    });
+  }, [challengeViews, writeChallenge, today, habits]);
 
   // "Keep as habit" drops the challenge framing entirely; the habit carries on
   // with its ordinary streak, which is what the rest of the Habits tab shows.

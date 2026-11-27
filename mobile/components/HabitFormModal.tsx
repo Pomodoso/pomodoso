@@ -125,7 +125,13 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
     ? challengeProjectedEnd(runStart, parsedChallengeLength, scheduledOn, keepsRun ? initialHabit!.challenge!.state.skippedDays.length : 0)
     : null;
   const endDateCutsChallenge = Boolean(projectedEnd && endDateValid && trimmedEnd && trimmedEnd < projectedEnd);
-  const canSave = Boolean(name.trim()) && goalValid && challengeLengthValid && endDateValid && !endDateCutsChallenge;
+  // No projection means the run can't be shown to fit inside the lookahead
+  // (a long challenge on a sparse schedule), so no end date can be checked
+  // against it. Refused, as the extension's form does, rather than letting a
+  // missing estimate switch the check off.
+  const projectionUnavailable = isChallenge && challengeLengthValid && projectedEnd === null;
+  const canSave = Boolean(name.trim()) && goalValid && challengeLengthValid && endDateValid
+    && !endDateCutsChallenge && !projectionUnavailable;
 
   function handleSave(): void {
     const trimmed = name.trim();
@@ -328,7 +334,12 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
                 <Text style={styles.everyDayHint}>
                   Shows a progress card counting today&apos;s active streak toward the goal. Missing a scheduled day resets it.
                 </Text>
-                {!challengeLengthValid && (
+                {projectionUnavailable && (
+              <Text style={[styles.everyDayHint, styles.challengeLengthError]}>
+                This challenge can&apos;t finish within ten years on this schedule. Shorten it or add days.
+              </Text>
+            )}
+            {!challengeLengthValid && (
                   <Text style={[styles.everyDayHint, styles.challengeLengthError]}>
                     Enter a number from 1 to {MAX_CHALLENGE_LENGTH_DAYS}.
                   </Text>

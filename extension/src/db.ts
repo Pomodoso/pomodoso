@@ -113,7 +113,7 @@ export interface HabitRow extends SyncMeta {
   unit?: string;
   unitAmount?: number;
   timeUnit?: boolean;       // goal/value are seconds, rendered as mm:ss
-  endDate?: string;         // YYYY-MM-DD — hidden from Today after this date
+  endDate?: string | undefined; // YYYY-MM-DD — hidden from Today after this date
   // `| undefined` spelled out on all four: clearing a challenge (Keep as habit,
   // Go again) writes undefined through Dexie's UpdateSpec, which `?:` alone
   // forbids under exactOptionalPropertyTypes.

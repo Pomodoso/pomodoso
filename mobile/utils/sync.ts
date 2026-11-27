@@ -635,11 +635,11 @@ function applyEntity(
     case 'project': {
       const existing = db.select().from(project).where(eq(project.id, id)).all()[0];
       if (existing && existing.updatedAt >= updated_at) {
-        // The same version the device already has, minus the end date it
-        // used to drop. Only on an equal timestamp: a newer local edit is
-        // the user's, and the next push settles it.
+        // The same version the device already has (or a newer local edit of
+        // it), minus the end date it used to drop. Filled in only where this
+        // device has none, which before the upgrade it never could.
         const endDate = data.end_date as string | null | undefined;
-        if (opts.backfillProjectEndDates && existing.updatedAt === updated_at && existing.endDate == null && endDate) {
+        if (opts.backfillProjectEndDates && existing.endDate == null && endDate) {
           db.update(project).set({ endDate }).where(eq(project.id, id)).run();
         }
         return;
@@ -880,18 +880,16 @@ function applyEntity(
     case 'habit': {
       const existing = db.select().from(habits).where(eq(habits.id, id)).all()[0];
       if (existing && existing.updatedAt >= updated_at) {
-        // The same version the device already has, minus the two fields it
-        // used to drop. Only on an equal timestamp: a newer local edit is the
-        // user's, and the next push settles it.
+        // The same version the device already has (or a newer local edit of
+        // it), minus the two fields it used to drop. Filled in only where
+        // this device holds the default, which before the upgrade was all it
+        // could hold, so a local edit keeps everything else it changed.
         const x = (data.extra ?? {}) as Record<string, unknown>;
-        if (opts.backfillHabitFields && existing.updatedAt === updated_at && (x.timeUnit || x.endDate)) {
-          db.update(habits)
-            .set({
-              timeUnit: Boolean(x.timeUnit),
-              endDate: typeof x.endDate === 'string' && x.endDate ? x.endDate : null,
-            })
-            .where(eq(habits.id, id))
-            .run();
+        if (opts.backfillHabitFields) {
+          const fill: { timeUnit?: boolean; endDate?: string } = {};
+          if (!existing.timeUnit && x.timeUnit) fill.timeUnit = true;
+          if (existing.endDate == null && typeof x.endDate === 'string' && x.endDate) fill.endDate = x.endDate;
+          if (Object.keys(fill).length > 0) db.update(habits).set(fill).where(eq(habits.id, id)).run();
         }
         return;
       }
@@ -1127,8 +1125,18 @@ export async function syncNow(): Promise<void> {
     return;
   }
 
-  await push(client);
-  await pull(client, scope);
+  // Until this account has had its one recovery pull for fields mobile used to
+  // drop (project end dates, habit time and end dates), pull first. Pushing
+  // first would send this device's defaults for them as if the user had
+  // cleared them, and the server would keep that over the real values.
+  const recovering = getSetting(PROJECT_END_DATE_PULL_KEY) !== scope || getSetting(HABIT_FIELDS_PULL_KEY) !== scope;
+  if (recovering) {
+    await pull(client, scope);
+    await push(client);
+  } else {
+    await push(client);
+    await pull(client, scope);
+  }
   // Same-named workspaces from other installs/devices converge into one
   // canonical id; if that moved anything, push the result right away
   // (mirrors extension's syncAll).

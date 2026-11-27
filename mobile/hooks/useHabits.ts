@@ -8,6 +8,7 @@ import {
   challengeNeedsDecision,
   challengeProgress,
   challengeRecordCompletion,
+  challengeRestartEndDate,
   challengeStartOver,
   sameSchedule,
   habitClosed,
@@ -396,12 +397,13 @@ export function useHabits() {
   }, [habitRows, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Challenge actions ──────────────────────────────────────────────────────
-  function writeChallenge(id: string, next: ChallengeState): void {
+  function writeChallenge(id: string, next: ChallengeState, extra: { endDate?: string | null } = {}): void {
     db.update(habits)
       .set({
         challengeStartedAt: next.startedAt,
         challengeCompletedAt: next.completedAt,
         challengeSkippedDays: JSON.stringify(next.skippedDays),
+        ...extra,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(habits.id, id))
@@ -421,7 +423,13 @@ export function useHabits() {
     // The date is read now rather than taken from the render that drew the
     // button: a confirmation can sit open across midnight, and a replacement
     // run that starts yesterday has a missed day before you could have done it.
-    writeChallenge(id, challengeStartOver(habit.challenge.state, todayStr()));
+    const next = challengeStartOver(habit.challenge.state, todayStr());
+    // A restart on a habit whose end date comes before the new run could
+    // finish (or has already passed) reopens it; otherwise the new run would
+    // be hidden from Today and read-only.
+    const scheduled = (date: string) =>
+      habit.days.length === 0 || habit.days.includes(toMondayFirstDow(new Date(date + 'T12:00:00')));
+    writeChallenge(id, next, { endDate: challengeRestartEndDate(habit.endDate, next.startedAt, next.lengthDays, scheduled) });
   }
 
   /** Drops the challenge framing; the habit carries on with its ordinary streak. */
