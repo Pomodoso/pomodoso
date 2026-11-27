@@ -411,8 +411,14 @@ function AppContent() {
     setLastSeenDate(today);
     if (!lastSeenDate) return; // first run — just record today, don't purge
     void (async () => {
-      const orders = await db.taskOrders.toArray();
-      for (const order of orders) {
+      const wsIds = (await db.taskOrders.toArray()).map(o => o.wsId);
+      for (const wsId of wsIds) {
+        // Read, check and write in one transaction: the scheduled-task step
+        // appends to these same lists on popup open, and a cleanup that read
+        // the order before it and wrote after would drop that addition.
+        await db.transaction('rw', [db.tasks, db.taskOrders], async () => {
+        const order = await db.taskOrders.get(wsId);
+        if (!order) return;
         const shouldRemove = async (id: string) => {
           const t = await db.tasks.get(id);
           if (!t) return true;
@@ -428,8 +434,9 @@ function AppContent() {
         const newPriorityIds = (await Promise.all(order.priorityIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
         const newTodayIds    = (await Promise.all(order.todayIds.map(async id => ({ id, remove: await shouldRemove(id) })))).filter(x => !x.remove).map(x => x.id);
         if (newPriorityIds.length !== order.priorityIds.length || newTodayIds.length !== order.todayIds.length) {
-          await putWsOrder(order.wsId, { priorityIds: newPriorityIds, todayIds: newTodayIds });
+          await putWsOrder(order.wsId, { priorityIds: newPriorityIds, todayIds: newTodayIds, updatedAt: now() });
         }
+        });
       }
     })();
   }, [dbLoading, lastSeenDateLoading]); // eslint-disable-line react-hooks/exhaustive-deps
