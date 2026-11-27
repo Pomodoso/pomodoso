@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
 
 import {
   fieldOptions,
@@ -44,6 +44,17 @@ export interface TodayWidgetProps {
   onOpen(): void;
   /** Opens one of the app's views, or a record's screen (the `list` widget's rows). */
   open?: ((view: string, record?: string) => void) | undefined;
+  /**
+   * Applied to the card's own element: what a sortable list needs (its ref,
+   * transform and pointer listeners). On the card rather than on a wrapper
+   * because the card decides whether it spans both columns, and a wrapper
+   * would be the grid item instead.
+   */
+  container?: {
+    ref?: (el: HTMLElement | null) => void;
+    style?: CSSProperties | undefined;
+    props?: HTMLAttributes<HTMLDivElement> | undefined;
+  } | undefined;
 }
 
 /**
@@ -386,17 +397,21 @@ function num(v: PluginValue): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function Card({ manifest, label, onOpen, children, wide = false }: TodayWidgetProps & { label: string; children: ReactNode; wide?: boolean }) {
+function Card({ manifest, label, onOpen, children, wide = false, container }: TodayWidgetProps & { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <div
+      {...container?.props}
+      ref={container?.ref}
       role="button"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // A sortable list's keys (Space to pick the card up) come first.
+        container?.props?.onKeyDown?.(e);
         // Only the card itself: Enter on its + or a chip does that control's action.
-        if (e.target === e.currentTarget && e.key === 'Enter') onOpen();
+        if (!e.defaultPrevented && e.target === e.currentTarget && e.key === 'Enter') onOpen();
       }}
-      style={{ ...cardStyle, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, ...(wide ? { gridColumn: '1 / -1' } : {}) }}
+      style={{ ...cardStyle, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, ...(wide ? { gridColumn: '1 / -1' } : {}), ...container?.style }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
         <PluginIcon icon={manifest.icon} name={manifest.name} size={18} />

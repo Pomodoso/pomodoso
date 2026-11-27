@@ -19,6 +19,8 @@ interface HabitRowProps {
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
   onPress?: () => void;
+  /** Long-press: picks the row up to move it (ReorderableSection). */
+  onLongPress?: () => void;
   onToggle: () => void;
   onIncrement: (delta: number) => void;
   /** A challenge waiting on a missed day: the control is locked until it's answered. */
@@ -37,6 +39,7 @@ export function HabitRow({
   weekFilled,
   todayIndex,
   onPress,
+  onLongPress,
   onToggle,
   onIncrement,
   paused = false,
@@ -49,7 +52,7 @@ export function HabitRow({
         <View style={[styles.icon, !done && styles.iconPending]}>
           <Ionicons name={icon} size={19} color={done ? colors.success : colors.textTertiary} />
         </View>
-        <Pressable style={styles.nameBlock} onPress={onPress} disabled={!onPress}>
+        <Pressable style={styles.nameBlock} onPress={onPress} onLongPress={onLongPress} disabled={!onPress && !onLongPress}>
           <Text style={styles.name}>{name}</Text>
           {paused ? (
             <Text style={styles.paused}>⚠ Challenge paused</Text>

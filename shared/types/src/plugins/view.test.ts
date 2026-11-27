@@ -15,7 +15,10 @@ import {
   missingFields,
   optionsSettingKey,
   showsOnToday,
+  sortTodayApps,
+  todayOrderChanges,
   SHOW_ON_TODAY_KEY,
+  TODAY_ORDER_KEY,
 } from './view.ts';
 
 function parsed(data: unknown): PluginManifest {
@@ -174,4 +177,26 @@ test('report hooks fill their templates', () => {
   const withData = createEvaluator(m, { ...ctx, records: [...lastWeek, ...thisWeek] });
   assert.equal(reportLines(m, 'weekly_report', withData, ctx.now)[0], 'Cigarettes: 88 this week (-12% vs last week)');
   assert.deepEqual(reportLines(m, 'daily_report', ev, ctx.now), []);
+});
+
+test('Today apps follow the stored order, unplaced ones after, oldest first', () => {
+  const app = (id: string, createdAt: string, order?: number) =>
+    ({ id, createdAt, settings: order === undefined ? {} : { [TODAY_ORDER_KEY]: order } });
+  const sorted = sortTodayApps([
+    app('new', '2026-03-01'),
+    app('b', '2026-01-02', 1),
+    app('old', '2026-02-01'),
+    app('a', '2026-01-05', 0),
+  ]);
+  assert.deepEqual(sorted.map(a => a.id), ['a', 'b', 'old', 'new']);
+});
+
+test('a reorder only rewrites the apps whose place changed', () => {
+  const apps = [
+    { id: 'a', settings: { [TODAY_ORDER_KEY]: 0 } },
+    { id: 'b', settings: { [TODAY_ORDER_KEY]: 1 } },
+    { id: 'c', settings: {} },
+  ];
+  assert.deepEqual(todayOrderChanges(['a', 'c', 'b'], apps), [{ id: 'c', order: 1 }, { id: 'b', order: 2 }]);
+  assert.deepEqual(todayOrderChanges(['a', 'b'], apps), []);
 });

@@ -79,7 +79,7 @@ export default function HabitsScreen() {
               </Text>
             </Pressable>
           }
-          renderItem={habit => (
+          renderItem={(habit, r) => (
             <HabitRow
               icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
               name={habit.name}
@@ -92,6 +92,7 @@ export default function HabitsScreen() {
               weekFilled={habit.weekFilled}
               todayIndex={toMondayFirstDow(new Date())}
               onPress={() => openEdit(habit)}
+              onLongPress={r.startReorder}
               onToggle={() => toggleHabit(habit.id)}
               onIncrement={delta => incrementHabit(habit.id, delta)}
               paused={habit.paused}

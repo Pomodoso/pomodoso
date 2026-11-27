@@ -120,7 +120,7 @@ export default function TasksScreen() {
                 groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
-                renderItem={t => (
+                renderItem={(t, r) => (
                   <TaskRow
                     title={t.title}
                     ticket={t.ticketRef ?? undefined}
@@ -128,6 +128,7 @@ export default function TasksScreen() {
                     status={t.status}
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
+                    onLongPress={r.startReorder}
                     onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
                     onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />
@@ -149,7 +150,7 @@ export default function TasksScreen() {
                 groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
-                renderItem={t => (
+                renderItem={(t, r) => (
                   <TaskRow
                     title={t.title}
                     ticket={t.ticketRef ?? undefined}
@@ -157,6 +158,7 @@ export default function TasksScreen() {
                     status={t.status}
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
+                    onLongPress={r.startReorder}
                     onPlayPress={canStart && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
                     onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />
@@ -179,7 +181,7 @@ export default function TasksScreen() {
                 groupOf={t => t.workspaceId}
                 keyOf={t => t.id}
                 onReorder={reorderTasks}
-                renderItem={t => (
+                renderItem={(t, r) => (
                   <TaskRow
                     title={t.title}
                     ticket={t.ticketRef ?? undefined}
@@ -188,6 +190,7 @@ export default function TasksScreen() {
                     projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                     scheduledLabel={t.scheduledFor ? taskScheduleLabel(t.scheduledFor, today) : undefined}
                     onPress={() => router.push(`/task/${t.id}`)}
+                    onLongPress={r.startReorder}
                     onPlayPress={canStart ? () => requestStart(t.id, t.title) : undefined}
                     onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                   />

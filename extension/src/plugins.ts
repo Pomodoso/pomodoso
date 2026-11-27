@@ -17,6 +17,7 @@ import {
   parsePluginFile,
   serializePluginExport,
   SHOW_ON_TODAY_KEY,
+  TODAY_ORDER_KEY,
   type PluginEvaluator,
   type PluginManifest,
   type PluginIssue,
@@ -109,6 +110,25 @@ export async function updatePluginSetting(pluginId: string, key: string, value: 
     if (!plugin || plugin.deletedAt) return;
     const settings = withinLimit({ ...plugin.settings, [key]: value }, 'These settings');
     await db.plugins.update(pluginId, { settings, updatedAt: now(), syncedAt: undefined });
+  });
+}
+
+/**
+ * Stores Today positions for several apps at once: all of them or none. Each
+ * app's settings are checked against the size limit before anything is
+ * written, so a move can't stop halfway and leave an order nobody chose.
+ */
+export async function setTodayOrder(changes: readonly { id: string; order: number }[]): Promise<void> {
+  if (changes.length === 0) return;
+  await db.transaction('rw', db.plugins, async () => {
+    const ts = now();
+    const writes: { id: string; settings: Record<string, unknown> }[] = [];
+    for (const { id, order } of changes) {
+      const plugin = await db.plugins.get(id);
+      if (!plugin || plugin.deletedAt) continue;
+      writes.push({ id, settings: withinLimit({ ...plugin.settings, [TODAY_ORDER_KEY]: order }, `${plugin.manifest.name}'s settings`) });
+    }
+    for (const w of writes) await db.plugins.update(w.id, { settings: w.settings, updatedAt: ts, syncedAt: undefined });
   });
 }
 

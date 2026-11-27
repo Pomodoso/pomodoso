@@ -257,7 +257,7 @@ export default function HomeScreen() {
           groupOf={t => t.workspaceId}
           keyOf={t => t.id}
           onReorder={reorderTasks}
-          renderItem={t => (
+          renderItem={(t, r) => (
             <TaskRow
               title={t.title}
               ticket={t.ticketRef ?? undefined}
@@ -265,6 +265,7 @@ export default function HomeScreen() {
               status={t.status}
               projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
               onPress={() => router.push(`/task/${t.id}`)}
+              onLongPress={r.startReorder}
               onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
               onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
             />
@@ -284,7 +285,7 @@ export default function HomeScreen() {
               groupOf={t => t.workspaceId}
               keyOf={t => t.id}
               onReorder={reorderTasks}
-              renderItem={t => (
+              renderItem={(t, r) => (
                 <TaskRow
                   title={t.title}
                   ticket={t.ticketRef ?? undefined}
@@ -292,6 +293,7 @@ export default function HomeScreen() {
                   status={t.status}
                   projectColor={t.projectId ? projectById.get(t.projectId)?.color : undefined}
                   onPress={() => router.push(`/task/${t.id}`)}
+                  onLongPress={r.startReorder}
                   onPlayPress={(display.status === 'idle' || canAttach) && !isResolvedStatus(t.status) ? () => requestStart(t.id, t.title) : undefined}
                   onStatusPress={() => requestStatus(t.id, t.title, t.status, t.statusId)}
                 />
@@ -318,7 +320,7 @@ export default function HomeScreen() {
               // order entirely. Habits are user-global, so this order is the
               // same in every workspace and under "All".
               onReorder={ids => reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
-              renderItem={habit => (
+              renderItem={(habit, r) => (
                 <View style={[styles.habitRow, habit.paused && styles.habitRowPaused]}>
                   <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
                     <Ionicons
@@ -327,7 +329,7 @@ export default function HomeScreen() {
                       color={habit.done ? colors.success : colors.textTertiary}
                     />
                   </View>
-                  <View style={styles.habitNameBlock}>
+                  <Pressable style={styles.habitNameBlock} onLongPress={r.startReorder}>
                     <Text style={styles.habitName}>{habit.name}</Text>
                     {habit.paused && <Text style={styles.habitPaused}>⚠ Challenge paused</Text>}
                     {habit.kind === 'counter' && habit.unit && habit.unitAmount && (
@@ -336,7 +338,7 @@ export default function HomeScreen() {
                         {habit.unit}
                       </Text>
                     )}
-                  </View>
+                  </Pressable>
                   <HabitControl
                     kind={habit.kind}
                     done={habit.done}

@@ -10,6 +10,7 @@
 
 - **New Apps tab** — Browse the app directory and install apps: Quit smoking, Kanban, Bookshelf, Year in Pixels and more. Each opens with all its screens, forms, charts and boards, and its own settings. Signed out, apps open read-only.
 - **Apps on Today** — Apps that offer it show a small card on Home: tap + on a counter, pick today's state, type the page you're on.
+- **Reorder apps on Today** — Long-press an app's card, then move it with ‹ ›. The order is shared with the extension.
 - **Apps can ask a quick question** — During a break, one app may ask something like "Did you smoke during this break?"; apps that track your days ask about yesterday. Every question can be dismissed.
 - **Apps sync** — With sync, your apps and their entries follow you between the phone and the extension.
 
@@ -20,6 +21,7 @@
 
 ### Tasks
 
+- **Long-press to move** — Long-press a task or a habit to start moving it, with that row already picked. No need to find the Reorder button first.
 - **Schedule a task for a day** — In a task's detail, **Scheduled**: tomorrow, next Monday or any date. It waits in the backlog with its day shown and moves into Today on that day, or the next time you open the app if you didn't that day. Scheduling a later day takes it out of Today for now.
 - **Formatted descriptions** — Bold, italic, lists and code in a task's description, with a preview.
 - **Task order under All workspaces** — Each workspace keeps the order you set, here and in the extension.

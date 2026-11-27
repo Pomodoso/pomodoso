@@ -5,6 +5,7 @@
 ### Today
 
 - **The task for the page you're on stands out** — When the open tab is a task's ticket or one of its links, that task is highlighted on Today with "📍 On this page". If several tasks share the link, they all are.
+- **Reorder apps on Today** — Drag an app's card to where you want it. The order follows you to your other devices.
 - **Schedule a task for a day** — In a task's detail, **Schedule for a day**: tomorrow, next Monday or any date. It waits in the backlog with a 📅 and moves into Today on that day, or the next time you open Pomodoso if you didn't that day. Scheduling a later day takes it out of Today for now.
 
 ### Tasks
