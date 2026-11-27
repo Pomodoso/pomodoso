@@ -846,6 +846,9 @@ function applyEntity(entity: SyncEntity): void {
       if (existing && existing.updatedAt >= updated_at) return;
       const days = habitDaysFromServer(String(data.frequency ?? 'daily'), data.frequency_days as string | null | undefined);
       const hExtra = (data.extra ?? {}) as Record<string, unknown>;
+      const challengeLengthDays = 'challengeLengthDays' in hExtra
+        ? (hExtra.challengeLengthDays as number | null)
+        : (existing?.challengeLengthDays ?? null);
       const row = {
         id,
         name: String(data.name ?? ''),
@@ -854,12 +857,18 @@ function applyEntity(entity: SyncEntity): void {
         goal: data.target_count != null ? (data.target_count as number) : null,
         unit: 'unit' in hExtra ? (hExtra.unit as string | null) : (existing?.unit ?? null),
         unitAmount: 'unitAmount' in hExtra ? (hExtra.unitAmount as number | null) : (existing?.unitAmount ?? null),
-        challengeLengthDays: 'challengeLengthDays' in hExtra ? (hExtra.challengeLengthDays as number | null) : (existing?.challengeLengthDays ?? null),
+        challengeLengthDays,
         days: JSON.stringify(days),
         sortOrder: typeof hExtra.sortOrder === 'number' ? hExtra.sortOrder : (existing?.sortOrder ?? 0),
-        challengeStartedAt: 'challengeStartedAt' in hExtra
-          ? (hExtra.challengeStartedAt as string | null)
-          : (existing?.challengeStartedAt ?? null),
+        // No challenge, no run. Older extension builds leave the key out when
+        // a challenge is turned off, and keeping the local value then meant a
+        // challenge switched back on later was counted from the old run's
+        // start, days before it existed.
+        challengeStartedAt: !challengeLengthDays
+          ? null
+          : 'challengeStartedAt' in hExtra
+            ? (hExtra.challengeStartedAt as string | null)
+            : (existing?.challengeStartedAt ?? null),
         challengeCompletedAt: 'challengeCompletedAt' in hExtra
           ? (hExtra.challengeCompletedAt as string | null)
           : (existing?.challengeCompletedAt ?? null),

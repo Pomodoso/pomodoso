@@ -494,7 +494,12 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   // "the user cleared this", which would wipe a real order held by another
   // device. A habit with no local order simply omits the field.
   writeExtra(extra, 'sortOrder', h.sortOrder);
-  writeExtra(extra, 'challengeStartedAt', h.challengeStartedAt);
+  // Null once the challenge is off, so the clear travels: left out, a device
+  // that keeps absent keys (mobile) held on to the old start date, and a
+  // challenge switched back on later was counted from the old run's start,
+  // days before it existed. While a challenge is on but not stamped yet it
+  // stays omitted, so it can't wipe a start another device already set.
+  writeExtra(extra, 'challengeStartedAt', h.challengeLengthDays ? h.challengeStartedAt : null);
   // Explicitly null when absent, so clearing it (Go again, Start over) travels
   // rather than leaving another device showing a run as finished.
   writeExtra(extra, 'challengeCompletedAt', h.challengeCompletedAt ?? null);

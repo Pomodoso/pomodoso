@@ -432,6 +432,16 @@ function initDb(): void {
   // rather than from today: starting everyone over on upgrade would throw away
   // exactly the progress this change exists to protect. The walk needs history,
   // so it runs in JS below rather than in SQL.
+  //
+  // The backfill runs once, on the launch that adds the columns, and never
+  // again. It used to run on every launch, which turned it into a second way
+  // of stamping a start date: a challenge switched on just before the app was
+  // closed, or pulled from another device before useHabits stamped it, reached
+  // the next launch with no start date, and the walk dated it from the start
+  // of the habit's existing streak. Days done before the challenge existed
+  // then counted toward it. Any run without a start date after this upgrade is
+  // a new one, and useHabits starts it today.
+  let addedChallengeColumns = false;
   for (const ddl of [
     'ALTER TABLE habits ADD COLUMN challenge_started_at TEXT;',
     'ALTER TABLE habits ADD COLUMN challenge_completed_at TEXT;',
@@ -439,11 +449,12 @@ function initDb(): void {
   ]) {
     try {
       expoDb.execSync(ddl);
+      if (ddl.includes('challenge_started_at')) addedChallengeColumns = true;
     } catch {
       /* column already present */
     }
   }
-  backfillChallengeStarts(expoDb);
+  if (addedChallengeColumns) backfillChallengeStarts(expoDb);
 
   // Seeds one real-UUID workspace on first run — not a sentinel string id
   // like extension's old 'default' (a migration scar there, not a design
