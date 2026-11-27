@@ -38,6 +38,8 @@ export interface TodayWidgetProps {
   setDay(collection: string, day: string, data: Record<string, unknown>): void | Promise<unknown>;
   onOpen(): void;
   open?: ((view: string, record?: string) => void) | undefined;
+  /** Long-press on the card: picks it up to move it among the Today cards. */
+  onLongPress?: (() => void) | undefined;
 }
 
 /** Whether a widget spans the whole row rather than half of it. */
@@ -335,9 +337,9 @@ function num(v: PluginValue): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function Card({ manifest, label, onOpen, children }: TodayWidgetProps & { label: string; children: ReactNode }): React.JSX.Element {
+function Card({ manifest, label, onOpen, onLongPress, children }: TodayWidgetProps & { label: string; children: ReactNode }): React.JSX.Element {
   return (
-    <Pressable onPress={onOpen} style={[ui.card, { paddingHorizontal: 12, paddingVertical: 10, gap: 8 }]}>
+    <Pressable onPress={onOpen} onLongPress={onLongPress} style={[ui.card, { paddingHorizontal: 12, paddingVertical: 10, gap: 8 }]}>
       <View style={[s.row, { gap: 6 }]}>
         <PluginIcon icon={manifest.icon} name={manifest.name} size={20} />
         <Text style={[ui.label, { flex: 1, fontSize: 12 }]} numberOfLines={1}>{label}</Text>

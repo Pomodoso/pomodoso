@@ -51,6 +51,52 @@ export function showsOnToday(manifest: PluginManifest, settings: Record<string, 
   return manifest.today !== undefined && settings?.[SHOW_ON_TODAY_KEY] === true;
 }
 
+/**
+ * Settings key for an app's place among the Today cards; reserved like
+ * SHOW_ON_TODAY_KEY. Kept in the app's own settings so it syncs with the app
+ * and survives updates of its file.
+ */
+export const TODAY_ORDER_KEY = 'today:order';
+
+function todayOrderOf(app: { settings?: Record<string, unknown> | undefined }): number | null {
+  const v = app.settings?.[TODAY_ORDER_KEY];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Today's apps in the user's order. Apps never placed (new installs, or from
+ * before ordering existed) follow the placed ones, oldest first, which is the
+ * order Today used to show.
+ */
+export function sortTodayApps<T extends { createdAt: string; settings?: Record<string, unknown> | undefined }>(apps: readonly T[]): T[] {
+  return [...apps].sort((a, b) => {
+    const oa = todayOrderOf(a);
+    const ob = todayOrderOf(b);
+    if (oa !== null && ob !== null && oa !== ob) return oa - ob;
+    if (oa !== null && ob === null) return -1;
+    if (oa === null && ob !== null) return 1;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
+}
+
+/**
+ * The positions to store after a reorder: each id's index, for the apps whose
+ * stored position differs. Writing only those keeps a move from touching (and
+ * re-syncing) every app.
+ */
+export function todayOrderChanges(
+  orderedIds: readonly string[],
+  apps: readonly { id: string; settings?: Record<string, unknown> | undefined }[],
+): { id: string; order: number }[] {
+  const byId = new Map(apps.map(a => [a.id, a]));
+  const changes: { id: string; order: number }[] = [];
+  orderedIds.forEach((id, order) => {
+    const app = byId.get(id);
+    if (app && todayOrderOf(app) !== order) changes.push({ id, order });
+  });
+  return changes;
+}
+
 function isOptionList(v: unknown): v is PluginOption[] {
   return Array.isArray(v) && v.length > 0 && v.every((o) => o !== null && typeof o === 'object' && typeof (o as PluginOption).value === 'string' && typeof (o as PluginOption).label === 'string');
 }

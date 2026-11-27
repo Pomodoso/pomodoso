@@ -11,7 +11,9 @@ interface ReorderableSectionProps<T> {
   keyOf: (item: T) => string;
   /** The new order of THIS section's ids, top to bottom. */
   onReorder: (orderedIds: string[]) => void;
-  renderItem: (item: T) => ReactNode;
+  /** `startReorder` is for the row's long-press: it enters move mode with
+   *  that row picked, so the arrows don't have to be hunted for first. */
+  renderItem: (item: T, helpers: { startReorder: () => void }) => ReactNode;
   /** Optional per-item action offered only while reordering — the Today
    *  screen uses it to promote a task into Priorities. Returning false means
    *  the move was refused (e.g. the priorities cap is full). */
@@ -29,7 +31,9 @@ interface ReorderableSectionProps<T> {
 }
 
 /**
- * A titled list whose rows can be reordered.
+ * A titled list whose rows can be reordered. Long-pressing a row (through
+ * renderItem's `startReorder`) enters move mode with it picked; the header's
+ * Reorder toggle does the same for the whole list.
  *
  * Deliberately not drag-and-drop: that needs react-native-gesture-handler +
  * a draggable-list package, and CLAUDE.md asks for new top-level deps to be
@@ -51,7 +55,19 @@ export function ReorderableSection<T>({
   groupOf,
 }: ReorderableSectionProps<T>) {
   const [editing, setEditing] = useState(false);
+  // The row a long-press picked: highlighted while moving, so it's clear
+  // which one the arrows are about to move.
+  const [picked, setPicked] = useState<string | null>(null);
   const canReorder = items.length > 1;
+  const startReorder = (key: string) => {
+    if (!canReorder) return;
+    setEditing(true);
+    setPicked(key);
+  };
+  const stopReorder = () => {
+    setEditing(false);
+    setPicked(null);
+  };
 
   function canMove(index: number, delta: number): boolean {
     const target = index + delta;
@@ -78,7 +94,7 @@ export function ReorderableSection<T>({
         <View style={styles.headerActions}>
           {!editing && headerRight}
           {canReorder && (
-            <Pressable style={[styles.toggle, editing && styles.toggleActive]} onPress={() => setEditing(v => !v)} hitSlop={6}>
+            <Pressable style={[styles.toggle, editing && styles.toggleActive]} onPress={() => (editing ? stopReorder() : setEditing(true))} hitSlop={6}>
               <Ionicons
                 name={editing ? 'checkmark' : 'swap-vertical'}
                 size={12}
@@ -91,9 +107,9 @@ export function ReorderableSection<T>({
       </View>
 
       {items.map((item, index) => (
-        <View key={keyOf(item)} style={editing ? styles.editingRow : undefined}>
+        <View key={keyOf(item)} style={editing ? [styles.editingRow, picked === keyOf(item) && styles.pickedRow] : undefined}>
           <View style={styles.itemBody} pointerEvents={editing ? 'none' : 'auto'}>
-            {renderItem(item)}
+            {renderItem(item, { startReorder: () => startReorder(keyOf(item)) })}
           </View>
           {editing && (
             <View style={styles.controls}>
@@ -166,6 +182,7 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 10, fontWeight: '600', color: colors.textTertiary },
   toggleTextActive: { color: colors.accent },
   editingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pickedRow: { borderRadius: 14, backgroundColor: colors.accentSoft },
   itemBody: { flex: 1, minWidth: 0 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ctrlBtn: {

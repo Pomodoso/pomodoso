@@ -14,11 +14,13 @@ interface TaskRowProps {
   /** "Mon", "Tomorrow"…: the day a scheduled task moves into Today. */
   scheduledLabel?: string | undefined;
   onPress?: () => void;
+  /** Long-press: picks the row up to move it (ReorderableSection). */
+  onLongPress?: () => void;
   onPlayPress?: () => void;
   onStatusPress?: () => void;
 }
 
-export function TaskRow({ title, ticket, meta, status, projectColor, scheduledLabel, onPress, onPlayPress, onStatusPress }: TaskRowProps) {
+export function TaskRow({ title, ticket, meta, status, projectColor, scheduledLabel, onPress, onLongPress, onPlayPress, onStatusPress }: TaskRowProps) {
   const resolved = isResolvedStatus(status);
   const dotColor = STATUS_DOT_COLOR[status];
 
@@ -35,7 +37,7 @@ export function TaskRow({ title, ticket, meta, status, projectColor, scheduledLa
         {status === 'done' && <Ionicons name="checkmark" size={13} color={colors.surface} />}
         {status === 'cancelled' && <Ionicons name="close" size={13} color={colors.surface} />}
       </Pressable>
-      <Pressable style={styles.body} onPress={onPress} disabled={!onPress}>
+      <Pressable style={styles.body} onPress={onPress} onLongPress={onLongPress} disabled={!onPress && !onLongPress}>
         <View style={styles.titleRow}>
           <Text style={[styles.title, resolved && styles.titleDone]} numberOfLines={2}>
             {title}

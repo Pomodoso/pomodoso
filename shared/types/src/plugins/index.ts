@@ -16,7 +16,7 @@ export { parsePluginFile, validatePluginData, type PluginParseResult } from './p
 export { addDays, localDayOf } from './dates.ts';
 export { EMPTY_PROMPT_STATE, breakKey, hookId, localNoon, pendingDayEnd, pickBreakPrompt, promptHooks, type PromptCandidate, type PromptHook, type PromptState } from './prompts.ts';
 export { iso, planDuplicateMerge, pluginFromSync, pluginRecordFromSync, pluginRecordSyncData, pluginSyncData, rowsFromExport, toEngineRecord, type PluginRecordRow, type PluginRow } from './rows.ts';
-export { applyRules, cascadeIds, recordTitle, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, templateFormat, SHOW_ON_TODAY_KEY, type PluginOption } from './view.ts';
+export { applyRules, cascadeIds, recordTitle, fieldLabel, fieldOptions, formatMinutes, formatStat, humanize, initialRecordData, missingFields, normalizeOption, optionsSettingKey, reportLines, showsOnToday, sortTodayApps, templateFormat, todayOrderChanges, SHOW_ON_TODAY_KEY, TODAY_ORDER_KEY, type PluginOption } from './view.ts';
 export { STARTER_PROMPT, TOP_LEVEL_DOCS, llmsFullTxt, llmsTxt, remixPrompt } from './llms.ts';
 export { BLOCK_DOCS, COLLECTION_DOCS, COMPUTED_DOCS, FIELD_DOCS, FORMAT_DOCS, HOOK_DOCS, WIDGET_DOCS } from './docs.ts';
 export { GUIDE_BLOCK_EXAMPLES, GUIDE_COMPUTED_EXAMPLES, GUIDE_FIRST_APP, GUIDE_HOOK_EXAMPLES, GUIDE_PLAYGROUND, GUIDE_WIDGET_EXAMPLES, guideManifestData, guideSeedRecords } from './guide.ts';
