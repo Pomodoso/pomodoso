@@ -5,6 +5,7 @@
 // here resolves with "moduleResolution": "bundler", which handles this.
 export * from './types/challenge';
 export * from './types/habit-time';
+export * from './types/habit-timer';
 export * from './types/index';
 export * from './types/ordering';
 export * from './types/project';

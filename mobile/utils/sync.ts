@@ -194,6 +194,7 @@ function habitExtra(h: typeof habits.$inferSelect): Record<string, unknown> {
   // As the extension sends them: present when on or set, null when not (the
   // extension reads a falsy value as off).
   writeExtra(extra, 'timeUnit', h.timeUnit ? true : null);
+  writeExtra(extra, 'timer', h.timer ? true : null);
   writeExtra(extra, 'endDate', h.endDate);
   // Explicitly null when disabled so the clear travels — writeExtra now gives
   // every field that property, which is what this used to special-case.
@@ -914,6 +915,7 @@ function applyEntity(entity: SyncEntity): void {
         // Absent means off: the extension leaves both out when they're unset,
         // and reads them back the same way.
         timeUnit: Boolean(hExtra.timeUnit),
+        timer: Boolean(hExtra.timer),
         endDate: typeof hExtra.endDate === 'string' && hExtra.endDate ? hExtra.endDate : null,
         challengeLengthDays,
         days: JSON.stringify(days),

@@ -12,7 +12,9 @@ import { BreakBanner } from '@/components/BreakBanner';
 import { AddTaskModal } from '@/components/AddTaskModal';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { RemoteTimerBanner } from '@/components/RemoteTimerBanner';
+import { HabitClockBar } from '@/components/HabitClockBar';
 import { HabitControl } from '@/components/HabitControl';
+import { habitClockProps, useHabitTimer } from '@/hooks/useHabitTimer';
 import { StartModePicker } from '@/components/StartModePicker';
 import { StatusPicker } from '@/components/StatusPicker';
 import { ChallengesSection } from '@/components/ChallengesSection';
@@ -90,6 +92,7 @@ export default function HomeScreen() {
   const { projects } = useProjects();
   const projectById = new Map(projects.map(p => [p.id, p]));
   const today = useTodayDate();
+  const habitTimer = useHabitTimer();
   // isPriority/isToday tasks stay in Today for the rest of the day they were
   // resolved on (matches extension's HomeState.tsx completedToday rule) —
   // marking one done/cancelled shouldn't make it vanish immediately.
@@ -318,38 +321,45 @@ export default function HomeScreen() {
               // order entirely. Habits are user-global, so this order is the
               // same in every workspace and under "All".
               onReorder={ids => reorderHabits(reorderSubset(habits.map(h => h.id), ids))}
-              renderItem={habit => (
-                <View style={[styles.habitRow, habit.paused && styles.habitRowPaused]}>
-                  <View style={[styles.habitIcon, !habit.done && styles.habitIconPending]}>
-                    <Ionicons
-                      name={habit.icon as ComponentProps<typeof Ionicons>['name']}
-                      size={18}
-                      color={habit.done ? colors.success : colors.textTertiary}
-                    />
+              renderItem={habit => {
+                const live = habitClockProps(habit, habitTimer, today);
+                return (
+                  <View style={[styles.habitCard, habit.paused && styles.habitRowPaused]}>
+                    <View style={styles.habitRow}>
+                      <View style={[styles.habitIcon, !live.done && styles.habitIconPending]}>
+                        <Ionicons
+                          name={habit.icon as ComponentProps<typeof Ionicons>['name']}
+                          size={18}
+                          color={live.done ? colors.success : colors.textTertiary}
+                        />
+                      </View>
+                      <View style={styles.habitNameBlock}>
+                        <Text style={styles.habitName}>{habit.name}</Text>
+                        {habit.paused && <Text style={styles.habitPaused}>⚠ Challenge paused</Text>}
+                        {habit.kind === 'counter' && !habit.timeUnit && habit.unit && habit.unitAmount && (
+                          <Text style={styles.habitSubtext}>
+                            {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
+                            {habit.unit}
+                          </Text>
+                        )}
+                      </View>
+                      <HabitControl
+                        kind={habit.kind}
+                        done={live.done}
+                        count={live.count}
+                        clock={live.clock}
+                        goal={habit.goal}
+                        timeUnit={habit.timeUnit}
+                        unitAmount={habit.unitAmount}
+                        onToggle={() => toggleHabit(habit.id)}
+                        onIncrement={delta => incrementHabit(habit.id, delta)}
+                        disabled={habit.paused}
+                      />
+                    </View>
+                    {live.clock?.running && <HabitClockBar total={live.count} goal={habit.goal ?? 0} onStop={live.clock.onPress} />}
                   </View>
-                  <View style={styles.habitNameBlock}>
-                    <Text style={styles.habitName}>{habit.name}</Text>
-                    {habit.paused && <Text style={styles.habitPaused}>⚠ Challenge paused</Text>}
-                    {habit.kind === 'counter' && !habit.timeUnit && habit.unit && habit.unitAmount && (
-                      <Text style={styles.habitSubtext}>
-                        {habit.count * habit.unitAmount}/{(habit.goal ?? 0) * habit.unitAmount}
-                        {habit.unit}
-                      </Text>
-                    )}
-                  </View>
-                  <HabitControl
-                    kind={habit.kind}
-                    done={habit.done}
-                    count={habit.count}
-                    goal={habit.goal}
-                    timeUnit={habit.timeUnit}
-                    unitAmount={habit.unitAmount}
-                    onToggle={() => toggleHabit(habit.id)}
-                    onIncrement={delta => incrementHabit(habit.id, delta)}
-                    disabled={habit.paused}
-                  />
-                </View>
-              )}
+                );
+              }}
             />
           </>
         )}
@@ -536,13 +546,16 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
+  // The card holds the row and, while a habit's clock runs, the clock under it.
+  habitCard: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   habitRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   habitIcon: {
     width: 38,

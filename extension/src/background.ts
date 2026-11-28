@@ -15,6 +15,7 @@ import { providerRuleAllows } from './ticketRules';
 import { googleSignInFlow } from './authFlow';
 import { INSTALL_REQUEST_KEY, WEB_ORIGINS, isPluginSlug, type InstallRequest } from './installRequest';
 import { WEB_URL } from './webUrl';
+import { HABIT_TIMER_ALARM, reachHabitTimerGoal } from './habitTimer';
 
 chrome.alarms.onAlarm.addListener(handleAlarm);
 chrome.runtime.onMessage.addListener(handleMessage);
@@ -230,6 +231,21 @@ async function closeMiniWindow(): Promise<void> {
 // ─── Alarm handler ────────────────────────────────────────────────────────────
 
 async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
+  if (alarm.name === HABIT_TIMER_ALARM) {
+    // A timer habit reached its goal. It's done now (committed), and the
+    // clock keeps running: more time still counts.
+    const reached = await reachHabitTimerGoal();
+    if (!reached) return;
+    await sendToActiveTab({ type: 'sound.play', event: 'task-done' });
+    chrome.notifications.create(`habit-timer-${Date.now()}`, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+      title: `${reached.name}: ${reached.goal} done ✓`,
+      message: 'Goal reached. The clock keeps going; stop it whenever you like.',
+      priority: 2,
+    });
+    return;
+  }
   if (alarm.name === 'periodic-sync') {
     void performBackgroundSync().catch(() => { /* offline / signed out — retry next tick */ });
     return;

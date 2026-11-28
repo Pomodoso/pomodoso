@@ -36,6 +36,8 @@ export interface HabitWithProgress {
   unitAmount: number | null;
   /** Count, goal and unitAmount are seconds. */
   timeUnit: boolean;
+  /** A time habit with a clock (useHabitTimer). */
+  timer: boolean;
   endDate: string | null;
   /** Past its end date: off Today and the active list, read-only. */
   closed: boolean;
@@ -177,6 +179,7 @@ export interface HabitInput {
   unit: string | null;
   unitAmount: number | null;
   timeUnit: boolean;
+  timer: boolean;
   endDate: string | null;
   days: number[];
   challengeLengthDays: number | null;
@@ -294,6 +297,7 @@ export function useHabits() {
         unit: input.unit,
         unitAmount: input.unitAmount,
         timeUnit: input.timeUnit,
+        timer: input.timer,
         endDate: input.endDate,
         days: JSON.stringify(input.days.length === 7 ? [] : input.days),
         challengeLengthDays: input.challengeLengthDays,
@@ -333,6 +337,7 @@ export function useHabits() {
         unit: input.unit,
         unitAmount: input.unitAmount,
         timeUnit: input.timeUnit,
+        timer: input.timer,
         endDate: input.endDate,
         days: JSON.stringify(nextDays),
         challengeLengthDays: input.challengeLengthDays,

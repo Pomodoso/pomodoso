@@ -486,6 +486,7 @@ function habitExtra(h: HabitRow): Record<string, unknown> {
   writeExtra(extra, 'unit', h.unit);
   writeExtra(extra, 'unitAmount', h.unitAmount);
   writeExtra(extra, 'timeUnit', h.timeUnit);
+  writeExtra(extra, 'timer', h.timer ? true : undefined);
   writeExtra(extra, 'endDate', h.endDate);
   // Explicitly null rather than omitted when disabled, so the clear travels.
   // This used to be the one field written that way — writeExtra now gives
@@ -731,6 +732,7 @@ async function applyEntity(entity: SyncEntity): Promise<void> {
         ...(hExtra['unit'] !== undefined ? { unit: hExtra['unit'] as string } : {}),
         ...(hExtra['unitAmount'] !== undefined ? { unitAmount: hExtra['unitAmount'] as number } : {}),
         ...(hExtra['timeUnit'] ? { timeUnit: true } : {}),
+        ...(hExtra['timer'] ? { timer: true } : {}),
         ...(hExtra['endDate'] ? { endDate: hExtra['endDate'] as string } : {}),
         ...(hExtra['challengeLengthDays'] ? { challengeLengthDays: hExtra['challengeLengthDays'] as number } : {}),
         // 0 is a legitimate order, so this tests the type rather than truthiness.

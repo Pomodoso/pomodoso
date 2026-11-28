@@ -16,6 +16,8 @@ import { colors } from '@/constants/theme';
 import type { HabitWithProgress } from '@/hooks/useHabits';
 import { useAchievements } from '@/hooks/useAchievements';
 import { useHabits } from '@/hooks/useHabits';
+import { habitClockProps, useHabitTimer } from '@/hooks/useHabitTimer';
+import { useTodayDate } from '@/hooks/useTodayDate';
 import { useSettings } from '@/hooks/useSettings';
 
 export default function HabitsScreen() {
@@ -33,6 +35,8 @@ export default function HabitsScreen() {
   const activeHabits = habits.filter(h => !h.closed);
   const closedHabits = habits.filter(h => h.closed);
   const [showClosed, setShowClosed] = useState(false);
+  const habitTimer = useHabitTimer();
+  const today = useTodayDate();
 
   function openCreate(): void {
     setEditingHabit(null);
@@ -86,15 +90,18 @@ export default function HabitsScreen() {
               </Text>
             </Pressable>
           }
-          renderItem={habit => (
+          renderItem={habit => {
+            const live = habitClockProps(habit, habitTimer, today);
+            return (
             <HabitRow
               icon={habit.icon as ComponentProps<typeof Ionicons>['name']}
               name={habit.name}
               streakLabel={habit.streakLabel}
               days={habit.days}
               kind={habit.kind}
-              done={habit.done}
-              count={habit.count}
+              done={live.done}
+              count={live.count}
+              clock={live.clock}
               goal={habit.goal}
               timeUnit={habit.timeUnit}
               unitAmount={habit.unitAmount}
@@ -105,7 +112,8 @@ export default function HabitsScreen() {
               onIncrement={delta => incrementHabit(habit.id, delta)}
               paused={habit.paused}
             />
-          )}
+            );
+          }}
         />
 
         {closedHabits.length > 0 && (

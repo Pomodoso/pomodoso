@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { daysSummary } from '@/constants/habitDays';
 import { colors } from '@/constants/theme';
 
+import { HabitClockBar } from './HabitClockBar';
 import { HabitControl } from './HabitControl';
 
 interface HabitRowProps {
@@ -22,6 +23,8 @@ interface HabitRowProps {
   readOnly?: boolean;
   /** Shown under the name instead of the streak, e.g. "Ended Nov 3". */
   note?: string | undefined;
+  /** Timer habits: the ▶/⏸ and, while running, the clock under the habit. */
+  clock?: { running: boolean; onPress: () => void } | undefined;
   weekFilled: boolean[]; // 7 entries, Monday..Sunday
   todayIndex: number;
   onPress?: () => void;
@@ -44,6 +47,7 @@ export function HabitRow({
   unitAmount,
   readOnly = false,
   note,
+  clock,
   weekFilled,
   todayIndex,
   onPress,
@@ -81,9 +85,11 @@ export function HabitRow({
             onToggle={onToggle}
             onIncrement={onIncrement}
             disabled={paused}
+            clock={clock}
           />
         )}
       </View>
+      {clock?.running && !readOnly && <HabitClockBar total={count} goal={goal ?? 0} onStop={clock.onPress} />}
       <View style={styles.week}>
         {weekFilled.map((filled, i) => (
           <View
@@ -112,7 +118,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
-  top: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  top: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   icon: {
     width: 40,
     height: 40,
@@ -125,7 +131,7 @@ const styles = StyleSheet.create({
   nameBlock: { flex: 1, minWidth: 0 },
   name: { fontSize: 15, fontWeight: '600', color: colors.text },
   streak: { fontSize: 11.5, color: colors.textTertiary, marginTop: 2 },
-  week: { flexDirection: 'row', gap: 5 },
+  week: { flexDirection: 'row', gap: 5, marginTop: 10 },
   day: { flex: 1, height: 22, borderRadius: 5, backgroundColor: colors.border },
   dayFilled: { backgroundColor: colors.success },
   dayToday: { borderWidth: 2, borderColor: colors.accentSoft },

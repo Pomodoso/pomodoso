@@ -45,6 +45,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
   const [unit, setUnit] = useState('');
   const [unitAmount, setUnitAmount] = useState('');
   const [timeUnit, setTimeUnit] = useState(false);
+  const [timer, setTimer] = useState(false);
   const [timeGoal, setTimeGoal] = useState('15:00');
   const [timeStep, setTimeStep] = useState('1:00');
   const [endDate, setEndDate] = useState('');
@@ -63,6 +64,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setUnit(initialHabit.unit ?? '');
       setUnitAmount(initialHabit.unitAmount?.toString() ?? '');
       setTimeUnit(initialHabit.timeUnit);
+      setTimer(initialHabit.timeUnit && initialHabit.timer);
       setTimeGoal(initialHabit.timeUnit ? fmtHabitTime(initialHabit.goal ?? 0) : '15:00');
       setTimeStep(initialHabit.timeUnit ? fmtHabitTime(initialHabit.unitAmount || 60) : '1:00');
       setEndDate(initialHabit.endDate ?? '');
@@ -77,6 +79,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
       setUnit('');
       setUnitAmount('');
       setTimeUnit(false);
+      setTimer(false);
       setTimeGoal('15:00');
       setTimeStep('1:00');
       setEndDate('');
@@ -151,6 +154,7 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
         ? (parseHabitTime(timeStep) || 60)
         : kind === 'counter' && !isNaN(parsedUnitAmount) ? parsedUnitAmount : null,
       timeUnit: isTime,
+      timer: isTime && timer,
       endDate: trimmedEnd || null,
       days,
       challengeLengthDays: isChallenge ? parsedChallengeLength : null,
@@ -206,13 +210,21 @@ export function HabitFormModal({ visible, initialHabit, onSave, onDelete, onCanc
 
             {kind === 'counter' && (
               <View style={styles.kindRow}>
-                <Pressable style={[styles.kindBtn, !timeUnit && styles.kindBtnActive]} onPress={() => setTimeUnit(false)}>
+                <Pressable style={[styles.kindBtn, !timeUnit && styles.kindBtnActive]} onPress={() => { setTimeUnit(false); setTimer(false); }}>
                   <Text style={[styles.kindBtnText, !timeUnit && styles.kindBtnTextActive]}>Number</Text>
                 </Pressable>
-                <Pressable style={[styles.kindBtn, timeUnit && styles.kindBtnActive]} onPress={() => setTimeUnit(true)}>
-                  <Text style={[styles.kindBtnText, timeUnit && styles.kindBtnTextActive]}>Time</Text>
+                <Pressable style={[styles.kindBtn, timeUnit && !timer && styles.kindBtnActive]} onPress={() => { setTimeUnit(true); setTimer(false); }}>
+                  <Text style={[styles.kindBtnText, timeUnit && !timer && styles.kindBtnTextActive]}>Time</Text>
+                </Pressable>
+                <Pressable style={[styles.kindBtn, timer && styles.kindBtnActive]} onPress={() => { setTimeUnit(true); setTimer(true); }}>
+                  <Text style={[styles.kindBtnText, timer && styles.kindBtnTextActive]}>Timer ▶</Text>
                 </Pressable>
               </View>
+            )}
+            {isTime && timer && (
+              <Text style={[styles.everyDayHint, { marginTop: -8, marginBottom: 10 }]}>
+                ▶ starts a clock under the habit. It&apos;s done when the clock reaches the goal, keeps counting after, and stopping early keeps the time so far.
+              </Text>
             )}
 
             {isTime && (

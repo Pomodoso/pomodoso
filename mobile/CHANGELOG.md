@@ -31,6 +31,7 @@
 
 ### Habits
 
+- **Habits with a clock** — Choose *Timer* for a counter and the habit gets a ▶. A clock runs under the habit; at the goal you get a notification and the habit is done, and the clock keeps going. Stopping early keeps the time so far, and ▶ again adds more.
 - **Time habits** — A counter can count time: set a daily goal like 15:00 and a +/− step, and it shows as minutes and seconds. Time habits made in the extension now read as time here too, instead of a bare number of seconds.
 - **End date** — A habit can end on a day. After it, it leaves Today and the habit list (Habits → Show closed keeps it, with its history). Habits ended in the extension now end here too.
 - **Challenges count from the day they start** — A habit you turned into a challenge could count the days you did it before the challenge began (a Mon–Fri challenge started on Friday showed 3 days on Monday). Runs now start the day the challenge is turned on.
